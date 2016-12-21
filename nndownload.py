@@ -68,7 +68,8 @@ LOGIN_POST = {
 HTML5_COOKIE = {
     "watch_html5": "1"
     }
-    
+
+
 def cond_print(string):
     """Print unless in quiet mode."""
 
@@ -76,6 +77,7 @@ def cond_print(string):
     if not cmdl_opts.quiet:
         sys.stdout.write(string)
         sys.stdout.flush()
+
 
 def login():
     """Login to Nico. Will raise an exception for errors."""
@@ -182,7 +184,7 @@ def download_video(session, result):
             done = int(25 * dl / video_len)
             percent = int(100 * dl / video_len)
             speed_str = calculate_speed(start_time, time.time(), dl)
-            cond_print("\r|{0}{1}| {2}/100 @ {3:8}/s".format("#" * done, " " * (25 - done), percent, speed_str))    
+            cond_print("\r|{0}{1}| {2}/100 @ {3:8}/s".format("#" * done, " " * (25 - done), percent, speed_str))
         file.close()
         global FINISHED_DOWNLOADING
         FINISHED_DOWNLOADING = True
@@ -193,7 +195,7 @@ def download_video(session, result):
 
 def perform_api_request(session, document):
     """Collect parameters from video document and build API request"""
-    
+
     params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
 
     result = {}
