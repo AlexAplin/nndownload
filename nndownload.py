@@ -144,7 +144,7 @@ def format_bytes(number_bytes):
 def calculate_speed(start, now, bytes):
     dif = now - start
     if bytes == 0 or dif < EPSILON:
-        return "N/A b"
+        return "N/A B"
     return format_bytes(bytes / dif)
 
 
