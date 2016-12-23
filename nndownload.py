@@ -130,18 +130,23 @@ def sanitize_filename(filename):
 
 
 def format_bytes(number_bytes):
+    """Attach suffix (e.g. 10 T) to number of bytes."""
+
     try:
         exponent = int(math.log(number_bytes, KILOBYTE))
-        suffix = 'BKMGTPE'[exponent]
+        suffix = "\0KMGTPE"[exponent]
         if exponent == 0:
             return "{0}{1}".format(number_bytes, suffix)
         converted = float(number_bytes / KILOBYTE ** exponent)
-        return "{0:.2f}{1}".format(converted, suffix)
+        return "{0:.2f}{1}B".format(converted, suffix)
+
     except IndexError:
         sys.exit("Error formatting number of bytes.")
 
 
 def calculate_speed(start, now, bytes):
+    """Calculate speed based on difference between start and current block call."""
+
     dif = now - start
     if bytes == 0 or dif < EPSILON:
         return "N/A B"
@@ -159,6 +164,7 @@ def download_video(session, result):
                 cond_print(" done.\n")
 
             filename = "{0}\{1} - {2}.mp4".format(result["user"], video_id, result["title"])
+
         except (IOError, OSError):
             sys.exit("Unable to open {0} for writing.".format(filename))
 
@@ -186,7 +192,6 @@ def download_video(session, result):
             speed_str = calculate_speed(start_time, time.time(), dl)
             cond_print("\r|{0}{1}| {2}/100 @ {3:8}/s".format("#" * done, " " * (25 - done), percent, speed_str))
         file.close()
-        global FINISHED_DOWNLOADING
         FINISHED_DOWNLOADING = True
 
     except KeyboardInterrupt:
@@ -323,6 +328,7 @@ def perform_api_request(session, document):
         sys.exit("Failed to find video URI. Nico may have updated their player.")
 
     return result
+
 
 request_video(video_id)
 sys.exit()
