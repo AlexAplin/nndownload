@@ -8,6 +8,7 @@ import requests
 import json
 import math
 import xml.dom.minidom
+import urllib.parse
 import re
 import optparse
 import os
@@ -25,7 +26,9 @@ __version__ = "0.9"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
 CANT_LOGIN = "cant_login"
-VIDEO_URL_RE = re.compile(r"(sm.*|1.*)")
+VIDEO_URL_RE = re.compile(r"(sm.*|nm.*)")
+VIDEO_TYPE_RE = re.compile(r"(sm*|nm*)")
+FLASHVARS_RE = re.compile(r"({\"flashvars\".*}){\"current_wall")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 10 * KILOBYTE
@@ -59,6 +62,7 @@ video_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
 if video_id_mo is None:
     sys.exit("Not a valid video ID or URL.")
 video_id = video_id_mo.group(1)
+video_type = VIDEO_TYPE_RE.match(video_id).group(1)
 
 LOGIN_POST = {
     "mail_tel": account_username,
@@ -122,11 +126,11 @@ def perform_heartbeat(response, session, heartbeat_url):
         sys.exit("Got interrupt request.")
 
 
-def sanitize_filename(filename):
-    """Remove illegal characters from the filename."""
+def sanitize_string(string):
+    """Remove illegal characters from string."""
 
     for c in ':*?"<>|/\\':
-        filename = filename.replace(c, "")
+        string = string.replace(c, "")
 
 
 def format_bytes(number_bytes):
@@ -135,8 +139,10 @@ def format_bytes(number_bytes):
     try:
         exponent = int(math.log(number_bytes, KILOBYTE))
         suffix = "\0KMGTPE"[exponent]
+
         if exponent == 0:
             return "{0}{1}".format(number_bytes, suffix)
+
         converted = float(number_bytes / KILOBYTE ** exponent)
         return "{0:.2f}{1}B".format(converted, suffix)
 
@@ -156,6 +162,8 @@ def calculate_speed(start, now, bytes):
 def download_video(session, result):
     """Download video from response URI and display progress."""
 
+    sanitize_string(result["user"])
+
     if cmdl_opts.use_user_directory:
         try:
             if not os.path.exists("{0}".format(result["user"])):
@@ -163,15 +171,15 @@ def download_video(session, result):
                 os.makedirs("{0}".format(result["user"]))
                 cond_print(" done.\n")
 
-            filename = "{0}\{1} - {2}.mp4".format(result["user"], video_id, result["title"])
+            filename = "{0}\{1} - {2}.{3}".format(result["user"], video_id, result["title"], result["extension"])
 
         except (IOError, OSError):
             sys.exit("Unable to open {0} for writing.".format(filename))
 
     else:
-        filename = "{0} - {1}.mp4".format(video_id, result["title"])
+        filename = "{0} - {1}.{2}".format(video_id, result["title"], result["extension"])
 
-    sanitize_filename(filename)
+    sanitize_string(filename)
 
     if os.path.isfile(filename):
         sys.exit("File already exists. Skipping...")
@@ -190,7 +198,7 @@ def download_video(session, result):
             done = int(25 * dl / video_len)
             percent = int(100 * dl / video_len)
             speed_str = calculate_speed(start_time, time.time(), dl)
-            cond_print("\r|{0}{1}| {2}/100 @ {3:8}/s".format("#" * done, " " * (25 - done), percent, speed_str))
+            cond_print("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
         file.close()
         FINISHED_DOWNLOADING = True
 
@@ -201,134 +209,161 @@ def download_video(session, result):
 def perform_api_request(session, document):
     """Collect parameters from video document and build API request"""
 
-    params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
-
     result = {}
-    result["title"] = params["video"]["title"]
-    result["user"] = params["owner"]["nickname"].strip(" さん")
 
-    if params["video"]["dmcInfo"]:
-        api_url = params["video"]["dmcInfo"]["session_api"]["api_urls"][0] + "?suppress_response_codes=true&_format=xml"
-        recipe_id = params["video"]["dmcInfo"]["session_api"]["recipe_id"]
-        content_id = params["video"]["dmcInfo"]["session_api"]["content_id"]
-        protocol = params["video"]["dmcInfo"]["session_api"]["protocols"][0]
-        file_extension = params["video"]["movieType"]
-        priority = params["video"]["dmcInfo"]["session_api"]["priority"]
-        video_sources = params["video"]["dmcInfo"]["session_api"]["videos"]
-        audio_sources = params["video"]["dmcInfo"]["session_api"]["audios"]
-        heartbeat_lifetime = params["video"]["dmcInfo"]["session_api"]["heartbeat_lifetime"]
-        token = params["video"]["dmcInfo"]["session_api"]["token"]
-        signature = params["video"]["dmcInfo"]["session_api"]["signature"]
-        auth_type = params["video"]["dmcInfo"]["session_api"]["auth_types"]["http"]
-        service_user_id = params["video"]["dmcInfo"]["session_api"]["service_user_id"]
-        player_id = params["video"]["dmcInfo"]["session_api"]["player_id"]
+    # SMILEVIDEO movies
+    if video_type == "sm":
+        if document.find(id="js-initial-watch-data")["data-api-data"]:
+            params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
 
-        # Build request
-        post = """
-                <session>
-                  <recipe_id>{0}</recipe_id>
-                  <content_id>{1}</content_id>
-                  <content_type>movie</content_type>
-                  <protocol>
-                    <name>{2}</name>
-                    <parameters>
-                      <http_parameters>
-                        <method>GET</method>
+        else:
+            sys.exit("Failed to collect video paramters.")
+
+        result["title"] = params["video"]["title"]
+        result["extension"] = params["video"]["movieType"]
+        result["user"] = params["owner"]["nickname"].strip(" さん")
+
+        if params["video"]["dmcInfo"]:
+            api_url = params["video"]["dmcInfo"]["session_api"]["api_urls"][0] + "?suppress_response_codes=true&_format=xml"
+            recipe_id = params["video"]["dmcInfo"]["session_api"]["recipe_id"]
+            content_id = params["video"]["dmcInfo"]["session_api"]["content_id"]
+            protocol = params["video"]["dmcInfo"]["session_api"]["protocols"][0]
+            file_extension = params["video"]["movieType"]
+            priority = params["video"]["dmcInfo"]["session_api"]["priority"]
+            video_sources = params["video"]["dmcInfo"]["session_api"]["videos"]
+            audio_sources = params["video"]["dmcInfo"]["session_api"]["audios"]
+            heartbeat_lifetime = params["video"]["dmcInfo"]["session_api"]["heartbeat_lifetime"]
+            token = params["video"]["dmcInfo"]["session_api"]["token"]
+            signature = params["video"]["dmcInfo"]["session_api"]["signature"]
+            auth_type = params["video"]["dmcInfo"]["session_api"]["auth_types"]["http"]
+            service_user_id = params["video"]["dmcInfo"]["session_api"]["service_user_id"]
+            player_id = params["video"]["dmcInfo"]["session_api"]["player_id"]
+
+            # Build request
+            post = """
+                    <session>
+                      <recipe_id>{0}</recipe_id>
+                      <content_id>{1}</content_id>
+                      <content_type>movie</content_type>
+                      <protocol>
+                        <name>{2}</name>
                         <parameters>
-                          <http_output_download_parameters>
-                            <file_extension>{3}</file_extension>
-                          </http_output_download_parameters>
+                          <http_parameters>
+                            <method>GET</method>
+                            <parameters>
+                              <http_output_download_parameters>
+                                <file_extension>{3}</file_extension>
+                              </http_output_download_parameters>
+                            </parameters>
+                          </http_parameters>
                         </parameters>
-                      </http_parameters>
-                    </parameters>
-                  </protocol>
-                  <priority>{4}</priority>
-                  <content_src_id_sets>
-                    <content_src_id_set>
-                      <content_src_ids>
-                        <src_id_to_mux>
-                          <video_src_ids>
-                          </video_src_ids>
-                          <audio_src_ids>
-                          </audio_src_ids>
-                        </src_id_to_mux>
-                      </content_src_ids>
-                    </content_src_id_set>
-                  </content_src_id_sets>
-                  <keep_method>
-                    <heartbeat>
-                      <lifetime>{5}</lifetime>
-                    </heartbeat>
-                  </keep_method>
-                  <timing_constraint>unlimited</timing_constraint>
-                  <session_operation_auth>
-                    <session_operation_auth_by_signature>
-                      <token>{6}</token>
-                      <signature>{7}</signature>
-                    </session_operation_auth_by_signature>
-                  </session_operation_auth>
-                  <content_auth>
-                    <auth_type>{8}</auth_type>
-                    <service_id>nicovideo</service_id>
-                    <service_user_id>{9}</service_user_id>
-                    <max_content_count>10</max_content_count>
-                    <content_key_timeout>600000</content_key_timeout>
-                  </content_auth>
-                  <client_info>
-                    <player_id>{10}</player_id>
-                  </client_info>
-                </session>
-            """.format(recipe_id,
-                       content_id,
-                       protocol,
-                       file_extension,
-                       priority,
-                       heartbeat_lifetime,
-                       token,
-                       signature,
-                       auth_type,
-                       service_user_id,
-                       player_id).strip()
+                      </protocol>
+                      <priority>{4}</priority>
+                      <content_src_id_sets>
+                        <content_src_id_set>
+                          <content_src_ids>
+                            <src_id_to_mux>
+                              <video_src_ids>
+                              </video_src_ids>
+                              <audio_src_ids>
+                              </audio_src_ids>
+                            </src_id_to_mux>
+                          </content_src_ids>
+                        </content_src_id_set>
+                      </content_src_id_sets>
+                      <keep_method>
+                        <heartbeat>
+                          <lifetime>{5}</lifetime>
+                        </heartbeat>
+                      </keep_method>
+                      <timing_constraint>unlimited</timing_constraint>
+                      <session_operation_auth>
+                        <session_operation_auth_by_signature>
+                          <token>{6}</token>
+                          <signature>{7}</signature>
+                        </session_operation_auth_by_signature>
+                      </session_operation_auth>
+                      <content_auth>
+                        <auth_type>{8}</auth_type>
+                        <service_id>nicovideo</service_id>
+                        <service_user_id>{9}</service_user_id>
+                        <max_content_count>10</max_content_count>
+                        <content_key_timeout>600000</content_key_timeout>
+                      </content_auth>
+                      <client_info>
+                        <player_id>{10}</player_id>
+                      </client_info>
+                    </session>
+                """.format(recipe_id,
+                           content_id,
+                           protocol,
+                           file_extension,
+                           priority,
+                           heartbeat_lifetime,
+                           token,
+                           signature,
+                           auth_type,
+                           service_user_id,
+                           player_id).strip()
 
-        root = xml.dom.minidom.parseString(post)
-        sources = root.getElementsByTagName("video_src_ids")[0]
-        for video_source in video_sources:
-            element = root.createElement("string")
-            quality = root.createTextNode(video_source)
-            element.appendChild(quality)
-            sources.appendChild(element)
+            root = xml.dom.minidom.parseString(post)
+            sources = root.getElementsByTagName("video_src_ids")[0]
+            for video_source in video_sources:
+                element = root.createElement("string")
+                quality = root.createTextNode(video_source)
+                element.appendChild(quality)
+                sources.appendChild(element)
 
-        sources = root.getElementsByTagName("audio_src_ids")[0]
-        for audio_source in audio_sources:
-            element = root.createElement("string")
-            quality = root.createTextNode(audio_source)
-            element.appendChild(quality)
-            sources.appendChild(element)
+            sources = root.getElementsByTagName("audio_src_ids")[0]
+            for audio_source in audio_sources:
+                element = root.createElement("string")
+                quality = root.createTextNode(audio_source)
+                element.appendChild(quality)
+                sources.appendChild(element)
 
-        cond_print("Performing initial API request...")
-        headers = {"Content-Type": "application/xml"}
-        response = session.post(api_url, data=root.toxml())
-        response.raise_for_status()
-        response = xml.dom.minidom.parseString(response.text)
-        result["uri"] = response.getElementsByTagName("content_uri")[0].firstChild.nodeValue
-        cond_print(" done.\n")
+            cond_print("Performing initial API request...")
+            headers = {"Content-Type": "application/xml"}
+            response = session.post(api_url, data=root.toxml())
+            response.raise_for_status()
+            response = xml.dom.minidom.parseString(response.text)
+            result["uri"] = response.getElementsByTagName("content_uri")[0].firstChild.nodeValue
+            cond_print(" done.\n")
 
-        # Collect response for heartbeat
-        session_id = response.getElementsByTagName("id")[0].firstChild.nodeValue
-        response = response.getElementsByTagName("session")[0]
-        heartbeat_url = params["video"]["dmcInfo"]["session_api"]["api_urls"][0] + "/" + session_id + "?_format=xml&_method=PUT"
-        perform_heartbeat(response, session, heartbeat_url)
+            # Collect response for heartbeat
+            session_id = response.getElementsByTagName("id")[0].firstChild.nodeValue
+            response = response.getElementsByTagName("session")[0]
+            heartbeat_url = params["video"]["dmcInfo"]["session_api"]["api_urls"][0] + "/" + session_id + "?_format=xml&_method=PUT"
+            perform_heartbeat(response, session, heartbeat_url)
 
-    # Legacy for old videos
-    elif params["video"]["source"]:
-        cond_print("Using legacy URI.\n")
-        result["uri"] = params["video"]["source"]
+        # Legacy for pre-HTML5 videos
+        elif params["video"]["source"]:
+            cond_print("Using legacy URI.\n")
+            result["uri"] = params["video"]["source"]
 
-    else:
-        sys.exit("Failed to find video URI. Nico may have updated their player.")
+        else:
+            sys.exit("Failed to find video URI. Nico may have updated their player.")
+
+    # NicoMovieMaker movies (SWF)
+    # May need conversion to play properly in an external player
+    elif video_type == "nm":
+        if FLASHVARS_RE.search(document.text):
+            params = json.loads(FLASHVARS_RE.search(document.text).group(1))
+
+        else:
+            sys.exit("Failed to collect video paramters.")
+
+        video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
+        if ("url" in video_url_param):
+            result["uri"] = video_url_param["url"][0]
+
+        else:
+            sys.exit("Failed to find video URI. Nico may have updated their player.")
+
+        result["title"] = params["videoDetail"]["title"]
+        result["user"] = params["uploaderInfo"]["nickname"].strip(" さん")
+        result["extension"] = params["flashvars"]["movie_type"]
 
     return result
-
 
 request_video(video_id)
 sys.exit()
