@@ -126,13 +126,6 @@ def perform_heartbeat(response, session, heartbeat_url):
         sys.exit("Got interrupt request.")
 
 
-def sanitize_string(string):
-    """Remove illegal characters from string."""
-
-    for c in ':*?"<>|/\\':
-        string = string.replace(c, "")
-
-
 def format_bytes(number_bytes):
     """Attach suffix (e.g. 10 T) to number of bytes."""
 
@@ -162,8 +155,6 @@ def calculate_speed(start, now, bytes):
 def download_video(session, result):
     """Download video from response URI and display progress."""
 
-    sanitize_string(result["user"])
-
     if cmdl_opts.use_user_directory:
         try:
             if not os.path.exists("{0}".format(result["user"])):
@@ -178,8 +169,6 @@ def download_video(session, result):
 
     else:
         filename = "{0} - {1}.{2}".format(video_id, result["title"], result["extension"])
-
-    sanitize_string(filename)
 
     if os.path.isfile(filename):
         sys.exit("File already exists. Skipping...")
