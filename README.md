@@ -26,7 +26,7 @@ Options:
 ```
 
 ## Known Bugs
-- NicoMovieMaker videos (nm#) may not be viewable in an external player. Videos with still images (e.g. [nm11960162](http://www.nicovideo.jp/watch/nm11960162)) will play fine with a pass through ffmpeg. Slideshows and GIFs (e.g. [nm2829323](http://www.nicovideo.jp/watch/nm2829323)) may play with improper frame timings or loops. Flash animations (e.g. [nm4809023](http://www.nicovideo.jp/watch/nm4809023)) will likely not play at all and may require other libraries or solutions.
+- Check open issues.
 
 ## License
 This project is licensed under the MIT License.
