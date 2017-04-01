@@ -201,20 +201,20 @@ def download_thumbnail(session, result):
     """Download the video thumbnail."""
 
     cond_print("Downloading thumbnail...")
-    
+
     filename = ""
     if cmdl_opts.use_user_directory:
         filename += "{0}\\".format(result["user"])
     filename += "{0} - {1}.jpg".format(video_id, result["title"])
-        
+
     get_thumb = session.get(result["thumb"])
     file = open(filename, "wb")
     for block in get_thumb.iter_content(BLOCK_SIZE):
         file.write(block)
     file.close()
     cond_print(" done.\n")
-        
-        
+
+
 def perform_api_request(session, document):
     """Collect parameters from video document and build API request"""
 
@@ -233,7 +233,13 @@ def perform_api_request(session, document):
         result["user"] = params["owner"]["nickname"].strip(" さん")
         result["thumb"] = params["video"]["thumbnailURL"]
 
-        if params["video"]["dmcInfo"]:
+        # Economy mode (low quality)
+        if not params["video"]["dmcInfo"] and "low" in params["video"]["smileInfo"]["url"]:
+            cond_print("Currently in economy mode. Using low quality source.\n")
+            result["uri"] = params["video"]["smileInfo"]["url"]
+
+        # HTML5 request
+        elif params["video"]["dmcInfo"]:
             api_url = params["video"]["dmcInfo"]["session_api"]["api_urls"][0] + "?suppress_response_codes=true&_format=xml"
             recipe_id = params["video"]["dmcInfo"]["session_api"]["recipe_id"]
             content_id = params["video"]["dmcInfo"]["session_api"]["content_id"]
