@@ -25,7 +25,7 @@ __version__ = "0.9"
 
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
-CANT_LOGIN = "cant_login"
+THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/watch\/|nico.ms\/)?((sm|nm)[\d]+)")
 FLASHVARS_RE = re.compile(r"({\"flashvars\".*}){\"current_wall")
 DMC_HEARTBEAT_INTERVAL_S = 15
@@ -41,6 +41,7 @@ cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conf
 cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
 cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
 cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save videos to user directories")
+cmdl_parser.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 cmdl_parser.add_option("-q", "--quiet", action="store_true", dest="quiet", help="activate quiet mode")
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
 
@@ -106,6 +107,8 @@ def request_video(video_id):
     document = BeautifulSoup(response.text, "html.parser")
     result = perform_api_request(session, document)
     download_video(session, result)
+    if cmdl_opts.download_thumbnail:
+        download_thumbnail(session, result)
 
 
 def perform_heartbeat(response, session, heartbeat_url):
@@ -194,6 +197,24 @@ def download_video(session, result):
         sys.exit()
 
 
+def download_thumbnail(session, result):
+    """Download the video thumbnail."""
+
+    cond_print("Downloading thumbnail...")
+    
+    filename = ""
+    if cmdl_opts.use_user_directory:
+        filename += "{0}\\".format(result["user"])
+    filename += "{0} - {1}.jpg".format(video_id, result["title"])
+        
+    get_thumb = session.get(result["thumb"])
+    file = open(filename, "wb")
+    for block in get_thumb.iter_content(BLOCK_SIZE):
+        file.write(block)
+    file.close()
+    cond_print(" done.\n")
+        
+        
 def perform_api_request(session, document):
     """Collect parameters from video document and build API request"""
 
@@ -210,6 +231,7 @@ def perform_api_request(session, document):
         result["title"] = params["video"]["title"]
         result["extension"] = params["video"]["movieType"]
         result["user"] = params["owner"]["nickname"].strip(" さん")
+        result["thumb"] = params["video"]["thumbnailURL"]
 
         if params["video"]["dmcInfo"]:
             api_url = params["video"]["dmcInfo"]["session_api"]["api_urls"][0] + "?suppress_response_codes=true&_format=xml"
