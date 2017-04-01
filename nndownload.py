@@ -26,8 +26,7 @@ __version__ = "0.9"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
 CANT_LOGIN = "cant_login"
-VIDEO_URL_RE = re.compile(r"(sm.*|nm.*)")
-VIDEO_TYPE_RE = re.compile(r"(sm*|nm*)")
+VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/watch\/|nico.ms\/)?((sm|nm)[\d]+)")
 FLASHVARS_RE = re.compile(r"({\"flashvars\".*}){\"current_wall")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
@@ -61,8 +60,8 @@ if len(cmdl_args) == 0:
 video_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
 if video_id_mo is None:
     sys.exit("Not a valid video ID or URL.")
-video_id = video_id_mo.group(1)
-video_type = VIDEO_TYPE_RE.match(video_id).group(1)
+video_id = video_id_mo.group(5)
+video_type = video_id_mo.group(6)
 
 LOGIN_POST = {
     "mail_tel": account_username,
