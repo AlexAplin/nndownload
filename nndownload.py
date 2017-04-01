@@ -90,7 +90,7 @@ def login():
     session.headers.update({"User-Agent": "nndownload/%s".format(__version__)})
     response = session.post(LOGIN_URL, data=LOGIN_POST)
     response.raise_for_status()
-    if CANT_LOGIN in response.url:
+    if session.cookies.get_dict().get("user_session", None) is None:
         cond_print(" failed.\n")
         sys.exit("Failed to login. Please verify your username and password.")
     cond_print(" done.\n")
