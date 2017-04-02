@@ -173,7 +173,8 @@ def download_video(session, result):
         filename = "{0} - {1}.{2}".format(video_id, result["title"], result["extension"])
 
     if os.path.isfile(filename):
-        sys.exit("File already exists. Skipping...")
+        cond_print("File already exists. Skipping...\n")
+        return
 
     try:
         file = open(filename, "wb")
