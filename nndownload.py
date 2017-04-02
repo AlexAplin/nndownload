@@ -172,17 +172,31 @@ def download_video(session, result):
     else:
         filename = "{0} - {1}.{2}".format(video_id, result["title"], result["extension"])
 
-    if os.path.isfile(filename):
-        cond_print("File already exists. Skipping...\n")
-        return
-
     try:
-        file = open(filename, "wb")
-        dl_stream = session.get(result["uri"], stream=True)
+        dl_stream = session.head(result["uri"])
         dl_stream.raise_for_status()
         video_len = int(dl_stream.headers["content-length"])
 
-        dl = 0
+        if os.path.isfile(filename):
+            current_byte_pos = os.path.getsize(filename)
+            if current_byte_pos < video_len:
+                file = open(filename, "ab")
+                resume_header = {"Range": "bytes={}-".format(current_byte_pos)}
+                dl = current_byte_pos
+                cond_print("Resuming previous download.\n")
+
+            elif current_byte_pos >= video_len:
+                cond_print("File exists and is complete. Skipping...\n")
+                return
+
+        else:
+            file = open(filename, "wb")
+            resume_header = {"Range": "bytes=0-"}
+            dl = 0
+
+        dl_stream = session.get(result["uri"], headers=resume_header, stream=True)
+        dl_stream.raise_for_status()
+
         start_time = time.time()
         for block in dl_stream.iter_content(BLOCK_SIZE):
             dl += len(block)
