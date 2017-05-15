@@ -15,14 +15,16 @@ Usage: nndownload.py [options] video_id
 
 Options:
   --version             show program's version number and exit
-  -h, --help            show this help message
+  -h, --help            show this help message and exit
   -u USERNAME, --username=USERNAME
                         account username
   -p PASSWORD, --password=PASSWORD
                         account password
   -d, --save-to-user-directory
                         save video to user directory
-  -q, --quiet           activate quiet mode
+  -t, --download-thumbnail
+                        download video thumbnail
+  -v, --verbose         print status to console
 ```
 
 ## Known Bugs

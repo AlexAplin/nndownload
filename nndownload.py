@@ -26,7 +26,7 @@ __version__ = "0.9"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
-VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/watch\/|nico.ms\/)?((sm|nm)[\d]+)")
+VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/watch\/|nico.ms\/)?((sm|nm)*[\d]+)")
 FLASHVARS_RE = re.compile(r"({\"flashvars\".*}){\"current_wall")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
@@ -35,58 +35,39 @@ EPSILON = 0.0001
 
 FINISHED_DOWNLOADING = False
 
+HTML5_COOKIE = {
+    "watch_html5": "1"
+    }
+
 cmdl_usage = "%prog [options] video_id"
 cmdl_version = __version__
 cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conflict_handler="resolve")
 cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
 cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
-cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save videos to user directories")
+cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
 cmdl_parser.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
-cmdl_parser.add_option("-q", "--quiet", action="store_true", dest="quiet", help="activate quiet mode")
+cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
 
-account_username = None
-account_password = None
-
-if cmdl_opts.username is not None:
-    account_username = cmdl_opts.username
-    account_password = cmdl_opts.password
-if cmdl_opts.username is None:
-    account_username = input("Username: ")
-if account_password is None:
-    account_password = getpass.getpass("Password: ")
-if len(cmdl_args) == 0:
-    sys.exit("You must provide a video ID.")
-
-video_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
-if video_id_mo is None:
-    sys.exit("Not a valid video ID or URL.")
-video_id = video_id_mo.group(5)
-video_type = video_id_mo.group(6)
-
-LOGIN_POST = {
-    "mail_tel": account_username,
-    "password": account_password
-    }
-
-HTML5_COOKIE = {
-    "watch_html5": "1"
-    }
-
-
 def cond_print(string):
-    """Print unless in quiet mode."""
+    """Print status to console if verbose flag is set."""
 
     global cmdl_opts
-    if not cmdl_opts.quiet:
+    if cmdl_opts.verbose:
         sys.stdout.write(string)
         sys.stdout.flush()
 
 
-def login():
+def login(username, password):
     """Login to Nico. Will raise an exception for errors."""
 
     cond_print("Logging in...")
+
+    LOGIN_POST = {
+        "mail_tel": username,
+        "password": password
+    }
+
     session = requests.session()
     session.headers.update({"User-Agent": "nndownload/%s".format(__version__)})
     response = session.post(LOGIN_URL, data=LOGIN_POST)
@@ -98,10 +79,9 @@ def login():
     return session
 
 
-def request_video(video_id):
+def request_video(session, video_id):
     """Request the video page and initiate download of the video URI."""
 
-    session = login()
     response = session.get(VIDEO_URL.format(video_id), cookies=HTML5_COOKIE)
     response.raise_for_status()
     document = BeautifulSoup(response.text, "html.parser")
@@ -164,13 +144,13 @@ def download_video(session, result):
                 os.makedirs("{0}".format(result["user"]))
                 cond_print(" done.\n")
 
-            filename = "{0}\{1} - {2}.{3}".format(result["user"], video_id, result["title"], result["extension"])
+            filename = "{0}\{1} - {2}.{3}".format(result["user"], result["video"], result["title"], result["extension"])
 
         except (IOError, OSError):
             sys.exit("Unable to open {0} for writing.".format(filename))
 
     else:
-        filename = "{0} - {1}.{2}".format(video_id, result["title"], result["extension"])
+        filename = "{0} - {1}.{2}".format(result["video"], result["title"], result["extension"])
 
     try:
         dl_stream = session.head(result["uri"])
@@ -220,7 +200,7 @@ def download_thumbnail(session, result):
     filename = ""
     if cmdl_opts.use_user_directory:
         filename += "{0}\\".format(result["user"])
-    filename += "{0} - {1}.jpg".format(video_id, result["title"])
+    filename += "{0} - {1}.jpg".format(result["video"], result["title"])
 
     get_thumb = session.get(result["thumb"])
     file = open(filename, "wb")
@@ -236,13 +216,10 @@ def perform_api_request(session, document):
     result = {}
 
     # SMILEVIDEO movies
-    if video_type == "sm":
-        if document.find(id="js-initial-watch-data")["data-api-data"]:
-            params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
+    if document.find(id="js-initial-watch-data"):
+        params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
 
-        else:
-            sys.exit("Failed to collect video paramters.")
-
+        result["video"] = params["video"]["id"]
         result["title"] = params["video"]["title"]
         result["extension"] = params["video"]["movieType"]
         result["user"] = params["owner"]["nickname"].strip(" さん")
@@ -376,12 +353,14 @@ def perform_api_request(session, document):
 
     # NicoMovieMaker movies (SWF)
     # May need conversion to play properly in an external player
-    elif video_type == "nm":
-        if FLASHVARS_RE.search(document.text):
-            params = json.loads(FLASHVARS_RE.search(document.text).group(1))
+    elif FLASHVARS_RE.search(document.text):
+        params = json.loads(FLASHVARS_RE.search(document.text).group(1))
 
-        else:
-            sys.exit("Failed to collect video paramters.")
+        result["video"] = params["videoDetail"]["id"]
+        result["title"] = params["videoDetail"]["title"]
+        result["user"] = params["uploaderInfo"]["nickname"].strip(" さん")
+        result["extension"] = params["flashvars"]["movie_type"]
+        result["thumb"] = params["videoDetail"]["thumbnail"]
 
         video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
         if ("url" in video_url_param):
@@ -390,12 +369,27 @@ def perform_api_request(session, document):
         else:
             sys.exit("Failed to find video URI. Nico may have updated their player.")
 
-        result["title"] = params["videoDetail"]["title"]
-        result["user"] = params["uploaderInfo"]["nickname"].strip(" さん")
-        result["extension"] = params["flashvars"]["movie_type"]
-        result["thumb"] = params["videoDetail"]["thumbnail"]
-
+    else:
+        sys.exit("Failed to collect video paramters.")
 
     return result
 
-request_video(video_id)
+
+if __name__ == '__main__':
+    if cmdl_opts.username is not None:
+        account_username = cmdl_opts.username
+        account_password = cmdl_opts.password
+    if cmdl_opts.username is None:
+        account_username = input("Username: ")
+    if account_password is None:
+        account_password = getpass.getpass("Password: ")
+    if len(cmdl_args) == 0:
+        sys.exit("You must provide a video ID.")
+
+    video_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
+    if video_id_mo is None:
+        sys.exit("Not a valid video ID or URL.")
+    video_id = video_id_mo.group(5)
+
+    session = login(account_username, account_password)
+    request_video(session, video_id)
