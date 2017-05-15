@@ -367,9 +367,9 @@ def perform_api_request(session, document):
             perform_heartbeat(response, session, heartbeat_url)
 
         # Legacy for pre-HTML5 videos
-        elif params["video"]["source"]:
+        elif params["video"]["smileInfo"]:
             cond_print("Using legacy URI.\n")
-            result["uri"] = params["video"]["source"]
+            result["uri"] = params["video"]["smileInfo"]["url"]
 
         else:
             sys.exit("Failed to find video URI. Nico may have updated their player.")
@@ -393,8 +393,9 @@ def perform_api_request(session, document):
         result["title"] = params["videoDetail"]["title"]
         result["user"] = params["uploaderInfo"]["nickname"].strip(" さん")
         result["extension"] = params["flashvars"]["movie_type"]
+        result["thumb"] = params["videoDetail"]["thumbnail"]
+
 
     return result
 
 request_video(video_id)
-sys.exit()
