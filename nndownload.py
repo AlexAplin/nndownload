@@ -27,7 +27,6 @@ LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/watch\/|nico.ms\/)?((sm|nm)*[\d]+)")
-FLASHVARS_RE = re.compile(r"({\"flashvars\".*}){\"current_wall")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 10 * KILOBYTE
@@ -353,8 +352,8 @@ def perform_api_request(session, document):
 
     # NicoMovieMaker movies (SWF)
     # May need conversion to play properly in an external player
-    elif FLASHVARS_RE.search(document.text):
-        params = json.loads(FLASHVARS_RE.search(document.text).group(1))
+    elif document.find(id="watchAPIDataContainer"):
+        params = json.loads(document.find(id="watchAPIDataContainer").text)
 
         result["video"] = params["videoDetail"]["id"]
         result["title"] = params["videoDetail"]["title"]
