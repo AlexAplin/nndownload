@@ -414,7 +414,7 @@ def perform_api_request(session, document):
 
 if __name__ == '__main__':
     if len(cmdl_args) == 0:
-        sys.exit("Error parsing arguments: You must provide a video ID")
+        sys.exit("Error parsing arguments: You must provide a video or mylist ID")
 
     url_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
     if url_id_mo is None:
@@ -426,7 +426,7 @@ if __name__ == '__main__':
 
     if cmdl_opts.netrc:
         if cmdl_opts.username or cmdl_opts.password:
-            cond_print("Ignorning input credentials for .netrc (-n)")
+            cond_print("Ignorning input credentials in favor of .netrc (-n)")
 
         try:
             account_credentials = netrc.netrc().authenticators(HOST)
