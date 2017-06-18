@@ -163,7 +163,7 @@ def download_video(session, result):
         if os.path.isfile(filename):
             current_byte_pos = os.path.getsize(filename)
             if current_byte_pos < video_len:
-                file = open(filename, "ab")
+                file_condition = "ab"
                 resume_header = {"Range": "bytes={}-".format(current_byte_pos)}
                 dl = current_byte_pos
                 cond_print("Resuming previous download.\n")
@@ -173,22 +173,23 @@ def download_video(session, result):
                 return
 
         else:
-            file = open(filename, "wb")
+            file_condition = "wb"
             resume_header = {"Range": "bytes=0-"}
             dl = 0
 
         dl_stream = session.get(result["uri"], headers=resume_header, stream=True)
         dl_stream.raise_for_status()
 
-        start_time = time.time()
-        for block in dl_stream.iter_content(BLOCK_SIZE):
-            dl += len(block)
-            file.write(block)
-            done = int(25 * dl / video_len)
-            percent = int(100 * dl / video_len)
-            speed_str = calculate_speed(start_time, time.time(), dl)
-            cond_print("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
-        file.close()
+        with open(filename, file_condition) as file:
+            start_time = time.time()
+            for block in dl_stream.iter_content(BLOCK_SIZE):
+                dl += len(block)
+                file.write(block)
+                done = int(25 * dl / video_len)
+                percent = int(100 * dl / video_len)
+                speed_str = calculate_speed(start_time, time.time(), dl)
+                cond_print("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
+
         FINISHED_DOWNLOADING = True
 
     except KeyboardInterrupt:
@@ -206,10 +207,10 @@ def download_thumbnail(session, result):
     filename += "{0} - {1}.jpg".format(result["video"], result["title"])
 
     get_thumb = session.get(result["thumb"])
-    file = open(filename, "wb")
-    for block in get_thumb.iter_content(BLOCK_SIZE):
-        file.write(block)
-    file.close()
+    with open(filename, "wb") as file:
+        for block in get_thumb.iter_content(BLOCK_SIZE):
+            file.write(block)
+
     cond_print(" done.\n")
 
 
@@ -224,9 +225,9 @@ def download_comments(session, result):
     filename += "{0} - {1}.xml".format(result["video"], result["title"])
 
     get_comments = session.post(COMMENTS_API, COMMENTS_POST.format(result["thread_id"]))
-    file = open(filename, "wb")
-    file.write(get_comments.content)
-    file.close()
+    with open(filename, "wb") as file:
+        file.write(get_comments.content)
+
     cond_print(" done.\n")
 
 
