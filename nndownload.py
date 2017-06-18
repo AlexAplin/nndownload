@@ -26,6 +26,8 @@ __version__ = "0.9"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
+COMMENTS_API = "http://nmsg.nicovideo.jp/api"
+COMMENTS_POST = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/watch\/|nico.ms\/)?((sm|nm)*[\d]+)")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
@@ -45,6 +47,7 @@ cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", 
 cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
 cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
 cmdl_parser.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
+cmdl_parser.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
 
@@ -88,7 +91,8 @@ def request_video(session, video_id):
     download_video(session, result)
     if cmdl_opts.download_thumbnail:
         download_thumbnail(session, result)
-
+    if cmdl_opts.download_comments:
+        download_comments(session, result)
 
 def perform_heartbeat(response, session, heartbeat_url):
     """Perform a response heartbeat to keep the download connection alive."""
@@ -209,6 +213,23 @@ def download_thumbnail(session, result):
     cond_print(" done.\n")
 
 
+def download_comments(session, result):
+    """Download the video comments."""
+
+    cond_print("Downloading comments...")
+
+    filename = ""
+    if cmdl_opts.use_user_directory:
+        filename += "{0}\\".format(result["user"])
+    filename += "{0} - {1}.xml".format(result["video"], result["title"])
+
+    get_comments = session.post(COMMENTS_API, COMMENTS_POST.format(result["thread_id"]))
+    file = open(filename, "wb")
+    file.write(get_comments.content)
+    file.close()
+    cond_print(" done.\n")
+
+
 def perform_api_request(session, document):
     """Collect parameters from video document and build API request"""
 
@@ -223,6 +244,7 @@ def perform_api_request(session, document):
         result["extension"] = params["video"]["movieType"]
         result["user"] = params["owner"]["nickname"].strip(" さん")
         result["thumb"] = params["video"]["thumbnailURL"]
+        result["thread_id"] = params["thread"]["ids"]["default"]
 
         # Economy mode (low quality)
         if not params["video"]["dmcInfo"] and "low" in params["video"]["smileInfo"]["url"]:
@@ -360,6 +382,7 @@ def perform_api_request(session, document):
         result["user"] = params["uploaderInfo"]["nickname"].strip(" さん")
         result["extension"] = params["flashvars"]["movie_type"]
         result["thumb"] = params["videoDetail"]["thumbnail"]
+        result["thread_id"] = params["videoDetail"]["thread_id"]
 
         video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
         if ("url" in video_url_param):
