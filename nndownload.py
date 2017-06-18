@@ -16,6 +16,7 @@ import sys
 import threading
 import getpass
 import time
+import netrc
 
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2016 Alex Aplin"
@@ -23,6 +24,7 @@ __copyright__ = "Copyright 2016 Alex Aplin"
 __license__ = "MIT"
 __version__ = "0.9"
 
+HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
@@ -48,6 +50,7 @@ cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", 
 cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
 cmdl_parser.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 cmdl_parser.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
+cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
 cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
 
@@ -399,13 +402,6 @@ def perform_api_request(session, document):
 
 
 if __name__ == '__main__':
-    if cmdl_opts.username is not None:
-        account_username = cmdl_opts.username
-        account_password = cmdl_opts.password
-    if cmdl_opts.username is None:
-        account_username = input("Username: ")
-    if account_password is None:
-        account_password = getpass.getpass("Password: ")
     if len(cmdl_args) == 0:
         sys.exit("You must provide a video ID.")
 
@@ -413,6 +409,29 @@ if __name__ == '__main__':
     if video_id_mo is None:
         sys.exit("Not a valid video ID or URL.")
     video_id = video_id_mo.group(5)
+
+    account_username = cmdl_opts.username
+    account_password = cmdl_opts.password
+
+    if cmdl_opts.netrc:
+        if cmdl_opts.username or cmdl_opts.password:
+            cond_print("Ignorning input credentials for .netrc (-n).")
+
+        try:
+            account_credentials = netrc.netrc().authenticators(HOST)
+            if account_credentials is not None:
+                account_username = account_credentials[0]
+                account_password = account_credentials[2]
+            else:
+                sys.exit("No authenticator available for {}.".format(HOST))
+
+        except (IOError, netrc.NetrcParseError):
+            sys.exit("Error parsing .netrc.")
+
+    if account_username is None:
+        account_username = getpass.getpass("Username: ")
+    if account_password is None:
+        account_password = getpass.getpass("Password: ")
 
     session = login(account_username, account_password)
     request_video(session, video_id)
