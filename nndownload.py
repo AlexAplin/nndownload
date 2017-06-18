@@ -79,7 +79,7 @@ def login(username, password):
     response.raise_for_status()
     if session.cookies.get_dict().get("user_session", None) is None:
         cond_print(" failed.\n")
-        sys.exit("Failed to login. Please verify your username and password.")
+        sys.exit("Error: Failed to login. Please verify your username and password")
     cond_print(" done.\n")
     return session
 
@@ -111,7 +111,7 @@ def perform_heartbeat(response, session, heartbeat_url):
             time.sleep(1)
 
     except (KeyboardInterrupt, SystemExit):
-        sys.exit("Got interrupt request.")
+        sys.exit("Caught interrupt request")
 
 
 def format_bytes(number_bytes):
@@ -128,7 +128,7 @@ def format_bytes(number_bytes):
         return "{0:.2f}{1}B".format(converted, suffix)
 
     except IndexError:
-        sys.exit("Error formatting number of bytes.")
+        sys.exit("Error: Could not format number of bytes")
 
 
 def calculate_speed(start, now, bytes):
@@ -153,7 +153,7 @@ def download_video(session, result):
             filename = "{0}\{1} - {2}.{3}".format(result["user"], result["video"], result["title"], result["extension"])
 
         except (IOError, OSError):
-            sys.exit("Unable to open {0} for writing.".format(filename))
+            sys.exit("Error downloading video: Unable to open {0} for writing".format(filename))
 
     else:
         filename = "{0} - {1}.{2}".format(result["video"], result["title"], result["extension"])
@@ -374,7 +374,7 @@ def perform_api_request(session, document):
             result["uri"] = params["video"]["smileInfo"]["url"]
 
         else:
-            sys.exit("Failed to find video URI. Nico may have updated their player.")
+            sys.exit("Error collecting parameters: Failed to find video URI. Nico may have updated their player")
 
     # NicoMovieMaker movies (SWF)
     # May need conversion to play properly in an external player
@@ -393,21 +393,21 @@ def perform_api_request(session, document):
             result["uri"] = video_url_param["url"][0]
 
         else:
-            sys.exit("Failed to find video URI. Nico may have updated their player.")
+            sys.exit("Error collecting parameters: Failed to find video URI. Nico may have updated their player")
 
     else:
-        sys.exit("Failed to collect video paramters.")
+        sys.exit("Error collecting parameters: Failed to collect video paramters")
 
     return result
 
 
 if __name__ == '__main__':
     if len(cmdl_args) == 0:
-        sys.exit("You must provide a video ID.")
+        sys.exit("Error parsing arguments: You must provide a video ID")
 
     video_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
     if video_id_mo is None:
-        sys.exit("Not a valid video ID or URL.")
+        sys.exit("Error parsing arguments: Not a valid video ID or URL")
     video_id = video_id_mo.group(5)
 
     account_username = cmdl_opts.username
@@ -423,10 +423,10 @@ if __name__ == '__main__':
                 account_username = account_credentials[0]
                 account_password = account_credentials[2]
             else:
-                sys.exit("No authenticator available for {}.".format(HOST))
+                sys.exit("Error parsing .netrc: No authenticator available for {}".format(HOST))
 
-        except (IOError, netrc.NetrcParseError):
-            sys.exit("Error parsing .netrc.")
+        except (IOError, netrc.NetrcParseError) as error:
+            sys.exit("Error parsing .netrc: {}".format(error))
 
     if account_username is None:
         account_username = getpass.getpass("Username: ")
