@@ -28,9 +28,10 @@ HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
+MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}" 
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
-VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/watch\/|nico.ms\/)?((sm|nm)*[\d]+)")
+VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/(watch|mylist)\/|nico.ms\/)?((sm|nm)*[\d]+)")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 10 * KILOBYTE
@@ -50,6 +51,7 @@ cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", 
 cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
 cmdl_parser.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 cmdl_parser.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
+cmdl_parser.add_option("-m", "--mylist", action="store_true", dest="mylist", help="indicate that id is a mylist")
 cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
 cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
@@ -193,6 +195,7 @@ def download_video(session, result):
                 speed_str = calculate_speed(start_time, time.time(), dl)
                 cond_print("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
 
+        cond_print("\n")
         FINISHED_DOWNLOADING = True
 
     except KeyboardInterrupt:
@@ -232,6 +235,14 @@ def download_comments(session, result):
         file.write(get_comments.content)
 
     cond_print(" done.\n")
+
+
+def download_mylist(session, mylist_id):
+    mylist = session.get(MYLIST_API.format(mylist_id))
+    mylist_json = json.loads(mylist.text)
+    for index, item in enumerate(mylist_json["items"]):
+        cond_print("{0}/{1}\n".format(index, len(mylist_json["items"])))
+        request_video(session, item["video_id"])
 
 
 def perform_api_request(session, document):
@@ -407,8 +418,8 @@ if __name__ == '__main__':
 
     video_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
     if video_id_mo is None:
-        sys.exit("Error parsing arguments: Not a valid video ID or URL")
-    video_id = video_id_mo.group(5)
+        sys.exit("Error parsing arguments: Not a valid video or mylist ID")
+    url_id = video_id_mo.group(6)
 
     account_username = cmdl_opts.username
     account_password = cmdl_opts.password
@@ -434,4 +445,7 @@ if __name__ == '__main__':
         account_password = getpass.getpass("Password: ")
 
     session = login(account_username, account_password)
-    request_video(session, video_id)
+    if cmdl_opts.mylist or video_id_mo.group(5) == "mylist":
+        download_mylist(session, url_id)
+    else:
+        request_video(session, url_id)
