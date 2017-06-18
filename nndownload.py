@@ -43,7 +43,7 @@ HTML5_COOKIE = {
     "watch_html5": "1"
     }
 
-cmdl_usage = "%prog [options] video_id"
+cmdl_usage = "%prog [options] url_id"
 cmdl_version = __version__
 cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conflict_handler="resolve")
 cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
@@ -80,9 +80,9 @@ def login(username, password):
     response = session.post(LOGIN_URL, data=LOGIN_POST)
     response.raise_for_status()
     if session.cookies.get_dict().get("user_session", None) is None:
-        cond_print(" failed.\n")
+        cond_print(" failed\n")
         sys.exit("Error: Failed to login. Please verify your username and password")
-    cond_print(" done.\n")
+    cond_print(" done\n")
     return session
 
 
@@ -150,7 +150,7 @@ def download_video(session, result):
             if not os.path.exists("{0}".format(result["user"])):
                 cond_print("Making directory for {0}...".format(result["user"]))
                 os.makedirs("{0}".format(result["user"]))
-                cond_print(" done.\n")
+                cond_print(" done\n")
 
             filename = "{0}\{1} - {2}.{3}".format(result["user"], result["video"], result["title"], result["extension"])
 
@@ -171,7 +171,7 @@ def download_video(session, result):
                 file_condition = "ab"
                 resume_header = {"Range": "bytes={}-".format(current_byte_pos)}
                 dl = current_byte_pos
-                cond_print("Resuming previous download.\n")
+                cond_print("Resuming previous download...\n")
 
             elif current_byte_pos >= video_len:
                 cond_print("File exists and is complete. Skipping...\n")
@@ -217,7 +217,7 @@ def download_thumbnail(session, result):
         for block in get_thumb.iter_content(BLOCK_SIZE):
             file.write(block)
 
-    cond_print(" done.\n")
+    cond_print(" done\n")
 
 
 def download_comments(session, result):
@@ -234,7 +234,7 @@ def download_comments(session, result):
     with open(filename, "wb") as file:
         file.write(get_comments.content)
 
-    cond_print(" done.\n")
+    cond_print(" done\n")
 
 
 def download_mylist(session, mylist_id):
@@ -263,7 +263,7 @@ def perform_api_request(session, document):
 
         # Economy mode (low quality)
         if not params["video"]["dmcInfo"] and "low" in params["video"]["smileInfo"]["url"]:
-            cond_print("Currently in economy mode. Using low quality source.\n")
+            cond_print("Currently in economy mode. Using low quality source\n")
             result["uri"] = params["video"]["smileInfo"]["url"]
 
         # HTML5 request
@@ -371,7 +371,7 @@ def perform_api_request(session, document):
             response.raise_for_status()
             response = xml.dom.minidom.parseString(response.text)
             result["uri"] = response.getElementsByTagName("content_uri")[0].firstChild.nodeValue
-            cond_print(" done.\n")
+            cond_print(" done\n")
 
             # Collect response for heartbeat
             session_id = response.getElementsByTagName("id")[0].firstChild.nodeValue
@@ -381,7 +381,7 @@ def perform_api_request(session, document):
 
         # Legacy for pre-HTML5 videos
         elif params["video"]["smileInfo"]:
-            cond_print("Using legacy URI.\n")
+            cond_print("Using legacy URI\n")
             result["uri"] = params["video"]["smileInfo"]["url"]
 
         else:
@@ -416,8 +416,8 @@ if __name__ == '__main__':
     if len(cmdl_args) == 0:
         sys.exit("Error parsing arguments: You must provide a video ID")
 
-    video_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
-    if video_id_mo is None:
+    url_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
+    if url_id_mo is None:
         sys.exit("Error parsing arguments: Not a valid video or mylist ID")
     url_id = video_id_mo.group(6)
 
@@ -426,7 +426,7 @@ if __name__ == '__main__':
 
     if cmdl_opts.netrc:
         if cmdl_opts.username or cmdl_opts.password:
-            cond_print("Ignorning input credentials for .netrc (-n).")
+            cond_print("Ignorning input credentials for .netrc (-n)")
 
         try:
             account_credentials = netrc.netrc().authenticators(HOST)

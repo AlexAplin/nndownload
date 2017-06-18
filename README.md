@@ -11,7 +11,7 @@ NNDownload allows you to download videos from [Niconico](http://nicovideo.jp), f
 
 ## Usage
 ```
-Usage: nndownload.py [options] video_id
+Usage: nndownload.py [options] url_id
 
 Options:
   --version             show program's version number and exit
@@ -24,6 +24,10 @@ Options:
                         save video to user directory
   -t, --download-thumbnail
                         download video thumbnail
+  -c, --download-comments
+                        download video comments
+  -m, --mylist          indicate that id is a mylist
+  -n, --netrc           use .netrc authentication
   -v, --verbose         print status to console
 ```
 
