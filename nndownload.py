@@ -102,18 +102,13 @@ def request_video(session, video_id):
 def perform_heartbeat(response, session, heartbeat_url):
     """Perform a response heartbeat to keep the download connection alive."""
 
-    try:
-        response = session.post(heartbeat_url, data=response.toxml())
-        response.raise_for_status()
-        response = xml.dom.minidom.parseString(response.text).getElementsByTagName("session")[0]
-        if not FINISHED_DOWNLOADING:
-            heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (response, session, heartbeat_url))
-            heartbeat_timer.daemon = True
-            heartbeat_timer.start()
-            time.sleep(1)
-
-    except (KeyboardInterrupt, SystemExit):
-        sys.exit("Caught interrupt request")
+    response = session.post(heartbeat_url, data=response.toxml())
+    response.raise_for_status()
+    response = xml.dom.minidom.parseString(response.text).getElementsByTagName("session")[0]
+    if not FINISHED_DOWNLOADING:
+        heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (response, session, heartbeat_url))
+        heartbeat_timer.daemon = True
+        heartbeat_timer.start()
 
 
 def format_bytes(number_bytes):
