@@ -268,7 +268,7 @@ def perform_api_request(session, document):
 
         # HTML5 request
         elif params["video"]["dmcInfo"]:
-            api_url = params["video"]["dmcInfo"]["session_api"]["api_urls"][0] + "?suppress_response_codes=true&_format=xml"
+            api_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "?suppress_response_codes=true&_format=xml"
             recipe_id = params["video"]["dmcInfo"]["session_api"]["recipe_id"]
             content_id = params["video"]["dmcInfo"]["session_api"]["content_id"]
             protocol = params["video"]["dmcInfo"]["session_api"]["protocols"][0]
@@ -376,7 +376,7 @@ def perform_api_request(session, document):
             # Collect response for heartbeat
             session_id = response.getElementsByTagName("id")[0].firstChild.nodeValue
             response = response.getElementsByTagName("session")[0]
-            heartbeat_url = params["video"]["dmcInfo"]["session_api"]["api_urls"][0] + "/" + session_id + "?_format=xml&_method=PUT"
+            heartbeat_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
             perform_heartbeat(response, session, heartbeat_url)
 
         # Legacy for pre-HTML5 videos
