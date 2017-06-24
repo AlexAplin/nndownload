@@ -137,23 +137,29 @@ def calculate_speed(start, now, bytes):
     return format_bytes(bytes / dif)
 
 
-def download_video(session, result):
-    """Download video from response URI and display progress."""
+def create_filename(result):
+    """Create filename from result parameters."""
 
     if cmdl_opts.use_user_directory:
         try:
-            if not os.path.exists("{0}".format(result["user"])):
+            if not os.path.exists(result["user"]):
                 cond_print("Making directory for {0}...".format(result["user"]))
-                os.makedirs("{0}".format(result["user"]))
+                os.makedirs(result["user"])
                 cond_print(" done\n")
 
-            filename = "{0}\{1} - {2}.{3}".format(result["user"], result["video"], result["title"], result["extension"])
+            return "{0}\{1} - {2}.{3}".format(result["user"], result["video"], result["title"], result["extension"])
 
         except (IOError, OSError):
-            sys.exit("Error downloading video: Unable to open {0} for writing".format(filename))
+            sys.exit("Error downloading video: Unable to create directory for {0}".format(result["user"]))
 
     else:
-        filename = "{0} - {1}.{2}".format(result["video"], result["title"], result["extension"])
+        return "{0} - {1}.{2}".format(result["video"], result["title"], result["extension"])
+
+
+def download_video(session, result):
+    """Download video from response URI and display progress."""
+
+    filename = create_filename(result)
 
     try:
         dl_stream = session.head(result["uri"])
@@ -202,10 +208,8 @@ def download_thumbnail(session, result):
 
     cond_print("Downloading thumbnail...")
 
-    filename = ""
-    if cmdl_opts.use_user_directory:
-        filename += "{0}\\".format(result["user"])
-    filename += "{0} - {1}.jpg".format(result["video"], result["title"])
+    result["extension"] = "jpg"
+    filename = create_filename(result)
 
     get_thumb = session.get(result["thumb"])
     with open(filename, "wb") as file:
@@ -220,10 +224,8 @@ def download_comments(session, result):
 
     cond_print("Downloading comments...")
 
-    filename = ""
-    if cmdl_opts.use_user_directory:
-        filename += "{0}\\".format(result["user"])
-    filename += "{0} - {1}.xml".format(result["video"], result["title"])
+    result["extension"] = "xml"
+    filename = create_filename(result)
 
     get_comments = session.post(COMMENTS_API, COMMENTS_POST.format(result["thread_id"]))
     with open(filename, "wb") as file:
