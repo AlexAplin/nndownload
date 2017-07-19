@@ -56,6 +56,7 @@ cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help=
 cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
 
+
 def cond_print(string):
     """Print status to console if verbose flag is set."""
 
@@ -98,6 +99,7 @@ def request_video(session, video_id):
         download_thumbnail(session, result)
     if cmdl_opts.download_comments:
         download_comments(session, result)
+
 
 def perform_heartbeat(response, session, heartbeat_url):
     """Perform a response heartbeat to keep the download connection alive."""
@@ -235,6 +237,8 @@ def download_comments(session, result):
 
 
 def download_mylist(session, mylist_id):
+    """Download videos associated with a mylist."""
+
     mylist = session.get(MYLIST_API.format(mylist_id))
     mylist_json = json.loads(mylist.text)
     for index, item in enumerate(mylist_json["items"]):
@@ -243,7 +247,7 @@ def download_mylist(session, mylist_id):
 
 
 def perform_api_request(session, document):
-    """Collect parameters from video document and build API request"""
+    """Collect parameters from video document and build API request."""
 
     result = {}
 
