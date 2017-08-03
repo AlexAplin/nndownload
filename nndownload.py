@@ -255,6 +255,9 @@ def perform_api_request(session, document):
     if document.find(id="js-initial-watch-data"):
         params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
 
+        if params["video"]["isDeleted"]:
+            sys.exit("Video was deleted. Exiting...\n")
+
         result["video"] = params["video"]["id"]
         result["title"] = params["video"]["title"]
         result["extension"] = params["video"]["movieType"]
@@ -262,13 +265,8 @@ def perform_api_request(session, document):
         result["thumb"] = params["video"]["thumbnailURL"]
         result["thread_id"] = params["thread"]["ids"]["default"]
 
-        # Economy mode (low quality)
-        if not params["video"]["dmcInfo"] and "low" in params["video"]["smileInfo"]["url"]:
-            cond_print("Currently in economy mode. Using low quality source\n")
-            result["uri"] = params["video"]["smileInfo"]["url"]
-
         # HTML5 request
-        elif params["video"]["dmcInfo"]:
+        if params["video"].get("dmcInfo"):
             api_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "?suppress_response_codes=true&_format=xml"
             recipe_id = params["video"]["dmcInfo"]["session_api"]["recipe_id"]
             content_id = params["video"]["dmcInfo"]["session_api"]["content_id"]
@@ -381,8 +379,8 @@ def perform_api_request(session, document):
             perform_heartbeat(response, session, heartbeat_url)
 
         # Legacy for pre-HTML5 videos
-        elif params["video"]["smileInfo"]:
-            cond_print("Using legacy URI\n")
+        elif params["video"].get("smileInfo"):
+            cond_print("Using legacy URI...\n")
             result["uri"] = params["video"]["smileInfo"]["url"]
 
         else:
@@ -392,6 +390,9 @@ def perform_api_request(session, document):
     # May need conversion to play properly in an external player
     elif document.find(id="watchAPIDataContainer"):
         params = json.loads(document.find(id="watchAPIDataContainer").text)
+
+        if params["videoDetail"]["isDeleted"]:
+            sys.exit("Video was deleted. Exiting...\n")
 
         result["video"] = params["videoDetail"]["id"]
         result["title"] = params["videoDetail"]["title"]
