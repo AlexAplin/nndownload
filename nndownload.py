@@ -31,7 +31,7 @@ THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
-VIDEO_URL_RE = re.compile(r"(^|(http:\/\/)?(www.)?)(nicovideo.jp\/(watch|mylist)\/|nico.ms\/)?((sm|nm)*[\d]+)")
+VIDEO_URL_RE = re.compile(r"^(?:https?://(?:(?:sp\.|www\.)?(?:nicovideo\.jp/(watch|mylist)/)|nico\.ms/))?((?:[a-z]{2})?[0-9]+)")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 10 * KILOBYTE
@@ -421,7 +421,7 @@ if __name__ == '__main__':
     url_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
     if url_id_mo is None:
         sys.exit("Error parsing arguments: Not a valid video or mylist ID")
-    url_id = url_id_mo.group(6)
+    url_id = url_id_mo.group(2)
 
     account_username = cmdl_opts.username
     account_password = cmdl_opts.password
@@ -447,7 +447,7 @@ if __name__ == '__main__':
         account_password = getpass.getpass("Password: ")
 
     session = login(account_username, account_password)
-    if cmdl_opts.mylist or url_id_mo.group(5) == "mylist":
+    if cmdl_opts.mylist or url_id_mo.group(1) == "mylist":
         download_mylist(session, url_id)
     else:
         request_video(session, url_id)
