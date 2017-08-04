@@ -142,6 +142,8 @@ def calculate_speed(start, now, bytes):
 def create_filename(result):
     """Create filename from result parameters."""
 
+    base_path = "{0} - {1}.{2}".format(result["video"], result["title"], result["extension"])
+
     if cmdl_opts.use_user_directory:
         try:
             if not os.path.exists(result["user"]):
@@ -149,13 +151,13 @@ def create_filename(result):
                 os.makedirs(result["user"])
                 cond_print(" done\n")
 
-            return "{0}\{1} - {2}.{3}".format(result["user"], result["video"], result["title"], result["extension"])
+            return os.path.join(result["user"], base_path)
 
         except (IOError, OSError):
             sys.exit("Error downloading video: Unable to create directory for {0}".format(result["user"]))
 
     else:
-        return "{0} - {1}.{2}".format(result["video"], result["title"], result["extension"])
+        return base_path
 
 
 def download_video(session, result):
