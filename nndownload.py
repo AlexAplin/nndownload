@@ -48,12 +48,16 @@ cmdl_version = __version__
 cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conflict_handler="resolve")
 cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
 cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
-cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
-cmdl_parser.add_option("-m", "--download-metadata", action="store_true", dest="download_metadata", help="download video metadata")
-cmdl_parser.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
-cmdl_parser.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
 cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
+
+dl_group = optparse.OptionGroup(cmdl_parser, "Download Options")
+dl_group.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
+dl_group.add_option("-m", "--download-metadata", action="store_true", dest="download_metadata", help="download video metadata")
+dl_group.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
+dl_group.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
+
+cmdl_parser.add_option_group(dl_group)
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
 
 

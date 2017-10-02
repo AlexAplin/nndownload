@@ -20,15 +20,18 @@ Options:
                         account username
   -p PASSWORD, --password=PASSWORD
                         account password
-  -d, --save-to-user-directory
-                        save video to user directory
-  -t, --download-thumbnail
-                        download video thumbnail
-  -c, --download-comments
-                        download video comments
-  -m, --mylist          indicate that id is a mylist
   -n, --netrc           use .netrc authentication
   -v, --verbose         print status to console
+
+  Download Options:
+    -d, --save-to-user-directory
+                        save video to user directory
+    -m, --download-metadata
+                        download video metadata
+    -t, --download-thumbnail
+                        download video thumbnail
+    -c, --download-comments
+                        download video comments
 ```
 
 ## Known Bugs
