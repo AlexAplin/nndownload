@@ -31,7 +31,7 @@ THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
-VIDEO_URL_RE = re.compile(r"^(?:https?://(?:(?:sp\.|www\.)?(?:nicovideo\.jp/(watch|mylist)/)|nico\.ms/))?((?:[a-z]{2})?[0-9]+)")
+VIDEO_URL_RE = re.compile(r"^(?:https?://(?:(?:sp\.|www\.)?(?:nicovideo\.jp/(watch|mylist)/)|nico\.ms/))((?:[a-z]{2})?[0-9]+)")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 10 * KILOBYTE
@@ -51,7 +51,6 @@ cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", 
 cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
 cmdl_parser.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 cmdl_parser.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
-cmdl_parser.add_option("-m", "--mylist", action="store_true", dest="mylist", help="indicate that id is a mylist")
 cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
 cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
@@ -416,13 +415,13 @@ def perform_api_request(session, document):
     return result
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if len(cmdl_args) == 0:
-        sys.exit("Error parsing arguments: You must provide a video or mylist ID")
+        sys.exit("Error parsing arguments: You must provide a video or mylist URL")
 
     url_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
     if url_id_mo is None:
-        sys.exit("Error parsing arguments: Not a valid video or mylist ID")
+        sys.exit("Error parsing arguments: Not a valid video or mylist URL")
     url_id = url_id_mo.group(2)
 
     account_username = cmdl_opts.username
@@ -449,7 +448,7 @@ if __name__ == '__main__':
         account_password = getpass.getpass("Password: ")
 
     session = login(account_username, account_password)
-    if cmdl_opts.mylist or url_id_mo.group(1) == "mylist":
+    if url_id_mo.group(1) == "mylist":
         download_mylist(session, url_id)
     else:
         request_video(session, url_id)
