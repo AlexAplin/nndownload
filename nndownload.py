@@ -49,6 +49,7 @@ cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conf
 cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
 cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
 cmdl_parser.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
+cmdl_parser.add_option("-m", "--download-metadata", action="store_true", dest="download_metadata", help="download video metadata")
 cmdl_parser.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 cmdl_parser.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
@@ -93,11 +94,15 @@ def request_video(session, video_id):
     response.raise_for_status()
     document = BeautifulSoup(response.text, "html.parser")
     result = perform_api_request(session, document)
-    download_video(session, result)
+    base_path = create_filename(result)
+
+    download_video(session, base_path, result)
+    if cmdl_opts.download_metadata:
+        download_metadata(base_path, result)
     if cmdl_opts.download_thumbnail:
-        download_thumbnail(session, result)
+        download_thumbnail(session, base_path, result)
     if cmdl_opts.download_comments:
-        download_comments(session, result)
+        download_comments(session, base_path, result)
 
 
 def perform_heartbeat(response, session, heartbeat_url):
@@ -139,9 +144,9 @@ def calculate_speed(start, now, bytes):
 
 
 def create_filename(result):
-    """Create filename from result parameters."""
+    """Create base filename from result parameters."""
 
-    base_path = "{0} - {1}.{2}".format(result["video"], result["title"], result["extension"])
+    base_path = "{0} - {1}.".format(result["video"], result["title"])
 
     if cmdl_opts.use_user_directory:
         try:
@@ -159,10 +164,10 @@ def create_filename(result):
         return base_path
 
 
-def download_video(session, result):
+def download_video(session, base_path, result):
     """Download video from response URI and display progress."""
 
-    filename = create_filename(result)
+    filename = base_path + result["extension"]
 
     try:
         dl_stream = session.head(result["uri"])
@@ -206,13 +211,25 @@ def download_video(session, result):
         sys.exit()
 
 
-def download_thumbnail(session, result):
+def download_metadata(base_path, result):
+    """Download the video metadata."""
+
+    cond_print("Downloading metadata...")
+
+    filename = base_path + "json"
+
+    with open(filename, 'w') as file:
+        json.dump(result["json"], file)
+
+    cond_print(" done\n")
+
+
+def download_thumbnail(session, base_path, result):
     """Download the video thumbnail."""
 
     cond_print("Downloading thumbnail...")
 
-    result["extension"] = "jpg"
-    filename = create_filename(result)
+    filename = base_path + "jpg"
 
     get_thumb = session.get(result["thumb"])
     with open(filename, "wb") as file:
@@ -222,13 +239,12 @@ def download_thumbnail(session, result):
     cond_print(" done\n")
 
 
-def download_comments(session, result):
+def download_comments(session, base_path, result):
     """Download the video comments."""
 
     cond_print("Downloading comments...")
 
-    result["extension"] = "xml"
-    filename = create_filename(result)
+    filename = base_path + "xml"
 
     get_comments = session.post(COMMENTS_API, COMMENTS_POST.format(result["thread_id"]))
     with open(filename, "wb") as file:
@@ -261,6 +277,7 @@ def perform_api_request(session, document):
 
         result["video"] = params["video"]["id"]
         result["title"] = params["video"]["title"]
+        result["json"] = params
         result["extension"] = params["video"]["movieType"]
         result["user"] = params["owner"]["nickname"].strip(" さん")
         result["thumb"] = params["video"]["thumbnailURL"]
@@ -397,6 +414,7 @@ def perform_api_request(session, document):
 
         result["video"] = params["videoDetail"]["id"]
         result["title"] = params["videoDetail"]["title"]
+        result["json"] = params
         result["user"] = params["uploaderInfo"]["nickname"].strip(" さん")
         result["extension"] = params["flashvars"]["movie_type"]
         result["thumb"] = params["videoDetail"]["thumbnail"]
