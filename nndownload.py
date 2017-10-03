@@ -5,6 +5,7 @@
 from bs4 import BeautifulSoup
 import requests
 
+from itertools import tee
 import json
 import math
 import xml.dom.minidom
@@ -17,6 +18,7 @@ import threading
 import getpass
 import time
 import netrc
+import subprocess
 
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2016 Alex Aplin"
@@ -27,11 +29,12 @@ __version__ = "0.9"
 HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
+NAMA_API = "http://watch.live.nicovideo.jp/api/getplayerstatus?v={0}"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
-VIDEO_URL_RE = re.compile(r"^(?:https?://(?:(?:sp\.|www\.)?(?:nicovideo\.jp/(watch|mylist)/)|nico\.ms/))((?:[a-z]{2})?[0-9]+)")
+VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?)\.)?(?:(?:nicovideo\.jp/(watch|mylist)/)|nico\.ms/)))((?:[a-z]{2})?[0-9]+)")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 10 * KILOBYTE
@@ -95,6 +98,44 @@ def login(username, password):
 
     cond_print(" done\n")
     return session
+
+
+def pairwise(iterable):
+    """Helper method to pair RTMP URI with stream label."""
+
+    a, b = tee(iterable)
+    next(b, None)
+    return zip(a, b)
+
+
+def request_rtmp(session, nama_id):
+    """Build and print the RTMP URI of an official live Niconama stream."""
+
+    cond_print("Warning: Niconama support is still experimental\n")
+
+    nama_info = xml.dom.minidom.parseString(session.get(NAMA_API.format(nama_id)).text)
+    if nama_info.getElementsByTagName("error"):
+        sys.exit("Error: Stream is not available")
+
+    urls = urllib.parse.unquote(nama_info.getElementsByTagName("contents")[0].firstChild.nodeValue).split(',')
+    is_premium = nama_info.getElementsByTagName("is_premium")[0].firstChild.nodeValue
+    provider_type = nama_info.getElementsByTagName("provider_type")[0].firstChild.nodeValue
+    if provider_type == "official":
+        for details, stream_name in pairwise(urls):
+            split = details.split(":", maxsplit=1)
+            if (is_premium and split[0] == "premium") or ((not is_premium or provider_type == "official") and (split[0] == "default" or split[0] == "limelight")):
+                url = split[1] + "/" + stream_name
+                break
+
+        if not url:
+            sys.exit("Error: RTMP URI not found")
+    else:
+        sys.exit("Error: Channel streams are not yet supported")
+
+    for stream in nama_info.getElementsByTagName("stream"):
+        if stream.getAttribute('name') == stream_name:
+            rtmp = url + '?' + stream.firstChild.nodeValue
+            cond_print(rtmp)
 
 
 def request_video(session, video_id):
@@ -467,7 +508,7 @@ if __name__ == "__main__":
     url_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
     if url_id_mo is None:
         sys.exit("Error parsing arguments: Not a valid video or mylist URL")
-    url_id = url_id_mo.group(2)
+    url_id = url_id_mo.group(3)
 
     account_username = cmdl_opts.username
     account_password = cmdl_opts.password
@@ -493,7 +534,9 @@ if __name__ == "__main__":
         account_password = getpass.getpass("Password: ")
 
     session = login(account_username, account_password)
-    if url_id_mo.group(1) == "mylist":
+    if url_id_mo.group(2) == "mylist":
         download_mylist(session, url_id)
+    if url_id_mo.group(1):
+        request_rtmp(session, url_id)
     else:
         request_video(session, url_id)
