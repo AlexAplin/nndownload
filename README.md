@@ -1,5 +1,5 @@
-# NNDownload
-NNDownload allows you to download videos from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Filenames are formatted to include the video ID, title, and optionally the uploader username. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST).
+# nndownload
+nndownload allows you to download videos from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Filenames are formatted to include the video ID, title, and optionally the uploader username. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). Niconama (live stream) support is still experimental.
 
 ## Requirements
 ### Python version
@@ -26,6 +26,8 @@ Options:
   Download Options:
     -d, --save-to-user-directory
                         save video to user directory
+    -f, --force-high-quality
+                        only download if the high quality source is available
     -m, --download-metadata
                         download video metadata
     -t, --download-thumbnail
