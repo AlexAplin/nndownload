@@ -43,6 +43,10 @@ HTML5_COOKIE = {
     "watch_html5": "1"
     }
 
+FLASH_COOKIE = {
+    "watch_flash": "1"
+    }
+
 cmdl_usage = "%prog [options] url_id"
 cmdl_version = __version__
 cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conflict_handler="resolve")
@@ -94,7 +98,16 @@ def login(username, password):
 def request_video(session, video_id):
     """Request the video page and initiate download of the video URI."""
 
-    response = session.get(VIDEO_URL.format(video_id), cookies=HTML5_COOKIE)
+    # Determine whether to request the Flash or HTML5 player
+    # Only .mp4 videos are served on the HTML5 player, so we can miss the high quality .flv source
+    video_info = session.get(THUMB_INFO_API.format(video_id))
+    video_type = xml.dom.minidom.parseString(video_info.text).getElementsByTagName("movie_type")[0]
+
+    if video_type is "swf" or "flv":
+        response = session.get(VIDEO_URL.format(video_id), cookies=FLASH_COOKIE)
+    elif video_type is "mp4":
+        response = session.get(VIDEO_URL.format(video_id), cookies=HTML5_COOKIE)
+
     response.raise_for_status()
     document = BeautifulSoup(response.text, "html.parser")
     result = perform_api_request(session, document)
@@ -272,7 +285,7 @@ def perform_api_request(session, document):
 
     result = {}
 
-    # SMILEVIDEO movies
+    # .mp4 videos (HTML5)
     if document.find(id="js-initial-watch-data"):
         params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
 
@@ -287,7 +300,7 @@ def perform_api_request(session, document):
         result["thumb"] = params["video"]["thumbnailURL"]
         result["thread_id"] = params["thread"]["ids"]["default"]
 
-        # HTML5 request
+        # Perform request to Dwango Media Cluster (DMC)
         if params["video"].get("dmcInfo"):
             api_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "?suppress_response_codes=true&_format=xml"
             recipe_id = params["video"]["dmcInfo"]["session_api"]["recipe_id"]
@@ -304,7 +317,7 @@ def perform_api_request(session, document):
             service_user_id = params["video"]["dmcInfo"]["session_api"]["service_user_id"]
             player_id = params["video"]["dmcInfo"]["session_api"]["player_id"]
 
-            # Build request
+            # Build initial heartbeat request
             post = """
                     <session>
                       <recipe_id>{0}</recipe_id>
@@ -400,7 +413,7 @@ def perform_api_request(session, document):
             heartbeat_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
             perform_heartbeat(response, session, heartbeat_url)
 
-        # Legacy for pre-HTML5 videos
+        # Legacy URI for videos upload pre-HTML5 player (~2016-10-27)
         elif params["video"].get("smileInfo"):
             cond_print("Using legacy URI...\n")
             result["uri"] = params["video"]["smileInfo"]["url"]
@@ -408,8 +421,8 @@ def perform_api_request(session, document):
         else:
             sys.exit("Error collecting parameters: Failed to find video URI. Nico may have updated their player")
 
-    # NicoMovieMaker movies (SWF)
-    # May need conversion to play properly in an external player
+    # Flash (.flv) videos
+    # NicoMovieMaker movies (.swf) may need conversion to play properly in an external player
     elif document.find(id="watchAPIDataContainer"):
         params = json.loads(document.find(id="watchAPIDataContainer").text)
 
