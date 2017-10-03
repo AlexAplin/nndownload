@@ -41,11 +41,11 @@ FINISHED_DOWNLOADING = False
 
 HTML5_COOKIE = {
     "watch_html5": "1"
-    }
+}
 
 FLASH_COOKIE = {
     "watch_flash": "1"
-    }
+}
 
 cmdl_usage = "%prog [options] url_id"
 cmdl_version = __version__
@@ -57,6 +57,7 @@ cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", h
 
 dl_group = optparse.OptionGroup(cmdl_parser, "Download Options")
 dl_group.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
+dl_group.add_option("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
 dl_group.add_option("-m", "--download-metadata", action="store_true", dest="download_metadata", help="download video metadata")
 dl_group.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
@@ -91,6 +92,7 @@ def login(username, password):
     if session.cookies.get_dict().get("user_session", None) is None:
         cond_print(" failed\n")
         sys.exit("Error: Failed to login. Please verify your username and password")
+
     cond_print(" done\n")
     return session
 
@@ -99,9 +101,9 @@ def request_video(session, video_id):
     """Request the video page and initiate download of the video URI."""
 
     # Determine whether to request the Flash or HTML5 player
-    # Only .mp4 videos are served on the HTML5 player, so we can miss the high quality .flv source
-    video_info = session.get(THUMB_INFO_API.format(video_id))
-    video_type = xml.dom.minidom.parseString(video_info.text).getElementsByTagName("movie_type")[0]
+    # Only .mp4 videos are served on the HTML5 player, so we can sometimes miss the high quality .flv source
+    video_info = xml.dom.minidom.parseString(session.get(THUMB_INFO_API.format(video_id)).text)
+    video_type = video_info.getElementsByTagName("movie_type")[0]
 
     if video_type is "swf" or "flv":
         response = session.get(VIDEO_URL.format(video_id), cookies=FLASH_COOKIE)
@@ -110,7 +112,11 @@ def request_video(session, video_id):
 
     response.raise_for_status()
     document = BeautifulSoup(response.text, "html.parser")
+
     result = perform_api_request(session, document)
+    result["size_high"] = video_info.getElementsByTagName("size_high")[0]
+    result["size_low"] = video_info.getElementsByTagName("size_low")[0]
+
     base_path = create_filename(result)
 
     download_video(session, base_path, result)
@@ -190,6 +196,10 @@ def download_video(session, base_path, result):
         dl_stream = session.head(result["uri"])
         dl_stream.raise_for_status()
         video_len = int(dl_stream.headers["content-length"])
+
+        if cmdl_opts.force_high_quality and video_len == result["size_low"]:
+            cond_print("High quality source not currently available. Skipping... \n")
+            return
 
         if os.path.isfile(filename):
             current_byte_pos = os.path.getsize(filename)
@@ -413,7 +423,7 @@ def perform_api_request(session, document):
             heartbeat_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
             perform_heartbeat(response, session, heartbeat_url)
 
-        # Legacy URI for videos upload pre-HTML5 player (~2016-10-27)
+        # Legacy URI for videos uploaded pre-HTML5 player (~2016-10-27)
         elif params["video"].get("smileInfo"):
             cond_print("Using legacy URI...\n")
             result["uri"] = params["video"]["smileInfo"]["url"]
@@ -421,8 +431,8 @@ def perform_api_request(session, document):
         else:
             sys.exit("Error collecting parameters: Failed to find video URI. Nico may have updated their player")
 
-    # Flash (.flv) videos
-    # NicoMovieMaker movies (.swf) may need conversion to play properly in an external player
+    # .flv videos (Flash)
+    # NicoMovieMaker videos (.swf) may need conversion to play properly in an external player
     elif document.find(id="watchAPIDataContainer"):
         params = json.loads(document.find(id="watchAPIDataContainer").text)
 
