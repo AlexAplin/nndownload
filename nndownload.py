@@ -19,6 +19,7 @@ import getpass
 import time
 import netrc
 import subprocess
+import collections
 
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2016 Alex Aplin"
@@ -43,14 +44,14 @@ EPSILON = 0.0001
 FINISHED_DOWNLOADING = False
 
 HTML5_COOKIE = {
-    "watch_html5": "1"
+    "watch_flash": "0"
 }
 
 FLASH_COOKIE = {
     "watch_flash": "1"
 }
 
-cmdl_usage = "%prog [options] url_id"
+cmdl_usage = "%prog [options] url"
 cmdl_version = __version__
 cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conflict_handler="resolve")
 cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
@@ -59,9 +60,9 @@ cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help=
 cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
 
 dl_group = optparse.OptionGroup(cmdl_parser, "Download Options")
-dl_group.add_option("-d", "--save-to-user-directory", action="store_true", dest="use_user_directory", help="save video to user directory")
+dl_group.add_option("-o", "--output-path", dest="output_path", help="custom output path (see template options)")
 dl_group.add_option("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
-dl_group.add_option("-m", "--download-metadata", action="store_true", dest="download_metadata", help="download video metadata")
+dl_group.add_option("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
 dl_group.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 
@@ -101,7 +102,7 @@ def login(username, password):
 
 
 def pairwise(iterable):
-    """Helper method to pair RTMP URI with stream label."""
+    """Helper method to pair RTMP URL with stream label."""
 
     a, b = tee(iterable)
     next(b, None)
@@ -109,7 +110,7 @@ def pairwise(iterable):
 
 
 def request_rtmp(session, nama_id):
-    """Build and print the RTMP URI of an official live Niconama stream."""
+    """Build and print the RTMP URL of an official live Niconama stream."""
 
     cond_print("Warning: Niconama support is still experimental\n")
 
@@ -128,7 +129,7 @@ def request_rtmp(session, nama_id):
                 break
 
         if not url:
-            sys.exit("Error: RTMP URI not found")
+            sys.exit("Error: RTMP URL not found")
     else:
         sys.exit("Error: Channel streams are not yet supported")
 
@@ -139,34 +140,34 @@ def request_rtmp(session, nama_id):
 
 
 def request_video(session, video_id):
-    """Request the video page and initiate download of the video URI."""
+    """Request the video page and initiate download of the video URL."""
 
     # Determine whether to request the Flash or HTML5 player
     # Only .mp4 videos are served on the HTML5 player, so we can sometimes miss the high quality .flv source
     video_info = xml.dom.minidom.parseString(session.get(THUMB_INFO_API.format(video_id)).text)
-    video_type = video_info.getElementsByTagName("movie_type")[0]
+    video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
 
-    if video_type is "swf" or "flv":
+    if video_type == ("swf" or "flv"):
         response = session.get(VIDEO_URL.format(video_id), cookies=FLASH_COOKIE)
-    elif video_type is "mp4":
+    elif video_type == "mp4":
         response = session.get(VIDEO_URL.format(video_id), cookies=HTML5_COOKIE)
 
     response.raise_for_status()
     document = BeautifulSoup(response.text, "html.parser")
 
-    result = perform_api_request(session, document)
-    result["size_high"] = video_info.getElementsByTagName("size_high")[0]
-    result["size_low"] = video_info.getElementsByTagName("size_low")[0]
+    template_params = perform_api_request(session, document)
+    template_params["size_high"] = int(video_info.getElementsByTagName("size_high")[0].firstChild.nodeValue)
+    template_params["size_low"] = int(video_info.getElementsByTagName("size_low")[0].firstChild.nodeValue)
 
-    base_path = create_filename(result)
+    filename = create_filename(template_params)
 
-    download_video(session, base_path, result)
-    if cmdl_opts.download_metadata:
-        download_metadata(base_path, result)
+    download_video(session, filename, template_params)
+    if cmdl_opts.dump_metadata:
+        dump_metadata(filename, template_params)
     if cmdl_opts.download_thumbnail:
-        download_thumbnail(session, base_path, result)
+        download_thumbnail(session, filename, template_params)
     if cmdl_opts.download_comments:
-        download_comments(session, base_path, result)
+        download_comments(session, filename, template_params)
 
 
 def perform_heartbeat(response, session, heartbeat_url):
@@ -207,38 +208,45 @@ def calculate_speed(start, now, bytes):
     return format_bytes(bytes / dif)
 
 
-def create_filename(result):
-    """Create base filename from result parameters."""
+def replace_extension(filename, new_extension):
+    """Replace the extension in a file path."""
 
-    base_path = "{0} - {1}.".format(result["video"], result["title"])
+    base_path, old_extension = os.path.splitext(filename)
+    return "{0}.{1}".format(base_path, new_extension)
 
-    if cmdl_opts.use_user_directory:
+
+def create_filename(template_params):
+    """Create filename from document parameters."""
+
+    filename_template = cmdl_opts.output_path
+
+    if filename_template:
+        template_dict = dict(template_params)
+        template_dict = dict((k, v) for k, v in template_dict.items() if v is not None)
+        template_dict = collections.defaultdict(lambda: "__NONE__", template_dict)
+
+        filename = filename_template.format_map(template_dict)
         try:
-            if not os.path.exists(result["user"]):
-                cond_print("Making directory for {0}...".format(result["user"]))
-                os.makedirs(result["user"])
-                cond_print(" done\n")
+            if (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(os.path.dirname(filename)):
+                os.makedirs(os.path.dirname(filename), exist_ok=True)
+                return filename
 
-            return os.path.join(result["user"], base_path)
-
-        except (IOError, OSError):
-            sys.exit("Error downloading video: Unable to create directory for {0}".format(result["user"]))
+        except (OSError, IOError):
+            sys.exit("Error: Unable to create specified directory")
 
     else:
-        return base_path
+        return "{0} - {1}.{2}".format(template_params["id"], template_params["title"], template_params["ext"])
 
 
-def download_video(session, base_path, result):
-    """Download video from response URI and display progress."""
-
-    filename = base_path + result["extension"]
+def download_video(session, filename, template_params):
+    """Download video from response URL and display progress."""
 
     try:
-        dl_stream = session.head(result["uri"])
+        dl_stream = session.head(template_params["url"])
         dl_stream.raise_for_status()
         video_len = int(dl_stream.headers["content-length"])
 
-        if cmdl_opts.force_high_quality and video_len == result["size_low"]:
+        if cmdl_opts.force_high_quality and video_len == template_params["size_low"]:
             cond_print("High quality source not currently available. Skipping... \n")
             return
 
@@ -259,7 +267,7 @@ def download_video(session, base_path, result):
             resume_header = {"Range": "bytes=0-"}
             dl = 0
 
-        dl_stream = session.get(result["uri"], headers=resume_header, stream=True)
+        dl_stream = session.get(template_params["url"], headers=resume_header, stream=True)
         dl_stream.raise_for_status()
 
         with open(filename, file_condition) as file:
@@ -279,27 +287,27 @@ def download_video(session, base_path, result):
         sys.exit()
 
 
-def download_metadata(base_path, result):
-    """Download the video metadata."""
+def dump_metadata(filename, template_params):
+    """Dump the collected video metadata to a file."""
 
     cond_print("Downloading metadata...")
 
-    filename = base_path + "json"
+    filename = replace_extension(filename, "json")
 
-    with open(filename, 'w') as file:
-        json.dump(result["json"], file)
+    with open(filename, "w") as file:
+        json.dump(template_params, file, sort_keys=True)
 
     cond_print(" done\n")
 
 
-def download_thumbnail(session, base_path, result):
+def download_thumbnail(session, filename, template_params):
     """Download the video thumbnail."""
 
     cond_print("Downloading thumbnail...")
 
-    filename = base_path + "jpg"
+    filename = replace_extension(filename, "jpg")
 
-    get_thumb = session.get(result["thumb"])
+    get_thumb = session.get(template_params["thumbnail_url"])
     with open(filename, "wb") as file:
         for block in get_thumb.iter_content(BLOCK_SIZE):
             file.write(block)
@@ -307,14 +315,14 @@ def download_thumbnail(session, base_path, result):
     cond_print(" done\n")
 
 
-def download_comments(session, base_path, result):
+def download_comments(session, filename, template_params):
     """Download the video comments."""
 
     cond_print("Downloading comments...")
 
-    filename = base_path + "xml"
+    filename = replace_extension(filename, "xml")
 
-    get_comments = session.post(COMMENTS_API, COMMENTS_POST.format(result["thread_id"]))
+    get_comments = session.post(COMMENTS_API, COMMENTS_POST.format(template_params["thread_id"]))
     with open(filename, "wb") as file:
         file.write(get_comments.content)
 
@@ -332,9 +340,9 @@ def download_mylist(session, mylist_id):
 
 
 def perform_api_request(session, document):
-    """Collect parameters from video document and build API request."""
+    """Collect parameters from video document and build API request for video URL."""
 
-    result = {}
+    template_params = {}
 
     # .mp4 videos (HTML5)
     if document.find(id="js-initial-watch-data"):
@@ -343,13 +351,7 @@ def perform_api_request(session, document):
         if params["video"]["isDeleted"]:
             sys.exit("Video was deleted. Exiting...\n")
 
-        result["video"] = params["video"]["id"]
-        result["title"] = params["video"]["title"]
-        result["json"] = params
-        result["extension"] = params["video"]["movieType"]
-        result["user"] = params["owner"]["nickname"].strip(" さん")
-        result["thumb"] = params["video"]["thumbnailURL"]
-        result["thread_id"] = params["thread"]["ids"]["default"]
+        template_params = collect_parameters(template_params, params)
 
         # Perform request to Dwango Media Cluster (DMC)
         if params["video"].get("dmcInfo"):
@@ -455,7 +457,7 @@ def perform_api_request(session, document):
             response = session.post(api_url, data=root.toxml())
             response.raise_for_status()
             response = xml.dom.minidom.parseString(response.text)
-            result["uri"] = response.getElementsByTagName("content_uri")[0].firstChild.nodeValue
+            template_params["url"] = response.getElementsByTagName("content_uri")[0].firstChild.nodeValue
             cond_print(" done\n")
 
             # Collect response for heartbeat
@@ -464,15 +466,15 @@ def perform_api_request(session, document):
             heartbeat_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
             perform_heartbeat(response, session, heartbeat_url)
 
-        # Legacy URI for videos uploaded pre-HTML5 player (~2016-10-27)
+        # Legacy URL for videos uploaded pre-HTML5 player (~2016-10-27)
         elif params["video"].get("smileInfo"):
-            cond_print("Using legacy URI...\n")
-            result["uri"] = params["video"]["smileInfo"]["url"]
+            cond_print("Using legacy URL...\n")
+            template_params["url"] = params["video"]["smileInfo"]["url"]
 
         else:
-            sys.exit("Error collecting parameters: Failed to find video URI. Nico may have updated their player")
+            sys.exit("Error collecting parameters: Failed to find video URL. Nico may have updated their player")
 
-    # .flv videos (Flash)
+    # Flash videos (.flv, .swf)
     # NicoMovieMaker videos (.swf) may need conversion to play properly in an external player
     elif document.find(id="watchAPIDataContainer"):
         params = json.loads(document.find(id="watchAPIDataContainer").text)
@@ -480,25 +482,55 @@ def perform_api_request(session, document):
         if params["videoDetail"]["isDeleted"]:
             sys.exit("Video was deleted. Exiting...\n")
 
-        result["video"] = params["videoDetail"]["id"]
-        result["title"] = params["videoDetail"]["title"]
-        result["json"] = params
-        result["user"] = params["uploaderInfo"]["nickname"].strip(" さん")
-        result["extension"] = params["flashvars"]["movie_type"]
-        result["thumb"] = params["videoDetail"]["thumbnail"]
-        result["thread_id"] = params["videoDetail"]["thread_id"]
+        template_params = collect_parameters(template_params, params)
 
         video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
         if ("url" in video_url_param):
-            result["uri"] = video_url_param["url"][0]
+            template_params["url"] = video_url_param["url"][0]
 
         else:
-            sys.exit("Error collecting parameters: Failed to find video URI. Nico may have updated their player")
+            sys.exit("Error collecting parameters: Failed to find video URL. Nico may have updated their player")
 
     else:
         sys.exit("Error collecting parameters: Failed to collect video paramters")
 
-    return result
+    return template_params
+
+
+def collect_parameters(template_params, params):
+    """Collect video parameters to make them available for an output filename template."""
+
+    if params.get("video"):
+        template_params["id"] = params["video"]["id"]
+        template_params["title"] = params["video"]["title"]
+        template_params["uploader"] = params["owner"]["nickname"].strip(" さん")
+        template_params["uploader_id"] = int(params["owner"]["id"])
+        template_params["ext"] = params["video"]["movieType"]
+        template_params["description"] = params["video"]["description"]
+        template_params["thumbnail_url"] = params["video"]["thumbnailURL"]
+        template_params["thread_id"] = int(params["thread"]["ids"]["default"])
+        template_params["published"] = params["video"]["postedDateTime"]
+        template_params["duration"] = params["video"]["duration"]
+        template_params["view_count"] = params["video"]["viewCount"]
+        template_params["mylist_count"] = params["video"]["mylistCount"]
+        template_params["comment_count"] = params["thread"]["commentCount"]
+
+    if params.get("videoDetail"):
+        template_params["id"] = params["videoDetail"]["id"]
+        template_params["title"] = params["videoDetail"]["title"]
+        template_params["uploader"] = params["uploaderInfo"]["nickname"].strip(" さん")
+        template_params["uploader_id"] = int(params["uploaderInfo"]["id"])
+        template_params["ext"] = params["flashvars"]["movie_type"]
+        template_params["description"] = params["videoDetail"]["description"]
+        template_params["thumbnail_url"] = params["videoDetail"]["thumbnail"]
+        template_params["thread_id"] = int(params["videoDetail"]["thread_id"])
+        template_params["published"] = params["videoDetail"]["postedAt"]
+        template_params["duration"] = params["videoDetail"]["length"]
+        template_params["view_count"] = params["videoDetail"]["viewCount"]
+        template_params["mylist_count"] = params["videoDetail"]["mylistCount"]
+        template_params["comment_count"] = params["videoDetail"]["commentCount"]
+
+    return template_params
 
 
 if __name__ == "__main__":
