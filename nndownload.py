@@ -229,11 +229,11 @@ def create_filename(template_params):
         try:
             if (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(os.path.dirname(filename)):
                 os.makedirs(os.path.dirname(filename), exist_ok=True)
-                return filename
 
         except (OSError, IOError):
             sys.exit("Error: Unable to create specified directory")
 
+        return filename
     else:
         return "{0} - {1}.{2}".format(template_params["id"], template_params["title"], template_params["ext"])
 
