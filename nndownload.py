@@ -503,7 +503,7 @@ def collect_parameters(template_params, params):
     if params.get("video"):
         template_params["id"] = params["video"]["id"]
         template_params["title"] = params["video"]["title"]
-        template_params["uploader"] = params["owner"]["nickname"].strip(" さん")
+        template_params["uploader"] = params["owner"]["nickname"].rstrip(" さん")
         template_params["uploader_id"] = int(params["owner"]["id"])
         template_params["ext"] = params["video"]["movieType"]
         template_params["description"] = params["video"]["description"]
