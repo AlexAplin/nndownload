@@ -518,8 +518,8 @@ def collect_parameters(template_params, params):
     elif params.get("videoDetail"):
         template_params["id"] = params["videoDetail"]["id"]
         template_params["title"] = params["videoDetail"]["title"]
-        template_params["uploader"] = params["uploaderInfo"]["nickname"].strip(" さん")
-        template_params["uploader_id"] = int(params["uploaderInfo"]["id"])
+        template_params["uploader"] = params["uploaderInfo"]["nickname"].rstrip(" さん") if params["uploaderInfo"] else None
+        template_params["uploader_id"] = int(params["uploaderInfo"]["id"]) if params["uploaderInfo"] else None
         template_params["ext"] = params["flashvars"]["movie_type"]
         template_params["description"] = params["videoDetail"]["description"]
         template_params["thumbnail_url"] = params["videoDetail"]["thumbnail"]
