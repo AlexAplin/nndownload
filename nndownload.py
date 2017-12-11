@@ -503,8 +503,8 @@ def collect_parameters(template_params, params):
     if params.get("video"):
         template_params["id"] = params["video"]["id"]
         template_params["title"] = params["video"]["title"]
-        template_params["uploader"] = params["owner"]["nickname"].rstrip(" さん")
-        template_params["uploader_id"] = int(params["owner"]["id"])
+        template_params["uploader"] = params["owner"]["nickname"].rstrip(" さん") if params["owner"] else None
+        template_params["uploader_id"] = int(params["owner"]["id"]) if params["owner"] else None
         template_params["ext"] = params["video"]["movieType"]
         template_params["description"] = params["video"]["description"]
         template_params["thumbnail_url"] = params["video"]["thumbnailURL"]
@@ -515,7 +515,7 @@ def collect_parameters(template_params, params):
         template_params["mylist_count"] = params["video"]["mylistCount"]
         template_params["comment_count"] = params["thread"]["commentCount"]
 
-    if params.get("videoDetail"):
+    elif params.get("videoDetail"):
         template_params["id"] = params["videoDetail"]["id"]
         template_params["title"] = params["videoDetail"]["title"]
         template_params["uploader"] = params["uploaderInfo"]["nickname"].strip(" さん")
