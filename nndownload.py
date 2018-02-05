@@ -134,7 +134,7 @@ def request_rtmp(session, nama_id):
             cond_print("Error: RTMP URL not found\n")
             return
     elif provider_type == "community":
-        cond_print("Error: Community broadcast are not supported\n")
+        cond_print("Error: Community broadcasts are not supported\n")
         return
     else:
         cond_print("Error: Not a recognized stream provider type\n")
@@ -372,7 +372,7 @@ def request_mylist(session, mylist_id):
         cond_print("Error: Could not retrieve mylist info\n")
         return
     else:
-        for index, item in enumerate( mylist_json["items"]):
+        for index, item in enumerate(mylist_json["items"]):
             cond_print("{0}/{1}\n".format(index, len(mylist_json["items"])))
             request_video(session, item["video_id"])
 
@@ -580,7 +580,7 @@ def valid_url(url):
     """Check if the URL is valid and can be processed."""
 
     url_mo = VIDEO_URL_RE.match(url)
-    return url_mo if not None else False;
+    return url_mo if not None else False
 
 
 def process_url_mo(session, url_mo):
