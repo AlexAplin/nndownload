@@ -25,6 +25,7 @@ Options:
                         account username
   -p PASSWORD, --password=PASSWORD
                         account password
+  --file=FILE           read URLs from file
   -n, --netrc           use .netrc authentication
   -v, --verbose         print status to console
 

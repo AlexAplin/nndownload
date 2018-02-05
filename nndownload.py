@@ -56,6 +56,7 @@ cmdl_version = __version__
 cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conflict_handler="resolve")
 cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
 cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
+cmdl_parser.add_option("-f", "--file", dest="file", metavar="FILE", help="read URLs from file")
 cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
 cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
 
@@ -116,7 +117,8 @@ def request_rtmp(session, nama_id):
 
     nama_info = xml.dom.minidom.parseString(session.get(NAMA_API.format(nama_id)).text)
     if nama_info.getElementsByTagName("error"):
-        sys.exit("Error: Stream is not available")
+        cond_print("Error: Stream is not available\n")
+        return
 
     urls = urllib.parse.unquote(nama_info.getElementsByTagName("contents")[0].firstChild.nodeValue).split(',')
     is_premium = nama_info.getElementsByTagName("is_premium")[0].firstChild.nodeValue
@@ -129,9 +131,9 @@ def request_rtmp(session, nama_id):
                 break
 
         if not url:
-            sys.exit("Error: RTMP URL not found")
+            cond_print("Error: RTMP URL not found\n")
     else:
-        sys.exit("Error: Channel streams are not yet supported")
+        cond_print("Error: Channel streams are not yet supported\n")
 
     for stream in nama_info.getElementsByTagName("stream"):
         if stream.getAttribute('name') == stream_name:
@@ -144,13 +146,23 @@ def request_video(session, video_id):
 
     # Determine whether to request the Flash or HTML5 player
     # Only .mp4 videos are served on the HTML5 player, so we can sometimes miss the high quality .flv source
-    video_info = xml.dom.minidom.parseString(session.get(THUMB_INFO_API.format(video_id)).text)
-    video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
+    response = session.get(THUMB_INFO_API.format(video_id))
+    response.raise_for_status()
 
-    if video_type == ("swf" or "flv"):
+    video_info = xml.dom.minidom.parseString(response.text)
+
+    if video_info.firstChild.getAttribute("status") != "ok":
+        cond_print("Error: Could not retrieve video info\n")
+        return
+
+    video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
+    if video_type == "swf" or "flv":
         response = session.get(VIDEO_URL.format(video_id), cookies=FLASH_COOKIE)
     elif video_type == "mp4":
         response = session.get(VIDEO_URL.format(video_id), cookies=HTML5_COOKIE)
+    else:
+        cond_print("Error: Video type not supported. Skipping...\n")
+        return
 
     response.raise_for_status()
     document = BeautifulSoup(response.text, "html.parser")
@@ -329,14 +341,36 @@ def download_comments(session, filename, template_params):
     cond_print(" done\n")
 
 
-def download_mylist(session, mylist_id):
+def download_list(session, list):
+    for index, item in enumerate(list):
+        cond_print("{0}/{1}\n".format(index, len(list)))
+        request_video(session, item)
+
+
+def read_file(session, file):
+    with open(file) as file:
+        content = file.readlines()
+    download_list = []
+    for line in content:
+        url_mo = valid_url(line)
+        if url_mo:
+            process_url_mo(session, url_mo)
+        else:
+            cond_print("Error parsing arguments: Not a valid URL. Skipping...\n")
+
+def request_mylist(session, mylist_id):
     """Download videos associated with a mylist."""
 
-    mylist = session.get(MYLIST_API.format(mylist_id))
-    mylist_json = json.loads(mylist.text)
-    for index, item in enumerate(mylist_json["items"]):
-        cond_print("{0}/{1}\n".format(index, len(mylist_json["items"])))
-        request_video(session, item["video_id"])
+    mylist_request = session.get(MYLIST_API.format(mylist_id))
+    mylist_json = json.loads(mylist_request.text)
+
+    if mylist_json["status"] != "ok":
+        cond_print("Error: Could not retrieve mylist info\n")
+        return
+    else:
+        for index, item in enumerate( mylist_json["items"]):
+            cond_print("{0}/{1}\n".format(index, len(mylist_json["items"])))
+            request_video(session, item["video_id"])
 
 
 def perform_api_request(session, document):
@@ -349,7 +383,8 @@ def perform_api_request(session, document):
         params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
 
         if params["video"]["isDeleted"]:
-            sys.exit("Video was deleted. Exiting...\n")
+            cond_print("Error: Video was deleted. Skipping...\n")
+            return
 
         template_params = collect_parameters(template_params, params)
 
@@ -472,7 +507,8 @@ def perform_api_request(session, document):
             template_params["url"] = params["video"]["smileInfo"]["url"]
 
         else:
-            sys.exit("Error collecting parameters: Failed to find video URL. Nico may have updated their player")
+            cond_print("Error collecting parameters: Failed to find video URL. Nico may have updated their player\n")
+            return
 
     # Flash videos (.flv, .swf)
     # NicoMovieMaker videos (.swf) may need conversion to play properly in an external player
@@ -480,7 +516,8 @@ def perform_api_request(session, document):
         params = json.loads(document.find(id="watchAPIDataContainer").text)
 
         if params["videoDetail"]["isDeleted"]:
-            sys.exit("Video was deleted. Exiting...\n")
+            cond_print("Error: Video was deleted. Skipping...\n")
+            return
 
         template_params = collect_parameters(template_params, params)
 
@@ -489,10 +526,12 @@ def perform_api_request(session, document):
             template_params["url"] = video_url_param["url"][0]
 
         else:
-            sys.exit("Error collecting parameters: Failed to find video URL. Nico may have updated their player")
+            cond_print("Error collecting parameters: Failed to find video URL. Nico may have updated their player\n")
+            return
 
     else:
-        sys.exit("Error collecting parameters: Failed to collect video paramters")
+        cond_print("Error collecting parameters: Failed to collect video paramters\n")
+        return
 
     return template_params
 
@@ -533,21 +572,37 @@ def collect_parameters(template_params, params):
     return template_params
 
 
-if __name__ == "__main__":
-    if len(cmdl_args) == 0:
-        sys.exit("Error parsing arguments: You must provide a video or mylist URL")
+def valid_url(url):
+    url_mo = VIDEO_URL_RE.match(url)
+    return url_mo if not None else False;
 
-    url_id_mo = VIDEO_URL_RE.match(cmdl_args[0])
-    if url_id_mo is None:
-        sys.exit("Error parsing arguments: Not a valid video or mylist URL")
-    url_id = url_id_mo.group(3)
+
+def process_url_mo(session, url_mo):
+    url_id = url_mo.group(3)
+    if url_mo.group(2) == "mylist":
+        request_mylist(session, url_id)
+    elif url_mo.group(1):
+        request_rtmp(session, url_id)
+    else:
+        request_video(session, url_id)
+
+
+if __name__ == "__main__":
+    if not cmdl_opts.file:
+        if len(cmdl_args) == 0:
+            sys.exit("Error parsing arguments: You must provide a video, mylist, or file (-f)")
+        else:
+            global url_mo
+            url_mo = valid_url(cmdl_args[0])
+            if not url_mo:
+                sys.exit("Error parsing arguments: Not a valid video or mylist URL")
 
     account_username = cmdl_opts.username
     account_password = cmdl_opts.password
 
     if cmdl_opts.netrc:
         if cmdl_opts.username or cmdl_opts.password:
-            cond_print("Ignorning input credentials in favor of .netrc (-n)")
+            cond_print("Ignorning input credentials in favor of .netrc (-n)\n")
 
         try:
             account_credentials = netrc.netrc().authenticators(HOST)
@@ -566,9 +621,8 @@ if __name__ == "__main__":
         account_password = getpass.getpass("Password: ")
 
     session = login(account_username, account_password)
-    if url_id_mo.group(2) == "mylist":
-        download_mylist(session, url_id)
-    if url_id_mo.group(1):
-        request_rtmp(session, url_id)
+    if cmdl_opts.file:
+        cond_print("Ignoring argument in favor of file (-f)\n")
+        read_file(session, cmdl_opts.file)
     else:
-        request_video(session, url_id)
+        process_url_mo(session, url_mo)

@@ -99,3 +99,14 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# Videos
+.mp4
+.flv
+.swf
+
+# Comments, thumbnails, and metadata
+.json
+.xml
+.jpg
+.png
