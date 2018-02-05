@@ -111,13 +111,11 @@ def pairwise(iterable):
 
 
 def request_rtmp(session, nama_id):
-    """Build and print the RTMP URL of an official live Niconama stream."""
-
-    cond_print("Warning: Niconama support is still experimental\n")
+    """Build the RTMP stream URL for a Niconama broadcast and print to file."""
 
     nama_info = xml.dom.minidom.parseString(session.get(NAMA_API.format(nama_id)).text)
     if nama_info.getElementsByTagName("error"):
-        cond_print("Error: Stream is not available\n")
+        cond_print("Error: Broadcast is not available\n")
         return
 
     urls = urllib.parse.unquote(nama_info.getElementsByTagName("contents")[0].firstChild.nodeValue).split(',')
@@ -128,17 +126,26 @@ def request_rtmp(session, nama_id):
             split = details.split(":", maxsplit=1)
             if (is_premium and split[0] == "premium") or ((not is_premium or provider_type == "official") and (split[0] == "default" or split[0] == "limelight")):
                 url = split[1] + "/" + stream_name
+                if nama_info.getElementsByTagName("hqstream"):
+                    url = url.split(":", maxsplit=1)[1]
                 break
 
         if not url:
             cond_print("Error: RTMP URL not found\n")
+            return
+    elif provider_type == "community":
+        cond_print("Error: Community broadcast are not supported\n")
+        return
     else:
-        cond_print("Error: Channel streams are not yet supported\n")
+        cond_print("Error: Not a recognized stream provider type\n")
+        return
 
     for stream in nama_info.getElementsByTagName("stream"):
         if stream.getAttribute('name') == stream_name:
             rtmp = url + '?' + stream.firstChild.nodeValue
             cond_print(rtmp)
+            with open("{}.txt".format(nama_id), "w") as file:
+                file.write(rtmp)
 
 
 def request_video(session, video_id):
@@ -341,13 +348,9 @@ def download_comments(session, filename, template_params):
     cond_print(" done\n")
 
 
-def download_list(session, list):
-    for index, item in enumerate(list):
-        cond_print("{0}/{1}\n".format(index, len(list)))
-        request_video(session, item)
-
-
 def read_file(session, file):
+    """Read file and process each line as a URL."""
+
     with open(file) as file:
         content = file.readlines()
     download_list = []
@@ -357,6 +360,7 @@ def read_file(session, file):
             process_url_mo(session, url_mo)
         else:
             cond_print("Error parsing arguments: Not a valid URL. Skipping...\n")
+
 
 def request_mylist(session, mylist_id):
     """Download videos associated with a mylist."""
@@ -573,11 +577,15 @@ def collect_parameters(template_params, params):
 
 
 def valid_url(url):
+    """Check if the URL is valid and can be processed."""
+
     url_mo = VIDEO_URL_RE.match(url)
     return url_mo if not None else False;
 
 
 def process_url_mo(session, url_mo):
+    """Determine which function should process this URL object."""
+
     url_id = url_mo.group(3)
     if url_mo.group(2) == "mylist":
         request_mylist(session, url_id)
@@ -590,12 +598,12 @@ def process_url_mo(session, url_mo):
 if __name__ == "__main__":
     if not cmdl_opts.file:
         if len(cmdl_args) == 0:
-            sys.exit("Error parsing arguments: You must provide a video, mylist, or file (-f)")
+            sys.exit("Error parsing arguments: You must provide a video, nama, mylist, or file (-f)")
         else:
             global url_mo
             url_mo = valid_url(cmdl_args[0])
             if not url_mo:
-                sys.exit("Error parsing arguments: Not a valid video or mylist URL")
+                sys.exit("Error parsing arguments: Not a valid video, nama, or mylist URL")
 
     account_username = cmdl_opts.username
     account_password = cmdl_opts.password
