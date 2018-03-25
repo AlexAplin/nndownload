@@ -40,6 +40,7 @@ Options:
                         download video thumbnail
     -c, --download-comments
                         download video comments
+    -e, --english       download english comments
 ```
 
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:

@@ -34,7 +34,8 @@ NAMA_API = "http://watch.live.nicovideo.jp/api/getplayerstatus?v={0}"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
-COMMENTS_POST = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
+COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
+COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
 VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?)\.)?(?:(?:nicovideo\.jp/(watch|mylist)/)|nico\.ms/)))((?:[a-z]{2})?[0-9]+)")
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
@@ -66,6 +67,7 @@ dl_group.add_option("-f", "--force-high-quality", action="store_true", dest="for
 dl_group.add_option("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
 dl_group.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
+dl_group.add_option("-e", "--english", action="store_true", dest="download_english", help="download english comments")
 
 cmdl_parser.add_option_group(dl_group)
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
@@ -341,7 +343,11 @@ def download_comments(session, filename, template_params):
 
     filename = replace_extension(filename, "xml")
 
-    get_comments = session.post(COMMENTS_API, COMMENTS_POST.format(template_params["thread_id"]))
+    if cmdl_opts.download_english:
+        post_packet = COMMENTS_POST_EN
+    else:
+        post_pocket = COMMENTS_POST_JP
+    get_comments = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
     with open(filename, "wb") as file:
         file.write(get_comments.content)
 
