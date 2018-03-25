@@ -346,7 +346,7 @@ def download_comments(session, filename, template_params):
     if cmdl_opts.download_english:
         post_packet = COMMENTS_POST_EN
     else:
-        post_pocket = COMMENTS_POST_JP
+        post_packet = COMMENTS_POST_JP
     get_comments = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
     with open(filename, "wb") as file:
         file.write(get_comments.content)
