@@ -115,7 +115,7 @@ if cmdl_opts.log:
 
 
 def output(string, level=logging.INFO):
-    """Print status to console if verbose flag is set."""
+    """Print status to console unless quiet flag is set."""
 
     global cmdl_opts
     if cmdl_opts.log:
