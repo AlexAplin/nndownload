@@ -101,12 +101,15 @@ ENV/
 .mypy_cache/
 
 # Videos
-.mp4
-.flv
-.swf
+*.mp4
+*.flv
+*.swf
 
 # Comments, thumbnails, and metadata
-.json
-.xml
-.jpg
-.png
+*.json
+*.xml
+*.jpg
+*.png
+
+# Logs
+*.log

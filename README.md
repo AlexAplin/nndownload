@@ -25,9 +25,10 @@ Options:
                         account username
   -p PASSWORD, --password=PASSWORD
                         account password
-  --file=FILE           read URLs from file
+  -i FILE, --file=FILE  read URLs from file
   -n, --netrc           use .netrc authentication
-  -v, --verbose         print status to console
+  -q, --quiet           suppress output to console
+  -l, --log             log output to file
 
   Download Options:
     -o OUTPUT_PATH, --output-path=OUTPUT_PATH

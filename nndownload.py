@@ -18,8 +18,9 @@ import threading
 import getpass
 import time
 import netrc
-import subprocess
 import collections
+import logging
+import traceback
 
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2016 Alex Aplin"
@@ -57,9 +58,10 @@ cmdl_version = __version__
 cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conflict_handler="resolve")
 cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
 cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
-cmdl_parser.add_option("-f", "--file", dest="file", metavar="FILE", help="read URLs from file")
+cmdl_parser.add_option("-i", "--file", dest="file", metavar="FILE", help="read URLs from file")
 cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
-cmdl_parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="print status to console")
+cmdl_parser.add_option("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
+cmdl_parser.add_option("-l", "--log", action="store_true", dest="log", help="log output to file")
 
 dl_group = optparse.OptionGroup(cmdl_parser, "Download Options")
 dl_group.add_option("-o", "--output-path", dest="output_path", help="custom output path (see template options)")
@@ -73,11 +75,53 @@ cmdl_parser.add_option_group(dl_group)
 (cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
 
 
-def cond_print(string):
+class AuthenticationException(Exception):
+    """Raised when logging in to Niconico failed."""
+    pass
+
+
+class ArgumentException(Exception):
+    """Raised when reading the argument failed."""
+    pass
+
+
+class FormatNotSupportedException(Exception):
+    """Raised when the response format is not supported."""
+    pass
+
+
+class FormatNotAvailableException(Exception):
+    """Raised when the requested format is not available."""
+    pass
+
+
+class FileCompleteException(Exception):
+    """Raised when the requested file has already been donwloaded completely."""
+    pass
+
+
+class ParameterExtractionException(Exception):
+    """Raised when parameters could not be successfully extracted."""
+    pass
+
+
+if cmdl_opts.log:
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
+    formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+    log_handler.setFormatter(formatter)
+    logger.addHandler(log_handler)
+
+
+def output(string, level=logging.INFO):
     """Print status to console if verbose flag is set."""
 
     global cmdl_opts
-    if cmdl_opts.verbose:
+    if cmdl_opts.log:
+        logger.log(level, string.strip("\n"))
+
+    if not cmdl_opts.quiet:
         sys.stdout.write(string)
         sys.stdout.flush()
 
@@ -85,7 +129,7 @@ def cond_print(string):
 def login(username, password):
     """Login to Nico. Will raise an exception for errors."""
 
-    cond_print("Logging in...")
+    output("Logging in...\n", logging.INFO)
 
     LOGIN_POST = {
         "mail_tel": username,
@@ -97,10 +141,10 @@ def login(username, password):
     response = session.post(LOGIN_URL, data=LOGIN_POST)
     response.raise_for_status()
     if session.cookies.get_dict().get("user_session", None) is None:
-        cond_print(" failed\n")
-        sys.exit("Error: Failed to login. Please verify your username and password")
+        output("Failed to login.\n", logging.INFO)
+        raise AuthenticationException("Failed to login. Please verify your username and password")
 
-    cond_print(" done\n")
+    output("Logged in.\n", logging.INFO)
     return session
 
 
@@ -117,10 +161,9 @@ def request_rtmp(session, nama_id):
 
     nama_info = xml.dom.minidom.parseString(session.get(NAMA_API.format(nama_id)).text)
     if nama_info.getElementsByTagName("error"):
-        cond_print("Error: Broadcast is not available\n")
-        return
+        raise FormatNotSupportedException("Requested nama is not available")
 
-    urls = urllib.parse.unquote(nama_info.getElementsByTagName("contents")[0].firstChild.nodeValue).split(',')
+    urls = urllib.parse.unquote(nama_info.getElementsByTagName("contents")[0].firstChild.nodeValue).split(",")
     is_premium = nama_info.getElementsByTagName("is_premium")[0].firstChild.nodeValue
     provider_type = nama_info.getElementsByTagName("provider_type")[0].firstChild.nodeValue
     if provider_type == "official":
@@ -133,22 +176,20 @@ def request_rtmp(session, nama_id):
                 break
 
         if not url:
-            cond_print("Error: RTMP URL not found\n")
-            return
+            raise FormatNotSupportedException("RTMP URL not found for requested nama")
     elif provider_type == "community":
-        cond_print("Error: Community broadcasts are not supported\n")
-        return
+        raise FormatNotSupportedException("Community nama broadcasts are not supported")
     else:
-        cond_print("Error: Not a recognized stream provider type\n")
-        return
+        raise FormatNotSupportedException("Not a recognized stream provider type")
 
     for stream in nama_info.getElementsByTagName("stream"):
-        if stream.getAttribute('name') == stream_name:
-            rtmp = url + '?' + stream.firstChild.nodeValue
-            cond_print(rtmp)
-            with open("{}.txt".format(nama_id), "w") as file:
+        if stream.getAttribute("name") == stream_name:
+            rtmp = url + "?" + stream.firstChild.nodeValue
+            rtmp_filename = "{0}.txt".format(nama_id)
+            output("Saving RTMP URL ({0}) to {1}...\n".format(rtmp, rtmp_filename), logging.INFO)
+            with open(rtmp_filename, "w") as file:
                 file.write(rtmp)
-
+            output("Finished saving RTMP URL to {0}.\n".format(rtmp_filename), logging.INFO)
 
 def request_video(session, video_id):
     """Request the video page and initiate download of the video URL."""
@@ -161,8 +202,7 @@ def request_video(session, video_id):
     video_info = xml.dom.minidom.parseString(response.text)
 
     if video_info.firstChild.getAttribute("status") != "ok":
-        cond_print("Error: Could not retrieve video info\n")
-        return
+        raise FormatNotAvailableException("Could not retrieve video info")
 
     video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
     if video_type == "swf" or "flv":
@@ -170,8 +210,7 @@ def request_video(session, video_id):
     elif video_type == "mp4":
         response = session.get(VIDEO_URL.format(video_id), cookies=HTML5_COOKIE)
     else:
-        cond_print("Error: Video type not supported. Skipping...\n")
-        return
+        raise FormatNotAvailableException("Video type not supported")
 
     response.raise_for_status()
     document = BeautifulSoup(response.text, "html.parser")
@@ -217,7 +256,7 @@ def format_bytes(number_bytes):
         return "{0:.2f}{1}B".format(converted, suffix)
 
     except IndexError:
-        sys.exit("Error: Could not format number of bytes")
+        raise IndexError("Could not format number of bytes")
 
 
 def calculate_speed(start, now, bytes):
@@ -252,7 +291,7 @@ def create_filename(template_params):
                 os.makedirs(os.path.dirname(filename), exist_ok=True)
 
         except (OSError, IOError):
-            sys.exit("Error: Unable to create specified directory")
+            raise
 
         return filename
     else:
@@ -262,69 +301,65 @@ def create_filename(template_params):
 def download_video(session, filename, template_params):
     """Download video from response URL and display progress."""
 
-    try:
-        dl_stream = session.head(template_params["url"])
-        dl_stream.raise_for_status()
-        video_len = int(dl_stream.headers["content-length"])
+    output("Downloading {0} to \"{1}\"...\n".format(template_params["id"], filename), logging.INFO)
 
-        if cmdl_opts.force_high_quality and video_len == template_params["size_low"]:
-            cond_print("High quality source not currently available. Skipping... \n")
-            return
+    dl_stream = session.head(template_params["url"])
+    dl_stream.raise_for_status()
+    video_len = int(dl_stream.headers["content-length"])
 
-        if os.path.isfile(filename):
-            current_byte_pos = os.path.getsize(filename)
-            if current_byte_pos < video_len:
-                file_condition = "ab"
-                resume_header = {"Range": "bytes={}-".format(current_byte_pos)}
-                dl = current_byte_pos
-                cond_print("Resuming previous download...\n")
+    if cmdl_opts.force_high_quality and video_len == template_params["size_low"]:
+        raise FormatNotAvailableException("High quality source not currently available")
 
-            elif current_byte_pos >= video_len:
-                cond_print("File exists and is complete. Skipping...\n")
-                return
+    if os.path.isfile(filename):
+        current_byte_pos = os.path.getsize(filename)
+        if current_byte_pos < video_len:
+            file_condition = "ab"
+            resume_header = {"Range": "bytes={}-".format(current_byte_pos)}
+            dl = current_byte_pos
+            output("Resuming previous download.\n", logging.INFO)
 
-        else:
-            file_condition = "wb"
-            resume_header = {"Range": "bytes=0-"}
-            dl = 0
+        elif current_byte_pos >= video_len:
+            raise FileCompleteException("File exists and is complete")
 
-        dl_stream = session.get(template_params["url"], headers=resume_header, stream=True)
-        dl_stream.raise_for_status()
+    else:
+        file_condition = "wb"
+        resume_header = {"Range": "bytes=0-"}
+        dl = 0
 
-        with open(filename, file_condition) as file:
-            start_time = time.time()
-            for block in dl_stream.iter_content(BLOCK_SIZE):
-                dl += len(block)
-                file.write(block)
-                done = int(25 * dl / video_len)
-                percent = int(100 * dl / video_len)
-                speed_str = calculate_speed(start_time, time.time(), dl)
-                cond_print("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
+    dl_stream = session.get(template_params["url"], headers=resume_header, stream=True)
+    dl_stream.raise_for_status()
 
-        cond_print("\n")
-        FINISHED_DOWNLOADING = True
+    with open(filename, file_condition) as file:
+        start_time = time.time()
+        for block in dl_stream.iter_content(BLOCK_SIZE):
+            dl += len(block)
+            file.write(block)
+            done = int(25 * dl / video_len)
+            percent = int(100 * dl / video_len)
+            speed_str = calculate_speed(start_time, time.time(), dl)
+            output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
 
-    except KeyboardInterrupt:
-        sys.exit()
+    output("\nFinished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
+    FINISHED_DOWNLOADING = True
 
 
 def dump_metadata(filename, template_params):
     """Dump the collected video metadata to a file."""
 
-    cond_print("Downloading metadata...")
+    output("Downloading metadata for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "json")
 
     with open(filename, "w") as file:
         json.dump(template_params, file, sort_keys=True)
 
-    cond_print(" done\n")
+    output("Finished downloading metadata for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
 def download_thumbnail(session, filename, template_params):
     """Download the video thumbnail."""
 
-    cond_print("Downloading thumbnail...")
+    output("Downloading thumbnail for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "jpg")
 
@@ -333,13 +368,13 @@ def download_thumbnail(session, filename, template_params):
         for block in get_thumb.iter_content(BLOCK_SIZE):
             file.write(block)
 
-    cond_print(" done\n")
+    output("\nFinished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
 def download_comments(session, filename, template_params):
     """Download the video comments."""
 
-    cond_print("Downloading comments...")
+    output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "xml")
 
@@ -351,7 +386,7 @@ def download_comments(session, filename, template_params):
     with open(filename, "wb") as file:
         file.write(get_comments.content)
 
-    cond_print(" done\n")
+    output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
 def read_file(session, file):
@@ -359,28 +394,42 @@ def read_file(session, file):
 
     with open(file) as file:
         content = file.readlines()
-    download_list = []
     for line in content:
-        url_mo = valid_url(line)
-        if url_mo:
-            process_url_mo(session, url_mo)
-        else:
-            cond_print("Error parsing arguments: Not a valid URL. Skipping...\n")
-
+        try:
+            url_mo = valid_url(line)
+            if url_mo:
+                process_url_mo(session, url_mo)
+            else:
+                raise ArgumentException("Not a valid URL")
+        except FileCompleteException:
+            output("File exists and is complete. Skipping...\n", logging.INFO)
+            continue
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+            traceback.print_exc()
+            continue
 
 def request_mylist(session, mylist_id):
     """Download videos associated with a mylist."""
 
+    output("Downloading mylist {0}...\n".format(mylist_id), logging.INFO)
     mylist_request = session.get(MYLIST_API.format(mylist_id))
     mylist_json = json.loads(mylist_request.text)
 
     if mylist_json["status"] != "ok":
-        cond_print("Error: Could not retrieve mylist info\n")
-        return
+        raise FormatNotAvailableException("Could not retrieve mylist info")
     else:
         for index, item in enumerate(mylist_json["items"]):
-            cond_print("{0}/{1}\n".format(index, len(mylist_json["items"])))
-            request_video(session, item["video_id"])
+            try:
+                output("{0}/{1}\n".format(index, len(mylist_json["items"])), logging.INFO)
+                request_video(session, item["video_id"])
+            except FileCompleteException:
+                output("File exists and is complete. Skipping...\n", logging.INFO)
+                continue
+            except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+                logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+                traceback.print_exc()
+                continue
 
 
 def perform_api_request(session, document):
@@ -393,8 +442,7 @@ def perform_api_request(session, document):
         params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
 
         if params["video"]["isDeleted"]:
-            cond_print("Error: Video was deleted. Skipping...\n")
-            return
+            raise FormatNotAvailableException("Video was deleted")
 
         template_params = collect_parameters(template_params, params)
 
@@ -497,13 +545,13 @@ def perform_api_request(session, document):
                 element.appendChild(quality)
                 sources.appendChild(element)
 
-            cond_print("Performing initial API request...")
+            output("Performing initial API request...\n", logging.INFO)
             headers = {"Content-Type": "application/xml"}
             response = session.post(api_url, data=root.toxml())
             response.raise_for_status()
             response = xml.dom.minidom.parseString(response.text)
             template_params["url"] = response.getElementsByTagName("content_uri")[0].firstChild.nodeValue
-            cond_print(" done\n")
+            output("Performed initial API request.\n", logging.INFO)
 
             # Collect response for heartbeat
             session_id = response.getElementsByTagName("id")[0].firstChild.nodeValue
@@ -513,12 +561,11 @@ def perform_api_request(session, document):
 
         # Legacy URL for videos uploaded pre-HTML5 player (~2016-10-27)
         elif params["video"].get("smileInfo"):
-            cond_print("Using legacy URL...\n")
+            output("Using legacy URL...\n", logging.INFO)
             template_params["url"] = params["video"]["smileInfo"]["url"]
 
         else:
-            cond_print("Error collecting parameters: Failed to find video URL. Nico may have updated their player\n")
-            return
+            raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
 
     # Flash videos (.flv, .swf)
     # NicoMovieMaker videos (.swf) may need conversion to play properly in an external player
@@ -526,8 +573,7 @@ def perform_api_request(session, document):
         params = json.loads(document.find(id="watchAPIDataContainer").text)
 
         if params["videoDetail"]["isDeleted"]:
-            cond_print("Error: Video was deleted. Skipping...\n")
-            return
+            raise FormatNotAvailableException("Video was deleted")
 
         template_params = collect_parameters(template_params, params)
 
@@ -536,11 +582,11 @@ def perform_api_request(session, document):
             template_params["url"] = video_url_param["url"][0]
 
         else:
-            cond_print("Error collecting parameters: Failed to find video URL. Nico may have updated their player\n")
+            raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
             return
 
     else:
-        cond_print("Error collecting parameters: Failed to collect video paramters\n")
+        raise ParameterExtractionException("Failed to collect video paramters")
         return
 
     return template_params
@@ -601,22 +647,22 @@ def process_url_mo(session, url_mo):
         request_video(session, url_id)
 
 
-if __name__ == "__main__":
+def main():
     if not cmdl_opts.file:
         if len(cmdl_args) == 0:
-            sys.exit("Error parsing arguments: You must provide a video, nama, mylist, or file (-f)")
+            raise ArgumentException("You must provide a video, nama, mylist, or file (-f)")
         else:
             global url_mo
             url_mo = valid_url(cmdl_args[0])
             if not url_mo:
-                sys.exit("Error parsing arguments: Not a valid video, nama, or mylist URL")
+                raise ArgumentException("Not a valid video, nama, or mylist URL")
 
     account_username = cmdl_opts.username
     account_password = cmdl_opts.password
 
     if cmdl_opts.netrc:
         if cmdl_opts.username or cmdl_opts.password:
-            cond_print("Ignorning input credentials in favor of .netrc (-n)\n")
+            output("Ignorning input credentials in favor of .netrc (-n)\n", logging.WARNING)
 
         try:
             account_credentials = netrc.netrc().authenticators(HOST)
@@ -624,10 +670,10 @@ if __name__ == "__main__":
                 account_username = account_credentials[0]
                 account_password = account_credentials[2]
             else:
-                sys.exit("Error parsing .netrc: No authenticator available for {}".format(HOST))
+                raise netrc.NetrcParseError("No authenticator available for {}".format(HOST))
 
-        except (IOError, netrc.NetrcParseError) as error:
-            sys.exit("Error parsing .netrc: {}".format(error))
+        except (FileNotFoundError, IOError, netrc.NetrcParseError):
+            raise
 
     if account_username is None:
         account_username = getpass.getpass("Username: ")
@@ -636,7 +682,19 @@ if __name__ == "__main__":
 
     session = login(account_username, account_password)
     if cmdl_opts.file:
-        cond_print("Ignoring argument in favor of file (-f)\n")
+        if len(cmdl_args) > 0:
+            output("Ignoring argument in favor of file (-f)\n", logging.WARNING)
         read_file(session, cmdl_opts.file)
     else:
         process_url_mo(session, url_mo)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        output("\nExiting...", logging.INFO)
+        sys.exit(1)
+    except Exception as error:
+        logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+        traceback.print_exc()
