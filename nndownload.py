@@ -648,45 +648,49 @@ def process_url_mo(session, url_mo):
 
 
 def main():
-    if not cmdl_opts.file:
-        if len(cmdl_args) == 0:
-            raise ArgumentException("You must provide a video, nama, mylist, or file (-f)")
-        else:
-            global url_mo
-            url_mo = valid_url(cmdl_args[0])
-            if not url_mo:
-                raise ArgumentException("Not a valid video, nama, or mylist URL")
-
-    account_username = cmdl_opts.username
-    account_password = cmdl_opts.password
-
-    if cmdl_opts.netrc:
-        if cmdl_opts.username or cmdl_opts.password:
-            output("Ignorning input credentials in favor of .netrc (-n)\n", logging.WARNING)
-
-        try:
-            account_credentials = netrc.netrc().authenticators(HOST)
-            if account_credentials is not None:
-                account_username = account_credentials[0]
-                account_password = account_credentials[2]
+    try:
+        if not cmdl_opts.file:
+            if len(cmdl_args) == 0:
+                raise ArgumentException("You must provide a video, nama, mylist, or file (-f)")
             else:
-                raise netrc.NetrcParseError("No authenticator available for {}".format(HOST))
+                global url_mo
+                url_mo = valid_url(cmdl_args[0])
+                if not url_mo:
+                    raise ArgumentException("Not a valid video, nama, or mylist URL")
 
-        except (FileNotFoundError, IOError, netrc.NetrcParseError):
-            raise
+        account_username = cmdl_opts.username
+        account_password = cmdl_opts.password
 
-    if account_username is None:
-        account_username = getpass.getpass("Username: ")
-    if account_password is None:
-        account_password = getpass.getpass("Password: ")
+        if cmdl_opts.netrc:
+            if cmdl_opts.username or cmdl_opts.password:
+                output("Ignorning input credentials in favor of .netrc (-n)\n", logging.WARNING)
 
-    session = login(account_username, account_password)
-    if cmdl_opts.file:
-        if len(cmdl_args) > 0:
-            output("Ignoring argument in favor of file (-f)\n", logging.WARNING)
-        read_file(session, cmdl_opts.file)
-    else:
-        process_url_mo(session, url_mo)
+            try:
+                account_credentials = netrc.netrc().authenticators(HOST)
+                if account_credentials is not None:
+                    account_username = account_credentials[0]
+                    account_password = account_credentials[2]
+                else:
+                    raise netrc.NetrcParseError("No authenticator available for {}".format(HOST))
+
+            except (FileNotFoundError, IOError, netrc.NetrcParseError):
+                raise
+
+        if account_username is None:
+            account_username = getpass.getpass("Username: ")
+        if account_password is None:
+            account_password = getpass.getpass("Password: ")
+
+        session = login(account_username, account_password)
+        if cmdl_opts.file:
+            if len(cmdl_args) > 0:
+                output("Ignoring argument in favor of file (-f)\n", logging.WARNING)
+            read_file(session, cmdl_opts.file)
+        else:
+            process_url_mo(session, url_mo)
+    except Exception as error:
+        logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
@@ -695,6 +699,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         output("\nExiting...", logging.INFO)
         sys.exit(1)
-    except Exception as error:
-        logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
-        traceback.print_exc()
