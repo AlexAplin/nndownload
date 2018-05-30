@@ -405,7 +405,8 @@ def read_file(session, file):
             output("File exists and is complete. Skipping...\n", logging.INFO)
             continue
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-            logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+            if cmdl_opts.log:
+                logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
             traceback.print_exc()
             continue
 
@@ -427,7 +428,8 @@ def request_mylist(session, mylist_id):
                 output("File exists and is complete. Skipping...\n", logging.INFO)
                 continue
             except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-                logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+                if cmdl_opts.log:
+                    logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
                 traceback.print_exc()
                 continue
 
@@ -689,7 +691,8 @@ def main():
         else:
             process_url_mo(session, url_mo)
     except Exception as error:
-        logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+        if cmdl_opts.log:
+            logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
         traceback.print_exc()
 
 
