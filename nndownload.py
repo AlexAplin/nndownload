@@ -95,11 +95,6 @@ class FormatNotAvailableException(Exception):
     pass
 
 
-class FileCompleteException(Exception):
-    """Raised when the requested file has already been donwloaded completely."""
-    pass
-
-
 class ParameterExtractionException(Exception):
     """Raised when parameters could not be successfully extracted."""
     pass
@@ -319,7 +314,8 @@ def download_video(session, filename, template_params):
             output("Resuming previous download.\n", logging.INFO)
 
         elif current_byte_pos >= video_len:
-            raise FileCompleteException("File exists and is complete")
+            output("File exists and is complete.\n", logging.INFO)
+            return
 
     else:
         file_condition = "wb"
@@ -368,7 +364,7 @@ def download_thumbnail(session, filename, template_params):
         for block in get_thumb.iter_content(BLOCK_SIZE):
             file.write(block)
 
-    output("\nFinished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
+    output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
 def download_comments(session, filename, template_params):
@@ -700,5 +696,5 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        output("\nExiting...", logging.INFO)
+        output("Exiting...", logging.INFO)
         sys.exit(1)
