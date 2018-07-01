@@ -31,6 +31,8 @@ Options:
   -l, --log             log output to file
 
   Download Options:
+    -y PROXY, --proxy=PROXY
+                        http or socks proxy
     -o OUTPUT_PATH, --output-path=OUTPUT_PATH
                         custom output path (see template options)
     -f, --force-high-quality

@@ -64,6 +64,7 @@ cmdl_parser.add_option("-q", "--quiet", action="store_true", dest="quiet", help=
 cmdl_parser.add_option("-l", "--log", action="store_true", dest="log", help="log output to file")
 
 dl_group = optparse.OptionGroup(cmdl_parser, "Download Options")
+dl_group.add_option("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
 dl_group.add_option("-o", "--output-path", dest="output_path", help="custom output path (see template options)")
 dl_group.add_option("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
 dl_group.add_option("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
@@ -133,6 +134,14 @@ def login(username, password):
 
     session = requests.session()
     session.headers.update({"User-Agent": "nndownload/%s".format(__version__)})
+
+    if cmdl_opts.proxy:
+        proxies = {
+            "http": cmdl_opts.proxy,
+            "https": cmdl_opts.proxy
+        }
+        session.proxies.update(proxies)
+
     response = session.post(LOGIN_URL, data=LOGIN_POST)
     response.raise_for_status()
     if session.cookies.get_dict().get("user_session", None) is None:
