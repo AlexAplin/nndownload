@@ -220,8 +220,6 @@ def request_video(session, video_id):
     document = BeautifulSoup(response.text, "html.parser")
 
     template_params = perform_api_request(session, document)
-    template_params["size_high"] = int(video_info.getElementsByTagName("size_high")[0].firstChild.nodeValue)
-    template_params["size_low"] = int(video_info.getElementsByTagName("size_low")[0].firstChild.nodeValue)
 
     filename = create_filename(template_params)
 
@@ -451,7 +449,7 @@ def perform_api_request(session, document):
         if params["video"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(template_params, params)
+        template_params = collect_parameters(session, template_params, params)
 
         # Perform request to Dwango Media Cluster (DMC)
         if params["video"].get("dmcInfo"):
@@ -582,7 +580,7 @@ def perform_api_request(session, document):
         if params["videoDetail"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(template_params, params)
+        template_params = collect_parameters(session, template_params, params)
 
         video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
         if ("url" in video_url_param):
@@ -599,14 +597,14 @@ def perform_api_request(session, document):
     return template_params
 
 
-def collect_parameters(template_params, params):
+def collect_parameters(session, template_params, params):
     """Collect video parameters to make them available for an output filename template."""
 
     if params.get("video"):
         template_params["id"] = params["video"]["id"]
         template_params["title"] = params["video"]["title"]
-        template_params["uploader"] = params["owner"]["nickname"].rstrip(" さん") if params["owner"] else None
-        template_params["uploader_id"] = int(params["owner"]["id"]) if params["owner"] else None
+        template_params["uploader"] = params["owner"]["nickname"].rstrip(" さん") if params.get("owner") else None
+        template_params["uploader_id"] = int(params["owner"]["id"]) if params.get("owner") else None
         template_params["ext"] = params["video"]["movieType"]
         template_params["description"] = params["video"]["description"]
         template_params["thumbnail_url"] = params["video"]["thumbnailURL"]
@@ -620,8 +618,8 @@ def collect_parameters(template_params, params):
     elif params.get("videoDetail"):
         template_params["id"] = params["videoDetail"]["id"]
         template_params["title"] = params["videoDetail"]["title"]
-        template_params["uploader"] = params["uploaderInfo"]["nickname"].rstrip(" さん") if params["uploaderInfo"] else None
-        template_params["uploader_id"] = int(params["uploaderInfo"]["id"]) if params["uploaderInfo"] else None
+        template_params["uploader"] = params["uploaderInfo"]["nickname"].rstrip(" さん") if params.get("uploaderInfo") else None
+        template_params["uploader_id"] = int(params["uploaderInfo"]["id"]) if params.get("uploaderInfo") else None
         template_params["ext"] = params["flashvars"]["movie_type"]
         template_params["description"] = params["videoDetail"]["description"]
         template_params["thumbnail_url"] = params["videoDetail"]["thumbnail"]
@@ -631,6 +629,27 @@ def collect_parameters(template_params, params):
         template_params["view_count"] = params["videoDetail"]["viewCount"]
         template_params["mylist_count"] = params["videoDetail"]["mylistCount"]
         template_params["comment_count"] = params["videoDetail"]["commentCount"]
+
+    response = session.get(THUMB_INFO_API.format(template_params["id"]))
+    response.raise_for_status()
+    video_info = xml.dom.minidom.parseString(response.text)
+
+    template_params["size_high"] = int(video_info.getElementsByTagName("size_high")[0].firstChild.nodeValue)
+    template_params["size_low"] = int(video_info.getElementsByTagName("size_low")[0].firstChild.nodeValue)
+
+    # Check if we couldn't capture uploader info before
+    if not template_params["uploader"] or not template_params["uploader_id"]:
+        ch_id = video_info.getElementsByTagName("ch_id")
+        ch_name = video_info.getElementsByTagName("ch_name")
+        user_id = video_info.getElementsByTagName("user_id")
+        user_nickname = video_info.getElementsByTagName("user_nickname")
+        if ch_id and ch_name:
+            template_params["uploader"] = ch_name[0].firstChild.nodeValue
+            template_params["uploader_id"] = ch_id[0].firstChild.nodeValue
+
+        elif ch_id and ch_name:
+            template_params["uploader"] = user_id[0].firstChild.nodeValue
+            template_params["uploader_id"] = user_nickname[0].firstChild.nodeValue
 
     return template_params
 
