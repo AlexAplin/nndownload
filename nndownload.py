@@ -277,6 +277,11 @@ def replace_extension(filename, new_extension):
     return "{0}.{1}".format(base_path, new_extension)
 
 
+def sanitize_for_path(value, replace=' '):
+    """Remove potentially illegal characters from a path."""
+    return re.sub('[<>\"\?\\\/\*:]', replace, value)
+
+
 def create_filename(template_params):
     """Create filename from document parameters."""
 
@@ -284,7 +289,7 @@ def create_filename(template_params):
 
     if filename_template:
         template_dict = dict(template_params)
-        template_dict = dict((k, v) for k, v in template_dict.items() if v is not None)
+        template_dict = dict((k, sanitize_for_path(str(v))) for k, v in template_dict.items() if v is not None)
         template_dict = collections.defaultdict(lambda: "__NONE__", template_dict)
 
         filename = filename_template.format_map(template_dict)
@@ -297,7 +302,8 @@ def create_filename(template_params):
 
         return filename
     else:
-        return "{0} - {1}.{2}".format(template_params["id"], template_params["title"], template_params["ext"])
+        filename = "{0} - {1}.{2}".format(template_params["id"], template_params["title"], template_params["ext"])
+        return sanitize_for_path(filename)
 
 
 def download_video(session, filename, template_params):
