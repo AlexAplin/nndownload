@@ -163,18 +163,22 @@ def pairwise(iterable):
 def request_rtmp(session, nama_id):
     """Build the RTMP stream URL for a Niconama broadcast and print to file."""
 
-    nama_info = xml.dom.minidom.parseString(session.get(NAMA_API.format(nama_id)).text)
+    nama_xml = session.get(NAMA_API.format(nama_id), allow_redirects=False).text
+    if not nama_xml:
+        raise FormatNotAvailableException("Could not retrieve nama info from API")
+
+    nama_info = xml.dom.minidom.parseString(nama_xml)
     if nama_info.getElementsByTagName("error"):
-        raise FormatNotSupportedException("Requested nama is not available")
+        raise FormatNotAvailableException("Requested nama is not available")
 
     urls = urllib.parse.unquote(nama_info.getElementsByTagName("contents")[0].firstChild.nodeValue).split(",")
     is_premium = nama_info.getElementsByTagName("is_premium")[0].firstChild.nodeValue
     provider_type = nama_info.getElementsByTagName("provider_type")[0].firstChild.nodeValue
     if provider_type == "official":
         for details, stream_name in pairwise(urls):
-            split = details.split(":", maxsplit=1)
+            split = details.split(":", maxsplit=2)
             if (is_premium and split[0] == "premium") or ((not is_premium or provider_type == "official") and (split[0] == "default" or split[0] == "limelight")):
-                url = split[1] + "/" + stream_name
+                url = split[2] + "/" + stream_name
                 if nama_info.getElementsByTagName("hqstream"):
                     url = url.split(":", maxsplit=1)[1]
                 break
@@ -189,11 +193,7 @@ def request_rtmp(session, nama_id):
     for stream in nama_info.getElementsByTagName("stream"):
         if stream.getAttribute("name") == stream_name:
             rtmp = url + "?" + stream.firstChild.nodeValue
-            rtmp_filename = "{0}.txt".format(nama_id)
-            output("Saving RTMP URL ({0}) to {1}...\n".format(rtmp, rtmp_filename), logging.INFO)
-            with open(rtmp_filename, "w") as file:
-                file.write(rtmp)
-            output("Finished saving RTMP URL to {0}.\n".format(rtmp_filename), logging.INFO)
+            output("{0}\n".format(rtmp), logging.INFO)
 
 def request_video(session, video_id):
     """Request the video page and initiate download of the video URL."""
