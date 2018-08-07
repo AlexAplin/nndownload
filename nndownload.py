@@ -209,7 +209,7 @@ def request_video(session, video_id):
         raise FormatNotAvailableException("Could not retrieve video info")
 
     video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
-    if video_type == "swf" or "flv":
+    if video_type == "swf" or video_type == "flv":
         response = session.get(VIDEO_URL.format(video_id), cookies=FLASH_COOKIE)
     elif video_type == "mp4":
         response = session.get(VIDEO_URL.format(video_id), cookies=HTML5_COOKIE)
