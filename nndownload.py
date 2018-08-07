@@ -372,7 +372,8 @@ def download_thumbnail(session, filename, template_params):
 
     filename = replace_extension(filename, "jpg")
 
-    get_thumb = session.get(template_params["thumbnail_url"])
+    get_thumb = session.get(template_params["thumbnail_url"]+".L")
+    if get_thumb.status_code == 404: get_thumb = session.get(template_params["thumbnail_url"])
     with open(filename, "wb") as file:
         for block in get_thumb.iter_content(BLOCK_SIZE):
             file.write(block)
