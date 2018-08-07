@@ -144,7 +144,7 @@ def login(username, password):
 
     response = session.post(LOGIN_URL, data=LOGIN_POST)
     response.raise_for_status()
-    if session.cookies.get_dict().get("user_session", None) is None:
+    if not session.cookies.get_dict().get("user_session", None):
         output("Failed to login.\n", logging.INFO)
         raise AuthenticationException("Failed to login. Please verify your username and password")
 
@@ -161,7 +161,7 @@ def pairwise(iterable):
 
 
 def request_rtmp(session, nama_id):
-    """Build the RTMP stream URL for a Niconama broadcast and print to file."""
+    """Build the RTMP stream URL for a Niconama broadcast and print to console."""
 
     nama_xml = session.get(NAMA_API.format(nama_id), allow_redirects=False).text
     if not nama_xml:
@@ -289,7 +289,7 @@ def create_filename(template_params):
 
     if filename_template:
         template_dict = dict(template_params)
-        template_dict = dict((k, sanitize_for_path(str(v))) for k, v in template_dict.items() if v is not None)
+        template_dict = dict((k, sanitize_for_path(str(v))) for k, v in template_dict.items() if v)
         template_dict = collections.defaultdict(lambda: "__NONE__", template_dict)
 
         filename = filename_template.format_map(template_dict)
@@ -372,7 +372,11 @@ def download_thumbnail(session, filename, template_params):
 
     filename = replace_extension(filename, "jpg")
 
-    get_thumb = session.get(template_params["thumbnail_url"])
+    # Try to retrieve the large thumbnail
+    get_thumb = session.get(template_params["thumbnail_url"] + ".L")
+    if get_thumb.status_code == 404:
+        get_thumb = session.get(template_params["thumbnail_url"])
+
     with open(filename, "wb") as file:
         for block in get_thumb.iter_content(BLOCK_SIZE):
             file.write(block)
@@ -699,7 +703,7 @@ def main():
 
             try:
                 account_credentials = netrc.netrc().authenticators(HOST)
-                if account_credentials is not None:
+                if account_credentials:
                     account_username = account_credentials[0]
                     account_password = account_credentials[2]
                 else:
@@ -708,9 +712,9 @@ def main():
             except (FileNotFoundError, IOError, netrc.NetrcParseError):
                 raise
 
-        if account_username is None:
+        if not account_username:
             account_username = getpass.getpass("Username: ")
-        if account_password is None:
+        if not account_password:
             account_password = getpass.getpass("Password: ")
 
         session = login(account_username, account_password)
