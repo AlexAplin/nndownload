@@ -648,18 +648,15 @@ def collect_parameters(session, template_params, params):
     template_params["size_low"] = int(video_info.getElementsByTagName("size_low")[0].firstChild.nodeValue)
 
     # Check if we couldn't capture uploader info before
-    if not template_params["uploader"] or not template_params["uploader_id"]:
-        ch_id = video_info.getElementsByTagName("ch_id")
-        ch_name = video_info.getElementsByTagName("ch_name")
+    if not template_params["uploader_id"]:
+        channel_id = video_info.getElementsByTagName("ch_id")
         user_id = video_info.getElementsByTagName("user_id")
-        user_nickname = video_info.getElementsByTagName("user_nickname")
-        if ch_id and ch_name:
-            template_params["uploader"] = ch_name[0].firstChild.nodeValue
-            template_params["uploader_id"] = ch_id[0].firstChild.nodeValue
+        template_params["uploader_id"] = channel_id[0].firstChild.nodeValue if channel_id else user_id[0].firstChild.nodeValue if user_id else None
 
-        elif ch_id and ch_name:
-            template_params["uploader"] = user_id[0].firstChild.nodeValue
-            template_params["uploader_id"] = user_nickname[0].firstChild.nodeValue
+    if not template_params["uploader"]:
+        channel_name = video_info.getElementsByTagName("ch_name")
+        user_nickname = video_info.getElementsByTagName("user_nickname")
+        template_params["uploader"] = channel_name[0].firstChild.nodeValue if channel_name else user_nickname[0].firstChild.nodeValue if user_nickname else None
 
     return template_params
 
