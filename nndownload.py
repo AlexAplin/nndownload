@@ -11,7 +11,7 @@ import math
 import xml.dom.minidom
 import urllib.parse
 import re
-import optparse
+import argparse
 import os
 import sys
 import threading
@@ -53,27 +53,28 @@ FLASH_COOKIE = {
     "watch_flash": "1"
 }
 
-cmdl_usage = "%prog [options] url"
+cmdl_usage = "%(prog)s [options] input"
 cmdl_version = __version__
-cmdl_parser = optparse.OptionParser(usage=cmdl_usage, version=cmdl_version, conflict_handler="resolve")
-cmdl_parser.add_option("-u", "--username", dest="username", metavar="USERNAME", help="account username")
-cmdl_parser.add_option("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
-cmdl_parser.add_option("-i", "--file", dest="file", metavar="FILE", help="read URLs from file")
-cmdl_parser.add_option("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
-cmdl_parser.add_option("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
-cmdl_parser.add_option("-l", "--log", action="store_true", dest="log", help="log output to file")
+cmdl_parser = argparse.ArgumentParser(usage=cmdl_usage, conflict_handler="resolve")
 
-dl_group = optparse.OptionGroup(cmdl_parser, "Download Options")
-dl_group.add_option("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
-dl_group.add_option("-o", "--output-path", dest="output_path", help="custom output path (see template options)")
-dl_group.add_option("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
-dl_group.add_option("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
-dl_group.add_option("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
-dl_group.add_option("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
-dl_group.add_option("-e", "--english", action="store_true", dest="download_english", help="download english comments")
+cmdl_parser.add_argument("-u", "--username", dest="username", metavar="USERNAME", help="account username")
+cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
+cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
+cmdl_parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
+cmdl_parser.add_argument("-l", "--log", action="store_true", dest="log", help="log output to file")
+cmdl_parser.add_argument("-v", "--version", action="version", version=cmdl_version)
+cmdl_parser.add_argument("input", help="URL or file")
 
-cmdl_parser.add_option_group(dl_group)
-(cmdl_opts, cmdl_args) = cmdl_parser.parse_args()
+dl_group = cmdl_parser.add_argument_group("download options")
+dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
+dl_group.add_argument("-o", "--output-path", dest="output_path", help="custom output path (see template options)")
+dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
+dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
+dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
+dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
+dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="download english comments")
+
+cmdl_opts = cmdl_parser.parse_args()
 
 
 class AuthenticationException(Exception):
@@ -195,6 +196,7 @@ def request_rtmp(session, nama_id):
             rtmp = url + "?" + stream.firstChild.nodeValue
             output("{0}\n".format(rtmp), logging.INFO)
 
+
 def request_video(session, video_id):
     """Request the video page and initiate download of the video URL."""
 
@@ -293,12 +295,8 @@ def create_filename(template_params):
         template_dict = collections.defaultdict(lambda: "__NONE__", template_dict)
 
         filename = filename_template.format_map(template_dict)
-        try:
-            if (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(os.path.dirname(filename)):
-                os.makedirs(os.path.dirname(filename), exist_ok=True)
-
-        except (OSError, IOError):
-            raise
+        if (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(os.path.dirname(filename)):
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
 
         return filename
     else:
@@ -407,21 +405,23 @@ def read_file(session, file):
 
     with open(file) as file:
         content = file.readlines()
-    for line in content:
+
+    total_lines = len(content)
+    for index, line in enumerate(content):
         try:
+            output("{0}/{1}\n".format(index + 1, total_lines), logging.INFO)
             url_mo = valid_url(line)
             if url_mo:
                 process_url_mo(session, url_mo)
             else:
                 raise ArgumentException("Not a valid URL")
-        except FileCompleteException:
-            output("File exists and is complete. Skipping...\n", logging.INFO)
-            continue
+
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             if cmdl_opts.log:
                 logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
             traceback.print_exc()
             continue
+
 
 def request_mylist(session, mylist_id):
     """Download videos associated with a mylist."""
@@ -430,16 +430,15 @@ def request_mylist(session, mylist_id):
     mylist_request = session.get(MYLIST_API.format(mylist_id))
     mylist_json = json.loads(mylist_request.text)
 
+    total_mylist = len(mylist_json["items"])
     if mylist_json["status"] != "ok":
         raise FormatNotAvailableException("Could not retrieve mylist info")
     else:
         for index, item in enumerate(mylist_json["items"]):
             try:
-                output("{0}/{1}\n".format(index, len(mylist_json["items"])), logging.INFO)
+                output("{0}/{1}\n".format(index + 1, total_mylist), logging.INFO)
                 request_video(session, item["video_id"])
-            except FileCompleteException:
-                output("File exists and is complete. Skipping...\n", logging.INFO)
-                continue
+
             except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
                 if cmdl_opts.log:
                     logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
@@ -682,15 +681,6 @@ def process_url_mo(session, url_mo):
 
 def main():
     try:
-        if not cmdl_opts.file:
-            if len(cmdl_args) == 0:
-                raise ArgumentException("You must provide a video, nama, mylist, or file (-f)")
-            else:
-                global url_mo
-                url_mo = valid_url(cmdl_args[0])
-                if not url_mo:
-                    raise ArgumentException("Not a valid video, nama, or mylist URL")
-
         account_username = cmdl_opts.username
         account_password = cmdl_opts.password
 
@@ -698,29 +688,27 @@ def main():
             if cmdl_opts.username or cmdl_opts.password:
                 output("Ignorning input credentials in favor of .netrc (-n)\n", logging.WARNING)
 
-            try:
-                account_credentials = netrc.netrc().authenticators(HOST)
-                if account_credentials:
-                    account_username = account_credentials[0]
-                    account_password = account_credentials[2]
-                else:
-                    raise netrc.NetrcParseError("No authenticator available for {}".format(HOST))
-
-            except (FileNotFoundError, IOError, netrc.NetrcParseError):
-                raise
+            account_credentials = netrc.netrc().authenticators(HOST)
+            if account_credentials:
+                account_username = account_credentials[0]
+                account_password = account_credentials[2]
+            else:
+                raise netrc.NetrcParseError("No authenticator available for {}".format(HOST))
 
         if not account_username:
-            account_username = getpass.getpass("Username: ")
+            account_username = input("Username: ")
         if not account_password:
             account_password = getpass.getpass("Password: ")
 
         session = login(account_username, account_password)
-        if cmdl_opts.file:
-            if len(cmdl_args) > 0:
-                output("Ignoring argument in favor of file (-f)\n", logging.WARNING)
-            read_file(session, cmdl_opts.file)
-        else:
+
+        url_mo = valid_url(cmdl_opts.input)
+        if url_mo:
             process_url_mo(session, url_mo)
+        else:
+            open(cmdl_opts.input)
+            read_file(session, cmdl_opts.input)
+
     except Exception as error:
         if cmdl_opts.log:
             logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
@@ -731,5 +719,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        output("Exiting...", logging.INFO)
         sys.exit(1)
