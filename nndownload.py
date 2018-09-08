@@ -681,6 +681,11 @@ def process_url_mo(session, url_mo):
 
 def main():
     try:
+        # Test if input is a valid URL or file
+        url_mo = valid_url(cmdl_opts.input)
+        if not url_mo:
+            open(cmdl_opts.input)
+
         account_username = cmdl_opts.username
         account_password = cmdl_opts.password
 
@@ -701,12 +706,9 @@ def main():
             account_password = getpass.getpass("Password: ")
 
         session = login(account_username, account_password)
-
-        url_mo = valid_url(cmdl_opts.input)
         if url_mo:
             process_url_mo(session, url_mo)
         else:
-            open(cmdl_opts.input)
             read_file(session, cmdl_opts.input)
 
     except Exception as error:
