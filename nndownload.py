@@ -68,6 +68,7 @@ cmdl_parser.add_argument("input", help="URL or file")
 dl_group = cmdl_parser.add_argument_group("download options")
 dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
 dl_group.add_argument("-o", "--output-path", dest="output_path", help="custom output path (see template options)")
+dl_group.add_argument("-g", "--no-login", action="store_true", dest="no_login", help="create a download session without logging in")
 dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
 dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
 dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
@@ -126,30 +127,32 @@ def output(string, level=logging.INFO):
 def login(username, password):
     """Login to Nico. Will raise an exception for errors."""
 
-    output("Logging in...\n", logging.INFO)
-
-    LOGIN_POST = {
-        "mail_tel": username,
-        "password": password
-    }
-
     session = requests.session()
-    session.headers.update({"User-Agent": "nndownload/%s".format(__version__)})
+    session.headers.update({"User-Agent": "nndownload/{}".format(__version__)})
 
-    if cmdl_opts.proxy:
-        proxies = {
-            "http": cmdl_opts.proxy,
-            "https": cmdl_opts.proxy
+    if not cmdl_opts.no_login:
+        output("Logging in...\n", logging.INFO)
+
+        LOGIN_POST = {
+            "mail_tel": username,
+            "password": password
         }
-        session.proxies.update(proxies)
 
-    response = session.post(LOGIN_URL, data=LOGIN_POST)
-    response.raise_for_status()
-    if not session.cookies.get_dict().get("user_session", None):
-        output("Failed to login.\n", logging.INFO)
-        raise AuthenticationException("Failed to login. Please verify your username and password")
+        if cmdl_opts.proxy:
+            proxies = {
+                "http": cmdl_opts.proxy,
+                "https": cmdl_opts.proxy
+            }
+            session.proxies.update(proxies)
 
-    output("Logged in.\n", logging.INFO)
+        response = session.post(LOGIN_URL, data=LOGIN_POST)
+        response.raise_for_status()
+        if not session.cookies.get_dict().get("user_session", None):
+            output("Failed to login.\n", logging.INFO)
+            raise AuthenticationException("Failed to login. Please verify your username and password")
+
+        output("Logged in.\n", logging.INFO)
+
     return session
 
 
@@ -210,6 +213,9 @@ def request_video(session, video_id):
     if video_info.firstChild.getAttribute("status") != "ok":
         raise FormatNotAvailableException("Could not retrieve video info")
 
+    # This is the file type for the original encode
+    # When logged out, Flash videos will sometimes be served on the HTML5 player with a low quality .mp4 re-encode
+    # Some Flash videos are not available outside of the Flash player
     video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
     if video_type == "swf" or video_type == "flv":
         response = session.get(VIDEO_URL.format(video_id), cookies=FLASH_COOKIE)
@@ -275,13 +281,13 @@ def calculate_speed(start, now, bytes):
 def replace_extension(filename, new_extension):
     """Replace the extension in a file path."""
 
-    base_path, old_extension = os.path.splitext(filename)
+    base_path, _ = os.path.splitext(filename)
     return "{0}.{1}".format(base_path, new_extension)
 
 
 def sanitize_for_path(value, replace=' '):
     """Remove potentially illegal characters from a path."""
-    return re.sub('[<>\"\?\\\/\*:]', replace, value)
+    return re.sub(r'[<>\"\?\\\/\*:]', replace, value)
 
 
 def create_filename(template_params):
@@ -312,9 +318,6 @@ def download_video(session, filename, template_params):
     dl_stream = session.head(template_params["url"])
     dl_stream.raise_for_status()
     video_len = int(dl_stream.headers["content-length"])
-
-    if cmdl_opts.force_high_quality and video_len == template_params["size_low"]:
-        raise FormatNotAvailableException("High quality source not currently available")
 
     if os.path.isfile(filename):
         current_byte_pos = os.path.getsize(filename)
@@ -458,7 +461,7 @@ def perform_api_request(session, document):
         if params["video"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(session, template_params, params)
+        template_params = collect_parameters(session, template_params, params, isHtml5=True)
 
         # Perform request to Dwango Media Cluster (DMC)
         if params["video"].get("dmcInfo"):
@@ -466,7 +469,7 @@ def perform_api_request(session, document):
             recipe_id = params["video"]["dmcInfo"]["session_api"]["recipe_id"]
             content_id = params["video"]["dmcInfo"]["session_api"]["content_id"]
             protocol = params["video"]["dmcInfo"]["session_api"]["protocols"][0]
-            file_extension = params["video"]["movieType"]
+            file_extension = template_params["ext"]
             priority = params["video"]["dmcInfo"]["session_api"]["priority"]
             video_sources = params["video"]["dmcInfo"]["session_api"]["videos"]
             audio_sources = params["video"]["dmcInfo"]["session_api"]["audios"]
@@ -561,7 +564,7 @@ def perform_api_request(session, document):
 
             output("Performing initial API request...\n", logging.INFO)
             headers = {"Content-Type": "application/xml"}
-            response = session.post(api_url, data=root.toxml())
+            response = session.post(api_url, headers=headers, data=root.toxml())
             response.raise_for_status()
             response = xml.dom.minidom.parseString(response.text)
             template_params["url"] = response.getElementsByTagName("content_uri")[0].firstChild.nodeValue
@@ -589,7 +592,7 @@ def perform_api_request(session, document):
         if params["videoDetail"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(session, template_params, params)
+        template_params = collect_parameters(session, template_params, params, isHtml5=False)
 
         video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
         if ("url" in video_url_param):
@@ -597,16 +600,14 @@ def perform_api_request(session, document):
 
         else:
             raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
-            return
 
     else:
         raise ParameterExtractionException("Failed to collect video paramters")
-        return
 
     return template_params
 
 
-def collect_parameters(session, template_params, params):
+def collect_parameters(session, template_params, params, isHtml5):
     """Collect video parameters to make them available for an output filename template."""
 
     if params.get("video"):
@@ -614,7 +615,6 @@ def collect_parameters(session, template_params, params):
         template_params["title"] = params["video"]["title"]
         template_params["uploader"] = params["owner"]["nickname"].rstrip(" さん") if params.get("owner") else None
         template_params["uploader_id"] = int(params["owner"]["id"]) if params.get("owner") else None
-        template_params["ext"] = params["video"]["movieType"]
         template_params["description"] = params["video"]["description"]
         template_params["thumbnail_url"] = params["video"]["thumbnailURL"]
         template_params["thread_id"] = int(params["thread"]["ids"]["default"])
@@ -629,7 +629,6 @@ def collect_parameters(session, template_params, params):
         template_params["title"] = params["videoDetail"]["title"]
         template_params["uploader"] = params["uploaderInfo"]["nickname"].rstrip(" さん") if params.get("uploaderInfo") else None
         template_params["uploader_id"] = int(params["uploaderInfo"]["id"]) if params.get("uploaderInfo") else None
-        template_params["ext"] = params["flashvars"]["movie_type"]
         template_params["description"] = params["videoDetail"]["description"]
         template_params["thumbnail_url"] = params["videoDetail"]["thumbnail"]
         template_params["thread_id"] = int(params["videoDetail"]["thread_id"])
@@ -642,6 +641,12 @@ def collect_parameters(session, template_params, params):
     response = session.get(THUMB_INFO_API.format(template_params["id"]))
     response.raise_for_status()
     video_info = xml.dom.minidom.parseString(response.text)
+
+    # DMC videos do not expose the file type in the video page parameters when not logged in
+    # If this is a Flash video being served on the HTML5 player, it's guaranteed to be a low quality .mp4 re-encode
+    template_params["ext"] = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
+    if isHtml5 and (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
+        template_params["ext"] = "mp4"
 
     template_params["size_high"] = int(video_info.getElementsByTagName("size_high")[0].firstChild.nodeValue)
     template_params["size_low"] = int(video_info.getElementsByTagName("size_low")[0].firstChild.nodeValue)
@@ -700,10 +705,13 @@ def main():
             else:
                 raise netrc.NetrcParseError("No authenticator available for {}".format(HOST))
 
-        if not account_username:
-            account_username = input("Username: ")
-        if not account_password:
-            account_password = getpass.getpass("Password: ")
+        if cmdl_opts.no_login:
+            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or -netrc.\n", logging.WARNING)
+        else:
+            if not account_username:
+                account_username = input("Username: ")
+            if not account_password:
+                account_password = getpass.getpass("Password: ")
 
         session = login(account_username, account_password)
         if url_mo:

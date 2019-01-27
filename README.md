@@ -1,5 +1,5 @@
 # nndownload
-nndownload allows you to download videos from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST).
+nndownload allows you to download videos from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
 
 ## Features
  - Download videos with comments, thumbnails, and metadata
@@ -38,6 +38,7 @@ download options:
                         http or socks proxy
   -o OUTPUT_PATH, --output-path OUTPUT_PATH
                         custom output path (see template options)
+  -g, --no-login        create a download session without logging in
   -f, --force-high-quality
                         only download if the high quality source is available
   -m, --dump-metadata   dump video metadata to file
