@@ -43,8 +43,6 @@ KILOBYTE = 1024
 BLOCK_SIZE = 10 * KILOBYTE
 EPSILON = 0.0001
 
-FINISHED_DOWNLOADING = False
-
 HTML5_COOKIE = {
     "watch_flash": "0"
 }
@@ -246,10 +244,9 @@ def perform_heartbeat(response, session, heartbeat_url):
     response = session.post(heartbeat_url, data=response.toxml())
     response.raise_for_status()
     response = xml.dom.minidom.parseString(response.text).getElementsByTagName("session")[0]
-    if not FINISHED_DOWNLOADING:
-        heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (response, session, heartbeat_url))
-        heartbeat_timer.daemon = True
-        heartbeat_timer.start()
+    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (response, session, heartbeat_url))
+    heartbeat_timer.daemon = True
+    heartbeat_timer.start()
 
 
 def format_bytes(number_bytes):
@@ -350,7 +347,6 @@ def download_video(session, filename, template_params):
             output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
 
     output("\nFinished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
-    FINISHED_DOWNLOADING = True
 
 
 def dump_metadata(filename, template_params):
