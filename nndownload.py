@@ -700,14 +700,13 @@ def main():
                 account_password = account_credentials[2]
             else:
                 raise netrc.NetrcParseError("No authenticator available for {}".format(HOST))
-
-        if cmdl_opts.no_login:
-            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or -netrc.\n", logging.WARNING)
-        else:
+        elif not cmdl_opts.no_login:
             if not account_username:
                 account_username = input("Username: ")
             if not account_password:
                 account_password = getpass.getpass("Password: ")
+        else:
+            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.WARNING)
 
         session = login(account_username, account_password)
         if url_mo:
