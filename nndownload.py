@@ -558,7 +558,6 @@ def perform_api_request(session, document):
 
         template_params = collect_parameters(session, template_params, params, isHtml5=True)
 
-
         if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
             raise FormatNotAvailableException("High quality source is not available")
 
@@ -755,7 +754,7 @@ def collect_parameters(session, template_params, params, isHtml5):
         template_params["view_count"] = params["videoDetail"]["viewCount"]
         template_params["mylist_count"] = params["videoDetail"]["mylistCount"]
         template_params["comment_count"] = params["videoDetail"]["commentCount"]
-        template_params["quality"] = "auto" # If we've reached the Flash player, we're being served the highest quality possible
+        template_params["quality"] = "auto"  # If we've reached the Flash player, we're being served the highest quality possible
 
     response = session.get(THUMB_INFO_API.format(template_params["id"]))
     response.raise_for_status()
@@ -782,6 +781,7 @@ def collect_parameters(session, template_params, params, isHtml5):
         template_params["uploader"] = channel_name[0].firstChild.nodeValue if channel_name else user_nickname[0].firstChild.nodeValue if user_nickname else None
 
     return template_params
+
 
 def valid_url(url):
     """Check if the URL is valid and can be processed."""
