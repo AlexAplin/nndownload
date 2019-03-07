@@ -21,6 +21,7 @@ import netrc
 import collections
 import logging
 import traceback
+import random
 
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2016 Alex Aplin"
@@ -31,16 +32,21 @@ __version__ = "0.9"
 HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
+VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?|cas)\.)?(?:(?:nicovideo\.jp/(watch|mylist|user))|nico\.ms)/))(?:(?:[0-9]+)/)?((?:[a-z]{2})?[0-9]+)")
+
 NAMA_API = "http://watch.live.nicovideo.jp/api/getplayerstatus?v={0}"
+CAS_QUALITIES_API = "https://api.cas.nicovideo.jp/v1/services/live/programs/{0}/watching-qualities"
+CAS_WATCHING_API = "https://api.cas.nicovideo.jp/v1/services/live/programs/{0}/watching"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
-VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?)\.)?(?:(?:nicovideo\.jp/(watch|mylist)/)|nico\.ms/)))((?:[a-z]{2})?[0-9]+)")
+
 DMC_HEARTBEAT_INTERVAL_S = 15
+CAS_HEARTBEAT_INTERVAL_S = 20
 KILOBYTE = 1024
-BLOCK_SIZE = 10 * KILOBYTE
+BLOCK_SIZE = 1024 * KILOBYTE
 EPSILON = 0.0001
 
 HTML5_COOKIE = {
@@ -126,7 +132,7 @@ def login(username, password):
     """Login to Nico. Will raise an exception for errors."""
 
     session = requests.session()
-    session.headers.update({"User-Agent": "nndownload/{}".format(__version__)})
+    session.headers.update({"User-Agent": "nndownload/{0}".format(__version__)})
 
     if not cmdl_opts.no_login:
         output("Logging in...\n", logging.INFO)
@@ -165,17 +171,20 @@ def pairwise(iterable):
 def request_rtmp(session, nama_id):
     """Build the RTMP stream URL for a Niconama broadcast and print to console."""
 
-    nama_xml = session.get(NAMA_API.format(nama_id), allow_redirects=False).text
-    if not nama_xml:
+    nama_xml = session.get(NAMA_API.format(nama_id), allow_redirects=False)
+    nama_xml.raise_for_status()
+    if not nama_xml.text:
         raise FormatNotAvailableException("Could not retrieve nama info from API")
 
-    nama_info = xml.dom.minidom.parseString(nama_xml)
+    nama_info = xml.dom.minidom.parseString(nama_xml.text)
     if nama_info.getElementsByTagName("error"):
         raise FormatNotAvailableException("Requested nama is not available")
 
+    url = None
     urls = urllib.parse.unquote(nama_info.getElementsByTagName("contents")[0].firstChild.nodeValue).split(",")
     is_premium = nama_info.getElementsByTagName("is_premium")[0].firstChild.nodeValue
     provider_type = nama_info.getElementsByTagName("provider_type")[0].firstChild.nodeValue
+
     if provider_type == "official":
         for details, stream_name in pairwise(urls):
             split = details.split(":", maxsplit=2)
@@ -196,6 +205,104 @@ def request_rtmp(session, nama_id):
         if stream.getAttribute("name") == stream_name:
             rtmp = url + "?" + stream.firstChild.nodeValue
             output("{0}\n".format(rtmp), logging.INFO)
+            return
+
+
+def request_cas(session, nama_id):
+    """Build the HLS stream URL for an experimental Niconama broadcast."""
+
+    output("Support for CAS streams is still experimental.\n", logging.WARNING)
+
+    cas_headers = {
+        "Content-Type": "application/json",
+        "X-Connection-Environment": "ethernet",
+        "X-Frontend-Id": "91"
+    }
+
+    cas_cors = {
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type,x-connection-environment,x-frontend-id",
+        "Origin": "https://cas.nicovideo.jp",
+    }
+
+    qualities_options = session.options(CAS_QUALITIES_API.format(nama_id), headers=cas_cors)
+    qualities_options.raise_for_status()
+
+    nama_qualities = session.get(CAS_QUALITIES_API.format(nama_id), headers=cas_headers)
+    nama_qualities.raise_for_status()
+
+    watching_url = CAS_WATCHING_API.format(nama_id)
+    watching_options = session.options(watching_url, headers=cas_cors)
+    watching_options.raise_for_status()
+
+    watching_data = {
+        "actionTrackId": generate_track_id(),
+        "isBroadcaster": "false",
+        "streamProtocol": "https",
+        "streamQuality": "auto"
+    }
+
+    watching = session.post(watching_url, headers=cas_headers, json=watching_data)
+    watching.raise_for_status()
+
+    watching_json = json.loads(watching.text)
+    master_url = watching_json["data"]["streamServer"]["url"]
+    sync_url = watching_json["data"]["streamServer"]["syncUrl"]
+
+    m3u8 = session.get(master_url)
+    m3u8.raise_for_status()
+
+    playlist_url = parse_m3u8(m3u8.text.splitlines())
+    stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_url
+    output("{0}\n".format(stream_url), logging.INFO)
+
+    perform_cas_heartbeat(session, watching_url, cas_headers, watching_data)
+
+
+def generate_track_id():
+    """Generate a tracking ID string for use in DMC requests."""
+
+    epoch_str = str(time.time()).replace(".", "")
+    return ("".join(random.choice("0123456789abcdef") for n in range(10)) + "_" + epoch_str)[:24]
+
+
+def parse_m3u8(m3u8):
+    """Get the first playlist from the master .m3u8."""
+
+    text = iter(m3u8)
+    for line in text:
+        if line.startswith("#EXT-X-STREAM-INF"):
+            return next(text)
+
+
+def perform_cas_heartbeat(session, heartbeat_url, cas_headers, watching_data):
+    """Perform a heartbeat to keep the stream alive."""
+
+    # TODO: Report if the stream URL changes
+
+    output("Keeping stream URL alive. Press ^C to quit.\n", logging.INFO)
+    past = time.time()
+
+    while True:
+        try:
+            current = time.time()
+            if current - past >= CAS_HEARTBEAT_INTERVAL_S:
+                past = current
+                response = session.put(heartbeat_url, headers=cas_headers, json=watching_data)
+                response.raise_for_status()
+        except KeyboardInterrupt:
+            return
+
+
+def perform_heartbeat(session, heartbeat_url, response):
+    """Perform a response heartbeat to keep the download connection alive."""
+
+    response = session.post(heartbeat_url, data=response.toxml())
+    response.raise_for_status()
+    response = xml.dom.minidom.parseString(response.text).getElementsByTagName("session")[0]
+    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (session, heartbeat_url, response))
+    heartbeat_timer.daemon = True
+    heartbeat_timer.start()
 
 
 def request_video(session, video_id):
@@ -236,17 +343,6 @@ def request_video(session, video_id):
         download_thumbnail(session, filename, template_params)
     if cmdl_opts.download_comments:
         download_comments(session, filename, template_params)
-
-
-def perform_heartbeat(response, session, heartbeat_url):
-    """Perform a response heartbeat to keep the download connection alive."""
-
-    response = session.post(heartbeat_url, data=response.toxml())
-    response.raise_for_status()
-    response = xml.dom.minidom.parseString(response.text).getElementsByTagName("session")[0]
-    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (response, session, heartbeat_url))
-    heartbeat_timer.daemon = True
-    heartbeat_timer.start()
 
 
 def format_bytes(number_bytes):
@@ -320,7 +416,7 @@ def download_video(session, filename, template_params):
         current_byte_pos = os.path.getsize(filename)
         if current_byte_pos < video_len:
             file_condition = "ab"
-            resume_header = {"Range": "bytes={}-".format(current_byte_pos)}
+            resume_header = {"Range": "bytes={0}-".format(current_byte_pos)}
             dl = current_byte_pos
             output("Resuming previous download.\n", logging.INFO)
 
@@ -373,6 +469,7 @@ def download_thumbnail(session, filename, template_params):
     get_thumb = session.get(template_params["thumbnail_url"] + ".L")
     if get_thumb.status_code == 404:
         get_thumb = session.get(template_params["thumbnail_url"])
+        get_thumb.raise_for_status()
 
     with open(filename, "wb") as file:
         for block in get_thumb.iter_content(BLOCK_SIZE):
@@ -393,6 +490,7 @@ def download_comments(session, filename, template_params):
     else:
         post_packet = COMMENTS_POST_JP
     get_comments = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
+    get_comments.raise_for_status()
     with open(filename, "wb") as file:
         file.write(get_comments.content)
 
@@ -427,6 +525,7 @@ def request_mylist(session, mylist_id):
 
     output("Downloading mylist {0}...\n".format(mylist_id), logging.INFO)
     mylist_request = session.get(MYLIST_API.format(mylist_id))
+    mylist_request.raise_for_status()
     mylist_json = json.loads(mylist_request.text)
 
     total_mylist = len(mylist_json["items"])
@@ -570,7 +669,7 @@ def perform_api_request(session, document):
             session_id = response.getElementsByTagName("id")[0].firstChild.nodeValue
             response = response.getElementsByTagName("session")[0]
             heartbeat_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
-            perform_heartbeat(response, session, heartbeat_url)
+            perform_heartbeat(session, heartbeat_url, response)
 
         # Legacy URL for videos uploaded pre-HTML5 player (~2016-10-27)
         elif params["video"].get("smileInfo"):
@@ -660,7 +759,6 @@ def collect_parameters(session, template_params, params, isHtml5):
 
     return template_params
 
-
 def valid_url(url):
     """Check if the URL is valid and can be processed."""
 
@@ -674,7 +772,9 @@ def process_url_mo(session, url_mo):
     url_id = url_mo.group(3)
     if url_mo.group(2) == "mylist":
         request_mylist(session, url_id)
-    elif url_mo.group(1):
+    elif url_mo.group(1) == "cas":
+        request_cas(session, url_id)
+    elif url_mo.group(1) == "live":
         request_rtmp(session, url_id)
     else:
         request_video(session, url_id)
@@ -699,7 +799,7 @@ def main():
                 account_username = account_credentials[0]
                 account_password = account_credentials[2]
             else:
-                raise netrc.NetrcParseError("No authenticator available for {}".format(HOST))
+                raise netrc.NetrcParseError("No authenticator available for {0}".format(HOST))
         elif not cmdl_opts.no_login:
             if not account_username:
                 account_username = input("Username: ")
