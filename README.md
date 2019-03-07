@@ -4,8 +4,9 @@ nndownload allows you to download videos from [Niconico](http://nicovideo.jp), f
 ## Features
  - Download videos with comments, thumbnails, and metadata
  - Download mylists
- - Build RTMP stream URLs for official Niconama broadcasts
+ - Build RTMP and HLS stream URLs for Niconama broadcasts
  - Process text files with URLs
+ - *Soon*: Download user videos
 
 ## Requirements
 ### Python version
@@ -58,6 +59,7 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - id
 - mylist_count
 - published
+- quality
 - size_high
 - size_low
 - thread_id
@@ -67,6 +69,8 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - uploader_id
 - url
 - view_count
+- audio_quality (DMC)
+- video_quality (DMC)
 
 ## Known Bugs
 - Check open issues.

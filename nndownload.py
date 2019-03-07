@@ -558,6 +558,10 @@ def perform_api_request(session, document):
 
         template_params = collect_parameters(session, template_params, params, isHtml5=True)
 
+
+        if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
+            raise FormatNotAvailableException("High quality source is not available")
+
         # Perform request to Dwango Media Cluster (DMC)
         if params["video"].get("dmcInfo"):
             api_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "?suppress_response_codes=true&_format=xml"
@@ -689,6 +693,9 @@ def perform_api_request(session, document):
 
         template_params = collect_parameters(session, template_params, params, isHtml5=False)
 
+        if template_params["quality"] != "auto" and cmdl_ops.force_high_quality:
+            raise FormatNotAvailableException("High quality source is not available")
+
         video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
         if ("url" in video_url_param):
             template_params["url"] = video_url_param["url"][0]
@@ -719,6 +726,22 @@ def collect_parameters(session, template_params, params, isHtml5):
         template_params["mylist_count"] = params["video"]["mylistCount"]
         template_params["comment_count"] = params["thread"]["commentCount"]
 
+        if params["video"].get("dmcInfo"):
+            template_params["video_quality"] = params["video"]["dmcInfo"]["quality"]["videos"][0]["id"]
+            template_params["audio_quality"] = params["video"]["dmcInfo"]["quality"]["audios"][0]["id"]
+
+            # Qualities are sorted in descending order, so we use this assumption to check availability
+            if params["video"]["dmcInfo"]["quality"]["videos"][0]["available"]:
+                template_params["quality"] = "auto"
+            else:
+                template_params["quality"] = "low"
+
+        elif params["video"].get("smileInfo"):
+            template_params["quality"] = params["video"]["smileInfo"]["currentQualityId"]
+
+        else:
+            raise ParameterExtractionException("Failed to extract video quality")
+
     elif params.get("videoDetail"):
         template_params["id"] = params["videoDetail"]["id"]
         template_params["title"] = params["videoDetail"]["title"]
@@ -732,6 +755,7 @@ def collect_parameters(session, template_params, params, isHtml5):
         template_params["view_count"] = params["videoDetail"]["viewCount"]
         template_params["mylist_count"] = params["videoDetail"]["mylistCount"]
         template_params["comment_count"] = params["videoDetail"]["commentCount"]
+        template_params["quality"] = "auto" # If we've reached the Flash player, we're being served the highest quality possible
 
     response = session.get(THUMB_INFO_API.format(template_params["id"]))
     response.raise_for_status()
