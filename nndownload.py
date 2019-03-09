@@ -32,6 +32,7 @@ __version__ = "0.9"
 HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
+USER_VIDEOS_URL = "https://www.nicovideo.jp/user/{0}/video?page={1}"
 VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?|cas)\.)?(?:(?:nicovideo\.jp/(watch|mylist|user))|nico\.ms)/))(?:(?:[0-9]+)/)?((?:[a-z]{2})?[0-9]+)")
 
 NAMA_API = "http://watch.live.nicovideo.jp/api/getplayerstatus?v={0}"
@@ -198,6 +199,8 @@ def request_rtmp(session, nama_id):
             raise FormatNotSupportedException("RTMP URL not found for requested nama")
     elif provider_type == "community":
         raise FormatNotSupportedException("Community nama broadcasts are not supported")
+    elif provider_type == "channel":
+        raise FormatNotSupportedException("Channel nama broadcasts are not supported")
     else:
         raise FormatNotSupportedException("Not a recognized stream provider type")
 
@@ -495,6 +498,46 @@ def download_comments(session, filename, template_params):
         file.write(get_comments.content)
 
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
+
+
+def request_user(session, user_id):
+    """Download videos associated with a user."""
+
+    output("Downloading videos from user {0}...\n".format(user_id), logging.INFO)
+    page_counter = 1
+    video_ids = []
+
+    # Dumb loop, process pages until we reach a page with no videos
+    while True:
+        user_videos_page = session.get(USER_VIDEOS_URL.format(user_id, page_counter))
+        user_videos_page.raise_for_status()
+
+        user_videos_document = BeautifulSoup(user_videos_page.text, "html.parser")
+        video_links = user_videos_document.select(".VideoItem-videoDetail h5 a")
+
+        if len(video_links) == 0:
+            break
+
+        for link in video_links:
+            unstripped_id = link["href"]
+            video_ids.append(unstripped_id.lstrip("watch/"))
+
+        page_counter += 1
+
+    total_ids = len(video_ids)
+    if total_ids == 0:
+        raise ParameterExtractionException("Failed to collect user videos. Please verify that the user's videos page is public")
+
+    for index, video_id in enumerate(video_ids):
+        try:
+            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
+            request_video(session, video_id)
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            if cmdl_opts.log:
+                logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+            traceback.print_exc()
+            continue
 
 
 def read_file(session, file):
@@ -798,7 +841,9 @@ def process_url_mo(session, url_mo):
         request_mylist(session, url_id)
     elif url_mo.group(1) == "cas":
         request_cas(session, url_id)
-    elif url_mo.group(1) == "live":
+    elif url_mo.group(2) == "user":
+        request_user(session, url_id)
+    elif "live" in url_mo.group(1):
         request_rtmp(session, url_id)
     else:
         request_video(session, url_id)
