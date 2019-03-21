@@ -843,7 +843,7 @@ def process_url_mo(session, url_mo):
         request_cas(session, url_id)
     elif url_mo.group(2) == "user":
         request_user(session, url_id)
-    elif "live" in url_mo.group(1):
+    elif url_mo.group(1):
         request_rtmp(session, url_id)
     else:
         request_video(session, url_id)
