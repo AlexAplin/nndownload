@@ -425,8 +425,7 @@ def download_video(session, filename, template_params):
                 output("Checking file integrity before resuming.\n")
 
             elif current_byte_pos > video_len:
-                output("Current byte position exceeds the length of the video to be downloaded. This download may be of a different quality than the existing data.\n")
-                return
+                raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Use --force-high-quality to resume this download when the high quality source is available.\n")
 
             # current_byte_pos == video_len
             else:
@@ -448,7 +447,9 @@ def download_video(session, filename, template_params):
 
         existing_byte_pos = os.path.getsize(filename)
         if current_byte_pos - new_data_len <= 0:
-            output("Byte comparison block exceeds the length of the existing file.\n")
+            output("Byte comparison block exceeds the length of the existing file. Deleting file and redownloading...\n")
+            os.remove(filename)
+            download_video(session, filename, template_params)
             return
 
         with open(filename, "rb") as file:
@@ -458,8 +459,14 @@ def download_video(session, filename, template_params):
                 dl += new_data_len
                 output("Resuming at byte position {0}.\n".format(dl))
             else:
-                output("Byte comparison block does not match. This download may be of a different quality than the existing data.\n")
-                return
+                if template_params["quality"] == "low":
+                    raise FormatNotAvailableException("Byte comparison block does not match. This video is of a lower quality than the existing file. Use --force-high-quality to resume this download when the high quality source is available.\n")
+                    return
+                else:
+                    output("Byte comparison block does not match. This video is of a higher quality than the existing file. Deleting file and redownloading...\n")
+                    os.remove(filename)
+                    download_video(session, filename, template_params)
+                    return
 
     with open(filename, file_condition) as file:
         file.seek(dl)
