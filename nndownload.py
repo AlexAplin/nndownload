@@ -416,16 +416,21 @@ def download_video(session, filename, template_params):
     video_len = int(dl_stream.headers["content-length"])
 
     if os.path.isfile(filename):
-        current_byte_pos = os.path.getsize(filename)
-        if current_byte_pos < video_len:
-            file_condition = "ab"
-            resume_header = {"Range": "bytes={0}-".format(current_byte_pos)}
-            dl = current_byte_pos
-            output("Resuming previous download.\n", logging.INFO)
+        with open(filename, "rb") as file:
+            current_byte_pos = os.path.getsize(filename)
+            if current_byte_pos < video_len:
+                file_condition = "ab"
+                resume_header = {"Range": "bytes={0}-".format(current_byte_pos - BLOCK_SIZE)}
+                dl = current_byte_pos - BLOCK_SIZE
+                output("Checking file integrity before resuming.\n")
 
-        elif current_byte_pos >= video_len:
-            output("File exists and is complete.\n", logging.INFO)
-            return
+            elif current_byte_pos > video_len:
+                raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Use --force-high-quality to resume this download when the high quality source is available.\n")
+
+            # current_byte_pos == video_len
+            else:
+                output("File exists and matches current download length.\n", logging.INFO)
+                return
 
     else:
         file_condition = "wb"
@@ -434,10 +439,39 @@ def download_video(session, filename, template_params):
 
     dl_stream = session.get(template_params["url"], headers=resume_header, stream=True)
     dl_stream.raise_for_status()
+    stream_iterator = dl_stream.iter_content(BLOCK_SIZE)
+
+    if os.path.isfile(filename):
+        new_data = next(stream_iterator)
+        new_data_len = len(new_data)
+
+        existing_byte_pos = os.path.getsize(filename)
+        if current_byte_pos - new_data_len <= 0:
+            output("Byte comparison block exceeds the length of the existing file. Deleting file and redownloading...\n")
+            os.remove(filename)
+            download_video(session, filename, template_params)
+            return
+
+        with open(filename, "rb") as file:
+            file.seek(current_byte_pos - BLOCK_SIZE)
+            existing_data = file.read()[:new_data_len]
+            if new_data == existing_data:
+                dl += new_data_len
+                output("Resuming at byte position {0}.\n".format(dl))
+            else:
+                if template_params["quality"] == "low":
+                    raise FormatNotAvailableException("Byte comparison block does not match. This video is of a lower quality than the existing file. Use --force-high-quality to resume this download when the high quality source is available.\n")
+                    return
+                else:
+                    output("Byte comparison block does not match. This video is of a higher quality than the existing file. Deleting file and redownloading...\n")
+                    os.remove(filename)
+                    download_video(session, filename, template_params)
+                    return
 
     with open(filename, file_condition) as file:
+        file.seek(dl)
         start_time = time.time()
-        for block in dl_stream.iter_content(BLOCK_SIZE):
+        for block in stream_iterator:
             dl += len(block)
             file.write(block)
             done = int(25 * dl / video_len)
