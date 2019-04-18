@@ -921,6 +921,7 @@ def main():
         if cmdl_opts.log:
             logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
         traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
