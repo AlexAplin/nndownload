@@ -4,6 +4,8 @@
 
 from bs4 import BeautifulSoup
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 from itertools import tee
 import json
@@ -57,6 +59,9 @@ HTML5_COOKIE = {
 FLASH_COOKIE = {
     "watch_flash": "1"
 }
+
+RETRY_ATTEMPTS = 5
+BACKOFF_FACTOR = 2 # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({number_of_retries} - 1))
 
 cmdl_usage = "%(prog)s [options] input"
 cmdl_version = __version__
@@ -133,6 +138,18 @@ def login(username, password):
     """Login to Nico. Will raise an exception for errors."""
 
     session = requests.session()
+
+    retry = Retry(
+        total = RETRY_ATTEMPTS,
+        read = RETRY_ATTEMPTS,
+        connect = RETRY_ATTEMPTS,
+        backoff_factor = BACKOFF_FACTOR,
+        status_forcelist = (500, 502, 503, 504),
+    )
+    adapter = HTTPAdapter(max_retries = retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+
     session.headers.update({"User-Agent": "nndownload/{0}".format(__version__)})
 
     if not cmdl_opts.no_login:
