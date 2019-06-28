@@ -48,6 +48,7 @@ download options:
   -c, --download-comments
                         download video comments
   -e, --english         download english comments
+  -a, --audio-centric   download high quality audio & low quality video
 ```
 
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:
