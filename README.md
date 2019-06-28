@@ -17,4 +17,4 @@ nndownloadmod.download(args)
 
 where:
 
-* `args` is the arguments as a list of strings. See [the original doc](org_README.md) for details.
+* `args` is the arguments as a list of strings. See [the original doc](https://github.com/AlexAplin/nndownload/blob/master/README.md#usage) for details.
