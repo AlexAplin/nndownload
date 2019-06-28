@@ -5,7 +5,7 @@
 from bs4 import BeautifulSoup
 import requests
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 
 from itertools import tee
 import json
@@ -85,7 +85,7 @@ dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="d
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="download english comments")
 
-cmdl_opts = cmdl_parser.parse_args()
+cmdl_opts = cmdl_parser.parse_args() if __name__ == "__main__" else None
 
 
 class AuthenticationException(Exception):
@@ -113,7 +113,7 @@ class ParameterExtractionException(Exception):
     pass
 
 
-if cmdl_opts.log:
+if cmdl_opts and cmdl_opts.log:
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
@@ -938,7 +938,7 @@ def main():
         if cmdl_opts.log:
             logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
         traceback.print_exc()
-        sys.exit(1)
+        raise
 
 
 if __name__ == "__main__":

@@ -113,3 +113,5 @@ ENV/
 
 # Logs
 *.log
+
+.idea/
