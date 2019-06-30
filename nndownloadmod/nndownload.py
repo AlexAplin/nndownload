@@ -934,7 +934,7 @@ def main():
             if not account_password:
                 account_password = getpass.getpass("Password: ")
         else:
-            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.WARNING)
+            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.DEBUG)
 
         session = login(account_username, account_password)
         if url_mo:
