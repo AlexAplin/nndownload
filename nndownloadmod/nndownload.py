@@ -115,9 +115,9 @@ class ParameterExtractionException(Exception):
     """Raised when parameters could not be successfully extracted."""
     pass
 
+logger = logging.getLogger(__name__)
 
 if cmdl_opts and cmdl_opts.log:
-    logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
     formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
@@ -128,13 +128,8 @@ if cmdl_opts and cmdl_opts.log:
 def output(string, level=logging.INFO):
     """Print status to console unless quiet flag is set."""
 
-    global cmdl_opts
-    if cmdl_opts.log:
-        logger.log(level, string.strip("\n"))
+    logger.log(level, string.strip("\n"))
 
-    if not cmdl_opts.quiet:
-        sys.stdout.write(string)
-        sys.stdout.flush()
 
 
 def login(username, password):
