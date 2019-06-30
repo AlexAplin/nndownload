@@ -63,6 +63,8 @@ FLASH_COOKIE = {
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2 # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({number_of_retries} - 1))
 
+progress_callback = None
+
 cmdl_usage = "%(prog)s [options] input"
 cmdl_version = __version__
 cmdl_parser = argparse.ArgumentParser(usage=cmdl_usage, conflict_handler="resolve")
@@ -113,9 +115,9 @@ class ParameterExtractionException(Exception):
     """Raised when parameters could not be successfully extracted."""
     pass
 
+logger = logging.getLogger(__name__)
 
 if cmdl_opts and cmdl_opts.log:
-    logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
     formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
@@ -126,13 +128,8 @@ if cmdl_opts and cmdl_opts.log:
 def output(string, level=logging.INFO):
     """Print status to console unless quiet flag is set."""
 
-    global cmdl_opts
-    if cmdl_opts.log:
-        logger.log(level, string.strip("\n"))
+    logger.log(level, string.strip("\n"))
 
-    if not cmdl_opts.quiet:
-        sys.stdout.write(string)
-        sys.stdout.flush()
 
 
 def login(username, password):
@@ -493,9 +490,14 @@ def download_video(session, filename, template_params):
             dl += len(block)
             file.write(block)
             done = int(25 * dl / video_len)
-            percent = int(100 * dl / video_len)
+            percent = 100 * dl / video_len
             speed_str = calculate_speed(start_time, time.time(), dl)
-            output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
+
+            progress_msg = "{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), int(percent), speed_str)
+            if progress_callback:
+                progress_callback(percent, speed_str, progress_msg)
+            else:
+                output(progress_msg, logging.DEBUG)
 
     output("\nFinished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
 
@@ -927,7 +929,7 @@ def main():
             if not account_password:
                 account_password = getpass.getpass("Password: ")
         else:
-            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.WARNING)
+            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.DEBUG)
 
         session = login(account_username, account_password)
         if url_mo:
