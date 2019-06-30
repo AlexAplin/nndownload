@@ -904,44 +904,37 @@ def process_url_mo(session, url_mo):
 
 
 def main():
-    try:
-        # Test if input is a valid URL or file
-        url_mo = valid_url(cmdl_opts.input)
-        if not url_mo:
-            open(cmdl_opts.input)
+    # Test if input is a valid URL or file
+    url_mo = valid_url(cmdl_opts.input)
+    if not url_mo:
+        open(cmdl_opts.input)
 
-        account_username = cmdl_opts.username
-        account_password = cmdl_opts.password
+    account_username = cmdl_opts.username
+    account_password = cmdl_opts.password
 
-        if cmdl_opts.netrc:
-            if cmdl_opts.username or cmdl_opts.password:
-                output("Ignorning input credentials in favor of .netrc (-n)\n", logging.WARNING)
+    if cmdl_opts.netrc:
+        if cmdl_opts.username or cmdl_opts.password:
+            output("Ignorning input credentials in favor of .netrc (-n)\n", logging.WARNING)
 
-            account_credentials = netrc.netrc().authenticators(HOST)
-            if account_credentials:
-                account_username = account_credentials[0]
-                account_password = account_credentials[2]
-            else:
-                raise netrc.NetrcParseError("No authenticator available for {0}".format(HOST))
-        elif not cmdl_opts.no_login:
-            if not account_username:
-                account_username = input("Username: ")
-            if not account_password:
-                account_password = getpass.getpass("Password: ")
+        account_credentials = netrc.netrc().authenticators(HOST)
+        if account_credentials:
+            account_username = account_credentials[0]
+            account_password = account_credentials[2]
         else:
-            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.DEBUG)
+            raise netrc.NetrcParseError("No authenticator available for {0}".format(HOST))
+    elif not cmdl_opts.no_login:
+        if not account_username:
+            account_username = input("Username: ")
+        if not account_password:
+            account_password = getpass.getpass("Password: ")
+    else:
+        output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.DEBUG)
 
-        session = login(account_username, account_password)
-        if url_mo:
-            process_url_mo(session, url_mo)
-        else:
-            read_file(session, cmdl_opts.input)
-
-    except Exception as error:
-        if cmdl_opts.log:
-            logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
-        traceback.print_exc()
-        raise
+    session = login(account_username, account_password)
+    if url_mo:
+        process_url_mo(session, url_mo)
+    else:
+        read_file(session, cmdl_opts.input)
 
 
 if __name__ == "__main__":
