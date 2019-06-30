@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="nndownloadmod",
-    version="1.0.1",
+    version="1.0.2",
     description="A modularized version of AlexAplin/nndownload",
     long_description=long_description,
     long_description_content_type="text/markdown",

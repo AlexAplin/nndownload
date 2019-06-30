@@ -63,6 +63,8 @@ FLASH_COOKIE = {
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2 # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({number_of_retries} - 1))
 
+progress_callback = None
+
 cmdl_usage = "%(prog)s [options] input"
 cmdl_version = __version__
 cmdl_parser = argparse.ArgumentParser(usage=cmdl_usage, conflict_handler="resolve")
@@ -493,9 +495,14 @@ def download_video(session, filename, template_params):
             dl += len(block)
             file.write(block)
             done = int(25 * dl / video_len)
-            percent = int(100 * dl / video_len)
+            percent = 100 * dl / video_len
             speed_str = calculate_speed(start_time, time.time(), dl)
-            output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
+
+            progress_msg = "{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), int(percent), speed_str)
+            if progress_callback:
+                progress_callback(percent, speed_str, progress_msg)
+            else:
+                output(progress_msg, logging.DEBUG)
 
     output("\nFinished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
 
