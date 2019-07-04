@@ -48,7 +48,9 @@ download options:
   -c, --download-comments
                         download video comments
   -e, --english         download english comments
-  -a, --audio-centric   download high quality audio & low quality video
+  -vq, --video-quality  request a specific video quality (ex. archive_h264_600kbps_360p)
+                        'highest' and 'lowest' are also accepted
+  -aq, --audio-quality  request a specific audio quality
 ```
 
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:
