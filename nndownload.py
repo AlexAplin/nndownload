@@ -84,7 +84,8 @@ dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_m
 dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="download english comments")
-dl_group.add_argument("-a", "--audio-centric", action="store_true", dest="audio_centric", help="high quality audio & low quality video")
+dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="audio quality")
+dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="video quality")
 
 cmdl_opts = cmdl_parser.parse_args()
 
@@ -639,6 +640,26 @@ def request_mylist(session, mylist_id):
                 continue
 
 
+def select_quality(source: list, quality=None):
+    if cmdl_opts.force_high_quality and quality:
+        raise FormatNotAvailableException("Cannot specify 'force_high_quality' and 'quality' at the same time")
+
+    if not quality:
+        return source
+
+    if quality.lower() == "highest":
+        return source[:1]
+
+    if quality.lower() == "lowest":
+        return source[-1:]
+
+    filtered = list(filter(lambda q: q.lower() == quality.lower(), source))
+    if len(filtered) == 0:
+        raise FormatNotAvailableException(f"'{quality}' is not available; available qualities: {source}")
+
+    return filtered
+
+
 def perform_api_request(session, document):
     """Collect parameters from video document and build API request for video URL."""
 
@@ -664,8 +685,8 @@ def perform_api_request(session, document):
             protocol = params["video"]["dmcInfo"]["session_api"]["protocols"][0]
             file_extension = template_params["ext"]
             priority = params["video"]["dmcInfo"]["session_api"]["priority"]
-            video_sources = params["video"]["dmcInfo"]["session_api"]["videos"][None if not cmdl_opts.audio_centric else -1:]
-            audio_sources = params["video"]["dmcInfo"]["session_api"]["audios"]
+            video_sources = select_quality(params["video"]["dmcInfo"]["session_api"]["videos"], cmdl_opts.video_quality)
+            audio_sources = select_quality(params["video"]["dmcInfo"]["session_api"]["audios"], cmdl_opts.audio_quality)
             heartbeat_lifetime = params["video"]["dmcInfo"]["session_api"]["heartbeat_lifetime"]
             token = params["video"]["dmcInfo"]["session_api"]["token"]
             signature = params["video"]["dmcInfo"]["session_api"]["signature"]
