@@ -641,6 +641,7 @@ def request_mylist(session, mylist_id):
 
 
 def select_quality(source: list, quality=None):
+    """Selects the given 'quality' from the source. If 'quality' isn't specified, then returns the original source"""
     if cmdl_opts.force_high_quality and quality:
         raise FormatNotAvailableException("Cannot specify 'force_high_quality' and 'quality' at the same time")
 
