@@ -946,7 +946,7 @@ def main():
 
         if cmdl_opts.netrc:
             if cmdl_opts.username or cmdl_opts.password:
-                output("Ignorning input credentials in favor of .netrc (-n)\n", logging.WARNING)
+                output("Ignorning input credentials in favor of .netrc.\n", logging.WARNING)
 
             account_credentials = netrc.netrc().authenticators(HOST)
             if account_credentials:
@@ -960,7 +960,7 @@ def main():
             if not account_password:
                 account_password = getpass.getpass("Password: ")
         else:
-            output("Proceeding with no login. Some videos may not be available for download or may only be available in low quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.WARNING)
+            output("Proceeding with no login. Some videos may not be available for download or may only be available in a lower quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.WARNING)
 
         session = login(account_username, account_password)
         if url_mo:
