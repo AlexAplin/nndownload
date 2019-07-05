@@ -84,6 +84,8 @@ dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_m
 dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="download english comments")
+dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality (DMC videos only)")
+dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
 
 cmdl_opts = cmdl_parser.parse_args()
 
@@ -442,7 +444,7 @@ def download_video(session, filename, template_params):
                 output("Checking file integrity before resuming.\n")
 
             elif current_byte_pos > video_len:
-                raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Use --force-high-quality to resume this download when the high quality source is available.\n")
+                raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the interity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
 
             # current_byte_pos == video_len
             else:
@@ -464,7 +466,7 @@ def download_video(session, filename, template_params):
 
         existing_byte_pos = os.path.getsize(filename)
         if current_byte_pos - new_data_len <= 0:
-            output("Byte comparison block exceeds the length of the existing file. Deleting file and redownloading...\n")
+            output("Byte comparison block exceeds the length of the existing file. Deleting existing file and redownloading...\n")
             os.remove(filename)
             download_video(session, filename, template_params)
             return
@@ -476,14 +478,10 @@ def download_video(session, filename, template_params):
                 dl += new_data_len
                 output("Resuming at byte position {0}.\n".format(dl))
             else:
-                if template_params["quality"] == "low":
-                    raise FormatNotAvailableException("Byte comparison block does not match. This video is of a lower quality than the existing file. Use --force-high-quality to resume this download when the high quality source is available.\n")
-                    return
-                else:
-                    output("Byte comparison block does not match. This video is of a higher quality than the existing file. Deleting file and redownloading...\n")
-                    os.remove(filename)
-                    download_video(session, filename, template_params)
-                    return
+                output("Byte comparison block does not match. Deleting existing file and redownloading...\n")
+                os.remove(filename)
+                download_video(session, filename, template_params)
+                return
 
     with open(filename, file_condition) as file:
         file.seek(dl)
@@ -637,6 +635,47 @@ def request_mylist(session, mylist_id):
                 traceback.print_exc()
                 continue
 
+def determine_quality(template_params, params):
+    """Determine the quality parameter for all videos."""
+
+    if params.get("video"):
+        if params["video"].get("dmcInfo"):
+            if params["video"]["dmcInfo"]["quality"]["videos"][0]["id"] == template_params["video_quality"] and params["video"]["dmcInfo"]["quality"]["audios"][0]["id"] == template_params["audio_quality"]:
+                template_params["quality"] = "auto"
+            else:
+                template_params["quality"] = "low"
+
+        elif params["video"].get("smileInfo"):
+            template_params["quality"] = params["video"]["smileInfo"]["currentQualityId"]
+
+    if params.get("videoDetail"):
+        template_params["quality"] = "auto"
+
+
+def select_dmc_quality(template_params, template_key, sources: list, quality=None):
+    """Select the specified quality from a sources list on DMC videos."""
+
+    # TODO: Make sure source is available
+    # Haven't seen a source marked as unavailable in the wild rather than be unlisted, but we might as well be sure
+
+    if not quality or cmdl_opts.force_high_quality or quality.lower() == "highest":
+        if cmdl_opts.force_high_quality:
+            output("Video or audio quality specified with --force-high-quality. Ignoring...\n", logging.WARNING)
+
+        template_params[template_key] = sources[:1][0]
+        return sources[:1]
+
+    if quality.lower() == "lowest":
+        template_params[template_key] = sources[-1:][0]
+        return sources[-1:]
+
+    filtered = list(filter(lambda q: q.lower() == quality.lower(), sources))
+    if not filtered:
+        raise FormatNotAvailableException(f"Quality '{quality}' is not available. Available qualities: {sources}")
+
+    template_params[template_key] = filtered[:1][0]
+    return filtered[:1]
+
 
 def perform_api_request(session, document):
     """Collect parameters from video document and build API request for video URL."""
@@ -650,10 +689,7 @@ def perform_api_request(session, document):
         if params["video"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(session, template_params, params, isHtml5=True)
-
-        if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
-            raise FormatNotAvailableException("High quality source is not available")
+        template_params = collect_parameters(session, template_params, params, is_html5=True)
 
         # Perform request to Dwango Media Cluster (DMC)
         if params["video"].get("dmcInfo"):
@@ -663,8 +699,13 @@ def perform_api_request(session, document):
             protocol = params["video"]["dmcInfo"]["session_api"]["protocols"][0]
             file_extension = template_params["ext"]
             priority = params["video"]["dmcInfo"]["session_api"]["priority"]
-            video_sources = params["video"]["dmcInfo"]["session_api"]["videos"]
-            audio_sources = params["video"]["dmcInfo"]["session_api"]["audios"]
+
+            video_sources = select_dmc_quality(template_params, "video_quality", params["video"]["dmcInfo"]["session_api"]["videos"], cmdl_opts.video_quality)
+            audio_sources = select_dmc_quality(template_params, "audio_quality", params["video"]["dmcInfo"]["session_api"]["audios"], cmdl_opts.audio_quality)
+            determine_quality(template_params, params)
+            if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
+                raise FormatNotAvailableException("High quality source is not available")
+
             heartbeat_lifetime = params["video"]["dmcInfo"]["session_api"]["heartbeat_lifetime"]
             token = params["video"]["dmcInfo"]["session_api"]["token"]
             signature = params["video"]["dmcInfo"]["session_api"]["signature"]
@@ -771,6 +812,13 @@ def perform_api_request(session, document):
         # Legacy URL for videos uploaded pre-HTML5 player (~2016-10-27)
         elif params["video"].get("smileInfo"):
             output("Using legacy URL...\n", logging.INFO)
+
+            if cmdl_opts.video_quality or cmdl_opts.audio_quality:
+                output("Video and audio qualities can't be specified on legacy videos. Ignoring...\n", logging.WARNING)
+            determine_quality(template_params, params)
+            if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
+                raise FormatNotAvailableException("High quality source is not available")
+
             template_params["url"] = params["video"]["smileInfo"]["url"]
 
         else:
@@ -784,8 +832,11 @@ def perform_api_request(session, document):
         if params["videoDetail"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(session, template_params, params, isHtml5=False)
+        template_params = collect_parameters(session, template_params, params, is_html5=False)
 
+        if cmdl_opts.video_quality or cmdl_opts.audio_quality:
+            output("Video and audio qualities can't be specified on Flash videos. Ignoring...\n", logging.WARNING)
+        determine_quality(template_params, params)
         if template_params["quality"] != "auto" and cmdl_ops.force_high_quality:
             raise FormatNotAvailableException("High quality source is not available")
 
@@ -802,7 +853,7 @@ def perform_api_request(session, document):
     return template_params
 
 
-def collect_parameters(session, template_params, params, isHtml5):
+def collect_parameters(session, template_params, params, is_html5):
     """Collect video parameters to make them available for an output filename template."""
 
     if params.get("video"):
@@ -819,22 +870,6 @@ def collect_parameters(session, template_params, params, isHtml5):
         template_params["mylist_count"] = params["video"]["mylistCount"]
         template_params["comment_count"] = params["thread"]["commentCount"]
 
-        if params["video"].get("dmcInfo"):
-            template_params["video_quality"] = params["video"]["dmcInfo"]["quality"]["videos"][0]["id"]
-            template_params["audio_quality"] = params["video"]["dmcInfo"]["quality"]["audios"][0]["id"]
-
-            # Qualities are sorted in descending order, so we use this assumption to check availability
-            if params["video"]["dmcInfo"]["quality"]["videos"][0]["available"]:
-                template_params["quality"] = "auto"
-            else:
-                template_params["quality"] = "low"
-
-        elif params["video"].get("smileInfo"):
-            template_params["quality"] = params["video"]["smileInfo"]["currentQualityId"]
-
-        else:
-            raise ParameterExtractionException("Failed to extract video quality")
-
     elif params.get("videoDetail"):
         template_params["id"] = params["videoDetail"]["id"]
         template_params["title"] = params["videoDetail"]["title"]
@@ -848,7 +883,6 @@ def collect_parameters(session, template_params, params, isHtml5):
         template_params["view_count"] = params["videoDetail"]["viewCount"]
         template_params["mylist_count"] = params["videoDetail"]["mylistCount"]
         template_params["comment_count"] = params["videoDetail"]["commentCount"]
-        template_params["quality"] = "auto"  # If we've reached the Flash player, we're being served the highest quality possible
 
     response = session.get(THUMB_INFO_API.format(template_params["id"]))
     response.raise_for_status()
@@ -857,7 +891,7 @@ def collect_parameters(session, template_params, params, isHtml5):
     # DMC videos do not expose the file type in the video page parameters when not logged in
     # If this is a Flash video being served on the HTML5 player, it's guaranteed to be a low quality .mp4 re-encode
     template_params["ext"] = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
-    if isHtml5 and (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
+    if is_html5 and (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
         template_params["ext"] = "mp4"
 
     template_params["size_high"] = int(video_info.getElementsByTagName("size_high")[0].firstChild.nodeValue)
