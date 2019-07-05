@@ -47,7 +47,11 @@ download options:
                         download video thumbnail
   -c, --download-comments
                         download video comments
-  -e, --english         download english comments
+  -e, --english         request video on english site
+  -aq AUDIO_QUALITY, --audio-quality AUDIO_QUALITY
+                        specify audio quality (DMC videos only)
+  -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
+                        specify video quality (DMC videos only)
 ```
 
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:
