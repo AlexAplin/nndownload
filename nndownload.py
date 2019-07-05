@@ -847,7 +847,7 @@ def perform_api_request(session, document):
         if cmdl_opts.video_quality or cmdl_opts.audio_quality:
             output("Video and audio qualities can't be specified on Flash videos. Ignoring...\n", logging.WARNING)
         determine_quality(template_params, params)
-        if template_params["quality"] != "auto" and cmdl_ops.force_high_quality:
+        if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
             raise FormatNotAvailableException("High quality source is not available")
 
         video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
