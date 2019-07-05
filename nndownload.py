@@ -91,7 +91,7 @@ dl_group.add_argument("-e", "--english", action="store_true", dest="download_eng
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality (DMC videos only)")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
 
-cmdl_opts = cmdl_parser.parse_args()
+cmdl_opts = None
 
 
 class AuthenticationException(Exception):
@@ -119,8 +119,12 @@ class ParameterExtractionException(Exception):
     pass
 
 
-if cmdl_opts.log:
-    logger = logging.getLogger(__name__)
+# Create a Logger instance upfront to allow caller-module to receive log messages
+logger = logging.getLogger(__name__)
+
+
+def configure_standalone_logger():
+    """Configures standalone logger. These configs do not apply when nndownload is used as a python module"""
     logger.setLevel(logging.INFO)
     log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
     formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
@@ -133,7 +137,14 @@ def output(string, level=logging.INFO):
 
     global cmdl_opts
     if cmdl_opts.log:
-        logger.log(level, string.strip("\n"))
+        if len(logger.handlers) == 0:
+            configure_standalone_logger()
+        else:
+            # init_logger() has already been called, or nndownload is being used as a python module.
+            # do not need to initialize logger.
+            pass
+
+    logger.log(level, string.strip("\n"))
 
     if not cmdl_opts.quiet:
         sys.stdout.write(string)
@@ -982,11 +993,18 @@ def main():
         if cmdl_opts.log:
             logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
         traceback.print_exc()
-        sys.exit(1)
+        raise
+
+
+def download(args:list):
+    global cmdl_opts
+    cmdl_opts = cmdl_parser.parse_args(args)
+    main()
 
 
 if __name__ == "__main__":
     try:
+        cmdl_opts = cmdl_parser.parse_args()
         main()
     except KeyboardInterrupt:
         sys.exit(1)
