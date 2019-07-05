@@ -84,8 +84,8 @@ dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_m
 dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="download english comments")
-dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="audio quality")
-dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="video quality")
+dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality (DMC videos only)")
+dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
 
 cmdl_opts = cmdl_parser.parse_args()
 
@@ -653,7 +653,7 @@ def determine_quality(template_params, params):
 
 def select_dmc_quality(template_params, template_key, sources: list, quality=None):
     """Select the specified quality from a sources list on DMC videos."""
-    
+
     # TODO: Make sure source is available
     # Haven't seen a source marked as unavailable in the wild rather than be unlisted, but we might as well be sure
 
