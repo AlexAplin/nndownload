@@ -653,6 +653,9 @@ def determine_quality(template_params, params):
 
 def select_dmc_quality(template_params, template_key, sources: list, quality=None):
     """Select the specified quality from a sources list on DMC videos."""
+    
+    # TODO: Make sure source is available
+    # Haven't seen a source marked as unavailable in the wild rather than be unlisted, but we might as well be sure
 
     if not quality or cmdl_opts.force_high_quality or quality.lower() == "highest":
         if cmdl_opts.force_high_quality:
