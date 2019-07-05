@@ -1,4 +1,7 @@
 # nndownload
+
+![PyPI](https://img.shields.io/pypi/v/nndownload.svg)
+
 nndownload allows you to download videos from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
 
 ## Features
@@ -17,6 +20,9 @@ nndownload allows you to download videos from [Niconico](http://nicovideo.jp), f
 - requests
 
 ## Usage
+
+### Standalone
+
 ```
 usage: nndownload.py [options] input
 
@@ -75,6 +81,21 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - view_count
 - audio_quality (DMC)
 - video_quality (DMC)
+
+### Python Module
+
+```bash
+pip install nndownload
+```
+
+```python
+import nndownload
+nndownload.download(args)
+```
+
+where:
+
+* `args` is the arguments as a list of strings. See [Standalone](#standalone) for details.
 
 ## Known Bugs
 - Check open issues.
