@@ -637,6 +637,7 @@ def request_mylist(session, mylist_id):
 
 def determine_quality(template_params, params):
     """Determine the quality parameter for all videos."""
+
     if params.get("video"):
         if params["video"].get("dmcInfo"):
             if params["video"]["dmcInfo"]["quality"]["videos"][0]["id"] == template_params["video_quality"] and params["video"]["dmcInfo"]["quality"]["audios"][0]["id"] == template_params["audio_quality"]:
@@ -688,7 +689,7 @@ def perform_api_request(session, document):
         if params["video"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(session, template_params, params, isHtml5=True)
+        template_params = collect_parameters(session, template_params, params, is_html5=True)
 
         # Perform request to Dwango Media Cluster (DMC)
         if params["video"].get("dmcInfo"):
@@ -831,7 +832,7 @@ def perform_api_request(session, document):
         if params["videoDetail"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(session, template_params, params, isHtml5=False)
+        template_params = collect_parameters(session, template_params, params, is_html5=False)
 
         if cmdl_opts.video_quality or cmdl_opts.audio_quality:
             output("Video and audio qualities can't be specified on Flash videos. Ignoring...\n", logging.WARNING)
@@ -852,7 +853,7 @@ def perform_api_request(session, document):
     return template_params
 
 
-def collect_parameters(session, template_params, params, isHtml5):
+def collect_parameters(session, template_params, params, is_html5):
     """Collect video parameters to make them available for an output filename template."""
 
     if params.get("video"):
@@ -890,7 +891,7 @@ def collect_parameters(session, template_params, params, isHtml5):
     # DMC videos do not expose the file type in the video page parameters when not logged in
     # If this is a Flash video being served on the HTML5 player, it's guaranteed to be a low quality .mp4 re-encode
     template_params["ext"] = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
-    if isHtml5 and (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
+    if is_html5 and (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
         template_params["ext"] = "mp4"
 
     template_params["size_high"] = int(video_info.getElementsByTagName("size_high")[0].firstChild.nodeValue)
