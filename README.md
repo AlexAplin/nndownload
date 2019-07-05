@@ -88,14 +88,14 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 pip install nndownload
 ```
 
+Example:
 ```python
 import nndownload
-nndownload.download(args)
+
+url = "https://www.nicovideo.jp/watch/sm35249846"
+output_path = "/tmp/{id}.{ext}"
+nndownload.download("-g", "-o", output_path, url)
 ```
-
-where:
-
-* `args` is the arguments as a list of strings. See [Standalone](#standalone) for details.
 
 ## Known Bugs
 - Check open issues.
