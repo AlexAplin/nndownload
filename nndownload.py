@@ -60,6 +60,10 @@ FLASH_COOKIE = {
     "watch_flash": "1"
 }
 
+EN_COOKIE = {
+    "lang": "en-us"
+}
+
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2 # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({number_of_retries} - 1))
 
@@ -83,7 +87,7 @@ dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="f
 dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
 dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
-dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="download english comments")
+dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="request video on english site")
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality (DMC videos only)")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
 
@@ -340,16 +344,22 @@ def request_video(session, video_id):
     if video_info.firstChild.getAttribute("status") != "ok":
         raise FormatNotAvailableException("Could not retrieve video info")
 
+    concat_cookies = {}
+    if cmdl_opts.download_english:
+        concat_cookies = {**concat_cookies, **EN_COOKIE}
+
     # This is the file type for the original encode
     # When logged out, Flash videos will sometimes be served on the HTML5 player with a low quality .mp4 re-encode
     # Some Flash videos are not available outside of the Flash player
     video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
     if video_type == "swf" or video_type == "flv":
-        response = session.get(VIDEO_URL.format(video_id), cookies=FLASH_COOKIE)
+        concat_cookies = {**concat_cookies, **FLASH_COOKIE}
     elif video_type == "mp4":
-        response = session.get(VIDEO_URL.format(video_id), cookies=HTML5_COOKIE)
+        concat_cookies = {**concat_cookies, **HTML5_COOKIE}
     else:
         raise FormatNotAvailableException("Video type not supported")
+
+    response = session.get(VIDEO_URL.format(video_id), cookies=concat_cookies)
 
     response.raise_for_status()
     document = BeautifulSoup(response.text, "html.parser")
