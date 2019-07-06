@@ -140,7 +140,7 @@ def output(string, level=logging.INFO):
         if len(logger.handlers) == 0:
             configure_standalone_logger()
         else:
-            # init_logger() has already been called, or nndownload is being used as a python module.
+            # configure_standalone_logger() has already been called, or nndownload is being used as a python module.
             # do not need to initialize logger.
             pass
 
