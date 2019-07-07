@@ -5,7 +5,6 @@ nndownload allows you to download videos from [Niconico](http://nicovideo.jp), f
  - Download videos with comments, thumbnails, and metadata
  - Download user videos
  - Download mylists
- - Build RTMP and HLS stream URLs for Niconama broadcasts
  - Process text files with URLs
 
 ## Requirements
