@@ -23,7 +23,6 @@ import netrc
 import collections
 import logging
 import traceback
-import random
 
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2016 Alex Aplin"
