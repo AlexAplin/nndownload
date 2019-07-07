@@ -68,7 +68,7 @@ import nndownload
 
 url = "https://www.nicovideo.jp/watch/sm35249846"
 output_path = "/tmp/{id}.{ext}"
-nndownload.download("-g", "-o", output_path, url)
+nndownload.execute("-g", "-o", output_path, url)
 ```
 
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:
