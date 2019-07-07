@@ -19,10 +19,13 @@ nndownload allows you to process videos and other links from [Niconico](http://n
 - beautifulsoup4
 - requests
 
+# Installation
+```bash
+pip install nndownload
+```
+
 ## Usage
-
 ### Standalone
-
 ```
 usage: nndownload.py [options] input
 
@@ -60,13 +63,7 @@ download options:
                         specify video quality (DMC videos only)
 ```
 
-### Python Module
-
-```bash
-pip install nndownload
-```
-
-Example:
+### Module
 ```python
 import nndownload
 
