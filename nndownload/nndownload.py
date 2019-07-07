@@ -67,6 +67,8 @@ EN_COOKIE = {
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2 # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({number_of_retries} - 1))
 
+logger = logging.getLogger(__name__)
+
 cmdl_usage = "%(prog)s [options] input"
 cmdl_version = __version__
 cmdl_parser = argparse.ArgumentParser(usage=cmdl_usage, conflict_handler="resolve")
@@ -90,8 +92,6 @@ dl_group.add_argument("-c", "--download-comments", action="store_true", dest="do
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="request video on english site")
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality (DMC videos only)")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
-
-cmdl_opts = None
 
 
 class AuthenticationException(Exception):
@@ -119,17 +119,18 @@ class ParameterExtractionException(Exception):
     pass
 
 
-# Create a Logger instance upfront to allow caller-module to receive log messages
-logger = logging.getLogger(__name__)
+def configure_logger():
+    if cmdl_opts.log:
+        logger.setLevel(logging.INFO)
+        log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
+        formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+        log_handler.setFormatter(formatter)
+        logger.addHandler(log_handler)
 
 
-def configure_standalone_logger():
-    """Configures standalone logger. These configs do not apply when nndownload is used as a python module"""
-    logger.setLevel(logging.INFO)
-    log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
-    formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
-    log_handler.setFormatter(formatter)
-    logger.addHandler(log_handler)
+def log_exception(error):
+    if cmdl_opts.log:
+        logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
 
 
 def output(string, level=logging.INFO):
@@ -137,14 +138,7 @@ def output(string, level=logging.INFO):
 
     global cmdl_opts
     if cmdl_opts.log:
-        if len(logger.handlers) == 0:
-            configure_standalone_logger()
-        else:
-            # configure_standalone_logger() has already been called, or nndownload is being used as a python module.
-            # do not need to initialize logger.
-            pass
-
-    logger.log(level, string.strip("\n"))
+        logger.log(level, string.strip("\n"))
 
     if not cmdl_opts.quiet:
         sys.stdout.write(string)
@@ -604,8 +598,7 @@ def request_user(session, user_id):
             request_video(session, video_id)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-            if cmdl_opts.log:
-                logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+            log_exception(error)
             traceback.print_exc()
             continue
 
@@ -627,8 +620,7 @@ def read_file(session, file):
                 raise ArgumentException("Not a valid URL")
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-            if cmdl_opts.log:
-                logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+            log_exception(error)
             traceback.print_exc()
             continue
 
@@ -651,8 +643,7 @@ def request_mylist(session, mylist_id):
                 request_video(session, item["video_id"])
 
             except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-                if cmdl_opts.log:
-                    logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+                log_exception(error)
                 traceback.print_exc()
                 continue
 
@@ -957,6 +948,7 @@ def process_url_mo(session, url_mo):
 
 def main():
     try:
+        configure_logger()
         # Test if input is a valid URL or file
         url_mo = valid_url(cmdl_opts.input)
         if not url_mo:
@@ -990,7 +982,13 @@ def main():
             read_file(session, cmdl_opts.input)
 
     except Exception as error:
-        if cmdl_opts.log:
-            logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
-        traceback.print_exc()
+        log_exception(error)
         raise
+
+
+if __name__ == "__main__":
+    try:
+        cmdl_opts = cmdl_parser.parse_args()
+        main()
+    except KeyboardInterrupt:
+        sys.exit(1)
