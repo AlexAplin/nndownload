@@ -60,6 +60,21 @@ download options:
                         specify video quality (DMC videos only)
 ```
 
+### Python Module
+
+```bash
+pip install nndownload
+```
+
+Example:
+```python
+import nndownload
+
+url = "https://www.nicovideo.jp/watch/sm35249846"
+output_path = "/tmp/{id}.{ext}"
+nndownload.download("-g", "-o", output_path, url)
+```
+
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:
 
 - comment_count
@@ -81,21 +96,6 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - view_count
 - audio_quality (DMC)
 - video_quality (DMC)
-
-### Python Module
-
-```bash
-pip install nndownload
-```
-
-Example:
-```python
-import nndownload
-
-url = "https://www.nicovideo.jp/watch/sm35249846"
-output_path = "/tmp/{id}.{ext}"
-nndownload.download("-g", "-o", output_path, url)
-```
 
 ## Known Bugs
 - Check open issues.
