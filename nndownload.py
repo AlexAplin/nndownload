@@ -192,132 +192,11 @@ def pairwise(iterable):
     return zip(a, b)
 
 
-def request_rtmp(session, nama_id):
-    """Build the RTMP stream URL for a Niconama broadcast and print to console."""
+def live_url_stub():
+    """Stub function for building HLS stream URLs for Niconama broadcasts."""
 
-    nama_xml = session.get(NAMA_API.format(nama_id), allow_redirects=False)
-    nama_xml.raise_for_status()
-    if not nama_xml.text:
-        raise FormatNotAvailableException("Could not retrieve nama info from API")
-
-    nama_info = xml.dom.minidom.parseString(nama_xml.text)
-    if nama_info.getElementsByTagName("error"):
-        raise FormatNotAvailableException("Requested nama is not available")
-
-    url = None
-    urls = urllib.parse.unquote(nama_info.getElementsByTagName("contents")[0].firstChild.nodeValue).split(",")
-    is_premium = nama_info.getElementsByTagName("is_premium")[0].firstChild.nodeValue
-    provider_type = nama_info.getElementsByTagName("provider_type")[0].firstChild.nodeValue
-
-    if provider_type == "official":
-        for details, stream_name in pairwise(urls):
-            split = details.split(":", maxsplit=2)
-            if (is_premium and split[0] == "premium") or ((not is_premium or provider_type == "official") and (split[0] == "default" or split[0] == "limelight")):
-                url = split[2] + "/" + stream_name
-                if nama_info.getElementsByTagName("hqstream"):
-                    url = url.split(":", maxsplit=1)[1]
-                break
-
-        if not url:
-            raise FormatNotSupportedException("RTMP URL not found for requested nama")
-    elif provider_type == "community":
-        raise FormatNotSupportedException("Community nama broadcasts are not supported")
-    elif provider_type == "channel":
-        raise FormatNotSupportedException("Channel nama broadcasts are not supported")
-    else:
-        raise FormatNotSupportedException("Not a recognized stream provider type")
-
-    for stream in nama_info.getElementsByTagName("stream"):
-        if stream.getAttribute("name") == stream_name:
-            rtmp = url + "?" + stream.firstChild.nodeValue
-            output("{0}\n".format(rtmp), logging.INFO)
-            return
-
-
-def request_cas(session, nama_id):
-    """Build the HLS stream URL for an experimental Niconama broadcast."""
-
-    output("Support for CAS streams is still experimental.\n", logging.WARNING)
-
-    cas_headers = {
-        "Content-Type": "application/json",
-        "X-Connection-Environment": "ethernet",
-        "X-Frontend-Id": "91"
-    }
-
-    cas_cors = {
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "content-type,x-connection-environment,x-frontend-id",
-        "Origin": "https://cas.nicovideo.jp",
-    }
-
-    qualities_options = session.options(CAS_QUALITIES_API.format(nama_id), headers=cas_cors)
-    qualities_options.raise_for_status()
-
-    nama_qualities = session.get(CAS_QUALITIES_API.format(nama_id), headers=cas_headers)
-    nama_qualities.raise_for_status()
-
-    watching_url = CAS_WATCHING_API.format(nama_id)
-    watching_options = session.options(watching_url, headers=cas_cors)
-    watching_options.raise_for_status()
-
-    watching_data = {
-        "actionTrackId": generate_track_id(),
-        "isBroadcaster": "false",
-        "streamProtocol": "https",
-        "streamQuality": "auto"
-    }
-
-    watching = session.post(watching_url, headers=cas_headers, json=watching_data)
-    watching.raise_for_status()
-
-    watching_json = json.loads(watching.text)
-    master_url = watching_json["data"]["streamServer"]["url"]
-    sync_url = watching_json["data"]["streamServer"]["syncUrl"]
-
-    m3u8 = session.get(master_url)
-    m3u8.raise_for_status()
-
-    playlist_url = parse_m3u8(m3u8.text.splitlines())
-    stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_url
-    output("{0}\n".format(stream_url), logging.INFO)
-
-    perform_cas_heartbeat(session, watching_url, cas_headers, watching_data)
-
-
-def generate_track_id():
-    """Generate a tracking ID string for use in DMC requests."""
-
-    epoch_str = str(time.time()).replace(".", "")
-    return ("".join(random.choice("0123456789abcdef") for n in range(10)) + "_" + epoch_str)[:24]
-
-
-def parse_m3u8(m3u8):
-    """Get the first playlist from the master .m3u8."""
-
-    text = iter(m3u8)
-    for line in text:
-        if line.startswith("#EXT-X-STREAM-INF"):
-            return next(text)
-
-
-def perform_cas_heartbeat(session, heartbeat_url, cas_headers, watching_data):
-    """Perform a heartbeat to keep the stream alive."""
-
-    # TODO: Report if the stream URL changes
-
-    output("Keeping stream URL alive. Press ^C to quit.\n", logging.INFO)
-    past = time.time()
-
-    while True:
-        try:
-            current = time.time()
-            if current - past >= CAS_HEARTBEAT_INTERVAL_S:
-                past = current
-                response = session.put(heartbeat_url, headers=cas_headers, json=watching_data)
-                response.raise_for_status()
-        except KeyboardInterrupt:
-            return
+    output("Support for HLS streams is not yet implemented.\n", logging.ERROR)
+    return
 
 
 def perform_heartbeat(session, heartbeat_url, response):
@@ -934,12 +813,10 @@ def process_url_mo(session, url_mo):
     url_id = url_mo.group(3)
     if url_mo.group(2) == "mylist":
         request_mylist(session, url_id)
-    elif url_mo.group(1) == "cas":
-        request_cas(session, url_id)
+    elif url_mo.group(1):
+        live_url_stub()
     elif url_mo.group(2) == "user":
         request_user(session, url_id)
-    elif url_mo.group(1):
-        request_rtmp(session, url_id)
     else:
         request_video(session, url_id)
 
