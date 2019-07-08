@@ -1,5 +1,8 @@
 # nndownload
-nndownload allows you to download videos from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
+
+![PyPI](https://img.shields.io/pypi/v/nndownload.svg)
+
+nndownload allows you to process videos and other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
 
 ## Features
  - Download videos with comments, thumbnails, and metadata
@@ -15,7 +18,13 @@ nndownload allows you to download videos from [Niconico](http://nicovideo.jp), f
 - beautifulsoup4
 - requests
 
+# Installation
+```bash
+pip install nndownload
+```
+
 ## Usage
+### Standalone
 ```
 usage: nndownload.py [options] input
 
@@ -51,6 +60,15 @@ download options:
                         specify audio quality (DMC videos only)
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         specify video quality (DMC videos only)
+```
+
+### Module
+```python
+import nndownload
+
+url = "https://www.nicovideo.jp/watch/sm35249846"
+output_path = "/tmp/{id}.{ext}"
+nndownload.execute("-g", "-o", output_path, url)
 ```
 
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:
