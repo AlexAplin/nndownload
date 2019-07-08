@@ -1,6 +1,6 @@
 # nndownload
 
-![PyPI](https://img.shields.io/pypi/v/nndownload.svg)
+[![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
 
 nndownload allows you to process videos and other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
 
