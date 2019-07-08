@@ -548,10 +548,10 @@ def select_dmc_quality(template_params, template_key, sources: list, quality=Non
     # TODO: Make sure source is available
     # Haven't seen a source marked as unavailable in the wild rather than be unlisted, but we might as well be sure
 
-    if not quality or cmdl_opts.force_high_quality or quality.lower() == "highest":
-        if cmdl_opts.force_high_quality:
-            output("Video or audio quality specified with --force-high-quality. Ignoring...\n", logging.WARNING)
+    if quality and cmdl_opts.force_high_quality:
+        output("Video or audio quality specified with --force-high-quality. Ignoring quality...\n", logging.WARNING)
 
+    if not quality or cmdl_opts.force_high_quality or quality.lower() == "highest":
         template_params[template_key] = sources[:1][0]
         return sources[:1]
 
