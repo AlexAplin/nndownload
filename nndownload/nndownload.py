@@ -6,8 +6,10 @@ from bs4 import BeautifulSoup
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import websockets
 
 from itertools import tee
+import asyncio
 import json
 import math
 import xml.dom.minidom
@@ -23,6 +25,7 @@ import netrc
 import collections
 import logging
 import traceback
+import time
 
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2016 Alex Aplin"
@@ -33,12 +36,10 @@ __version__ = "0.9"
 HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "http://nicovideo.jp/watch/{0}"
+NAMA_URL = "http://live.nicovideo.jp/watch/{0}"
 USER_VIDEOS_URL = "https://www.nicovideo.jp/user/{0}/video?page={1}"
 VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?|cas)\.)?(?:(?:nicovideo\.jp/(watch|mylist|user))|nico\.ms)/))(?:(?:[0-9]+)/)?((?:[a-z]{2})?[0-9]+)")
 
-NAMA_API = "http://watch.live.nicovideo.jp/api/getplayerstatus?v={0}"
-CAS_QUALITIES_API = "https://api.cas.nicovideo.jp/v1/services/live/programs/{0}/watching-qualities"
-CAS_WATCHING_API = "https://api.cas.nicovideo.jp/v1/services/live/programs/{0}/watching"
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
@@ -46,7 +47,6 @@ COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
 
 DMC_HEARTBEAT_INTERVAL_S = 15
-CAS_HEARTBEAT_INTERVAL_S = 20
 KILOBYTE = 1024
 BLOCK_SIZE = 1024 * KILOBYTE
 EPSILON = 0.0001
@@ -62,6 +62,44 @@ FLASH_COOKIE = {
 EN_COOKIE = {
     "lang": "en-us"
 }
+
+NAMA_PERMIT_FRAME = json.loads("""
+{
+    "type":"watch",
+    "body":{
+        "command":"getpermit",
+        "requirement": {
+            "broadcastId": "0",
+            "route": "",
+            "stream": {
+                "protocol": "hls",
+                "requireNewStream": true,
+                "priorStreamQuality": "abr",
+                "isLowLatency": true,
+                "isChasePlay": false
+            },
+            "room": {
+                "isCommentable": true,
+                "protocol": "webSocket"
+            }
+        }
+    }
+}
+""")
+
+NAMA_WATCHING_FRAME = json.loads("""
+{
+    "type":"watch",
+    "body":{
+        "command":"watching",
+        "params":[
+            "BROADCAST_ID",
+            "-1",
+            "0"
+        ]
+    }
+}
+""")
 
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2 # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({number_of_retries} - 1))
@@ -132,14 +170,14 @@ def log_exception(error):
         logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
 
 
-def output(string, level=logging.INFO):
+def output(string, level=logging.INFO, force=False):
     """Print status to console unless quiet flag is set."""
 
     global cmdl_opts
     if cmdl_opts.log:
         logger.log(level, string.strip("\n"))
 
-    if not cmdl_opts.quiet:
+    if not cmdl_opts.quiet or force:
         sys.stdout.write(string)
         sys.stdout.flush()
 
@@ -196,13 +234,6 @@ def pairwise(iterable):
     return zip(a, b)
 
 
-def live_url_stub():
-    """Stub function for building HLS stream URLs for Niconama broadcasts."""
-
-    output("Support for HLS streams is not yet implemented.\n", logging.ERROR)
-    return
-
-
 def perform_heartbeat(session, heartbeat_url, response):
     """Perform a response heartbeat to keep the download connection alive."""
 
@@ -212,52 +243,6 @@ def perform_heartbeat(session, heartbeat_url, response):
     heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (session, heartbeat_url, response))
     heartbeat_timer.daemon = True
     heartbeat_timer.start()
-
-
-def request_video(session, video_id):
-    """Request the video page and initiate download of the video URL."""
-
-    # Determine whether to request the Flash or HTML5 player
-    # Only .mp4 videos are served on the HTML5 player, so we can sometimes miss the high quality .flv source
-    response = session.get(THUMB_INFO_API.format(video_id))
-    response.raise_for_status()
-
-    video_info = xml.dom.minidom.parseString(response.text)
-
-    if video_info.firstChild.getAttribute("status") != "ok":
-        raise FormatNotAvailableException("Could not retrieve video info")
-
-    concat_cookies = {}
-    if cmdl_opts.download_english:
-        concat_cookies = {**concat_cookies, **EN_COOKIE}
-
-    # This is the file type for the original encode
-    # When logged out, Flash videos will sometimes be served on the HTML5 player with a low quality .mp4 re-encode
-    # Some Flash videos are not available outside of the Flash player
-    video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
-    if video_type == "swf" or video_type == "flv":
-        concat_cookies = {**concat_cookies, **FLASH_COOKIE}
-    elif video_type == "mp4":
-        concat_cookies = {**concat_cookies, **HTML5_COOKIE}
-    else:
-        raise FormatNotAvailableException("Video type not supported")
-
-    response = session.get(VIDEO_URL.format(video_id), cookies=concat_cookies)
-
-    response.raise_for_status()
-    document = BeautifulSoup(response.text, "html.parser")
-
-    template_params = perform_api_request(session, document)
-
-    filename = create_filename(template_params)
-
-    download_video(session, filename, template_params)
-    if cmdl_opts.dump_metadata:
-        dump_metadata(filename, template_params)
-    if cmdl_opts.download_thumbnail:
-        download_thumbnail(session, filename, template_params)
-    if cmdl_opts.download_comments:
-        download_comments(session, filename, template_params)
 
 
 def format_bytes(number_bytes):
@@ -316,6 +301,217 @@ def create_filename(template_params):
     else:
         filename = "{0} - {1}.{2}".format(template_params["id"], template_params["title"], template_params["ext"])
         return sanitize_for_path(filename)
+
+
+def read_file(session, file):
+    """Read file and process each line as a URL."""
+
+    with open(file) as file:
+        content = file.readlines()
+
+    total_lines = len(content)
+    for index, line in enumerate(content):
+        try:
+            output("{0}/{1}\n".format(index + 1, total_lines), logging.INFO)
+            url_mo = valid_url(line)
+            if url_mo:
+                process_url_mo(session, url_mo)
+            else:
+                raise ArgumentException("Not a valid URL")
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
+
+
+def get_playlist_from_m3u8(m3u8_text):
+    """Return last playlist from a master.m3u8 file."""
+
+    m3u8 = m3u8_text.splitlines()
+    return m3u8[-2]
+
+
+def generate_stream(session, master_url):
+    output("Retrieving master playlist...\n", logging.INFO)
+
+    m3u8 = session.get(master_url)
+    m3u8.raise_for_status()
+
+    output("Retrieved master playlist.\n", logging.INFO)
+
+    playlist_slug = get_playlist_from_m3u8(m3u8.text).rstrip("/n");
+    stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_slug
+    # stream_url = stream_url.replace("https://", "hls://") # streamlink only recognizes hls://
+
+    output("Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n", logging.INFO)
+    output("For more instructions on playing this stream, please consult the README.\n", logging.INFO)
+    output("{0}\n".format(stream_url), logging.INFO, force=True)
+
+
+async def open_nama_websocket(session, uri, broadcast_id):
+    async with websockets.connect(uri) as websocket:
+        watching_frame = NAMA_WATCHING_FRAME
+        watching_frame["body"]["params"][0] = broadcast_id
+
+        permit_frame = NAMA_PERMIT_FRAME
+        permit_frame["body"]["requirement"]["broadcastId"] = broadcast_id
+        await websocket.send(json.dumps(permit_frame))
+
+        try:
+            while True:
+                frame = json.loads(await websocket.recv())
+
+                type = frame["type"]
+
+                # output(f"SERVER: {frame}\n", logging.DEBUG);
+
+                if type == "watch":
+                    command = frame["body"]["command"]
+
+                    if command == "statistics":
+                        await websocket.send(json.dumps(watching_frame)) # Overly aggressive, should be sent at regular interval
+
+                    if command == "currentstream":
+                        stream_url = frame["body"]["currentStream"]["uri"]
+                        sync_url = stream_url.replace("master.m3u8", "/1/stream_sync.json")
+                        sync = session.get(sync_url)
+                        sync.raise_for_status()
+
+                        generate_stream(session, stream_url)
+
+                elif type == "ping":
+                    await websocket.send(json.dumps(json.loads("""{"type":"pong","body":{}}""")))
+        except websockets.exceptions.ConnectionClosed:
+            output("Connection was closed. Exiting...\n", logging.INFO)
+            return
+
+
+def request_nama(session, nama_id):
+    response = session.get(NAMA_URL.format(nama_id))
+    response.raise_for_status()
+
+    document = BeautifulSoup(response.text, "html.parser")
+
+    if document.find(id="embedded-data"):
+        params = json.loads(document.find(id="embedded-data")["data-props"])
+
+        websocket_url = params["site"]["relive"]["webSocketUrl"]
+        broadcast_id = params["program"]["broadcastId"]
+
+        asyncio.get_event_loop().run_until_complete(
+            open_nama_websocket(session, websocket_url, broadcast_id))
+
+    else:
+        raise FormatNotAvailableException("Could not retrieve nama info")
+
+
+def request_video(session, video_id):
+    """Request the video page and initiate download of the video URL."""
+
+    # Determine whether to request the Flash or HTML5 player
+    # Only .mp4 videos are served on the HTML5 player, so we can sometimes miss the high quality .flv source
+    response = session.get(THUMB_INFO_API.format(video_id))
+    response.raise_for_status()
+
+    video_info = xml.dom.minidom.parseString(response.text)
+
+    if video_info.firstChild.getAttribute("status") != "ok":
+        raise FormatNotAvailableException("Could not retrieve video info")
+
+    concat_cookies = {}
+    if cmdl_opts.download_english:
+        concat_cookies = {**concat_cookies, **EN_COOKIE}
+
+    # This is the file type for the original encode
+    # When logged out, Flash videos will sometimes be served on the HTML5 player with a low quality .mp4 re-encode
+    # Some Flash videos are not available outside of the Flash player
+    video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
+    if video_type == "swf" or video_type == "flv":
+        concat_cookies = {**concat_cookies, **FLASH_COOKIE}
+    elif video_type == "mp4":
+        concat_cookies = {**concat_cookies, **HTML5_COOKIE}
+    else:
+        raise FormatNotAvailableException("Video type not supported")
+
+    response = session.get(VIDEO_URL.format(video_id), cookies=concat_cookies)
+    response.raise_for_status()
+
+    document = BeautifulSoup(response.text, "html.parser")
+
+    template_params = perform_api_request(session, document)
+
+    filename = create_filename(template_params)
+
+    download_video(session, filename, template_params)
+    if cmdl_opts.dump_metadata:
+        dump_metadata(filename, template_params)
+    if cmdl_opts.download_thumbnail:
+        download_thumbnail(session, filename, template_params)
+    if cmdl_opts.download_comments:
+        download_comments(session, filename, template_params)
+
+
+def request_user(session, user_id):
+    """Download videos associated with a user."""
+
+    output("Downloading videos from user {0}...\n".format(user_id), logging.INFO)
+    page_counter = 1
+    video_ids = []
+
+    # Dumb loop, process pages until we reach a page with no videos
+    while True:
+        user_videos_page = session.get(USER_VIDEOS_URL.format(user_id, page_counter))
+        user_videos_page.raise_for_status()
+
+        user_videos_document = BeautifulSoup(user_videos_page.text, "html.parser")
+        video_links = user_videos_document.select(".VideoItem-videoDetail h5 a")
+
+        if len(video_links) == 0:
+            break
+
+        for link in video_links:
+            unstripped_id = link["href"]
+            video_ids.append(unstripped_id.lstrip("watch/"))
+
+        page_counter += 1
+
+    total_ids = len(video_ids)
+    if total_ids == 0:
+        raise ParameterExtractionException("Failed to collect user videos. Please verify that the user's videos page is public")
+
+    for index, video_id in enumerate(video_ids):
+        try:
+            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
+            request_video(session, video_id)
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
+
+
+def request_mylist(session, mylist_id):
+    """Download videos associated with a mylist."""
+
+    output("Downloading mylist {0}...\n".format(mylist_id), logging.INFO)
+    mylist_request = session.get(MYLIST_API.format(mylist_id))
+    mylist_request.raise_for_status()
+    mylist_json = json.loads(mylist_request.text)
+
+    total_mylist = len(mylist_json["items"])
+    if mylist_json["status"] != "ok":
+        raise FormatNotAvailableException("Could not retrieve mylist info")
+    else:
+        for index, item in enumerate(mylist_json["items"]):
+            try:
+                output("{0}/{1}\n".format(index + 1, total_mylist), logging.INFO)
+                request_video(session, item["video_id"])
+
+            except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+                log_exception(error)
+                traceback.print_exc()
+                continue
 
 
 def download_video(session, filename, template_params):
@@ -441,89 +637,6 @@ def download_comments(session, filename, template_params):
 
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
-
-def request_user(session, user_id):
-    """Download videos associated with a user."""
-
-    output("Downloading videos from user {0}...\n".format(user_id), logging.INFO)
-    page_counter = 1
-    video_ids = []
-
-    # Dumb loop, process pages until we reach a page with no videos
-    while True:
-        user_videos_page = session.get(USER_VIDEOS_URL.format(user_id, page_counter))
-        user_videos_page.raise_for_status()
-
-        user_videos_document = BeautifulSoup(user_videos_page.text, "html.parser")
-        video_links = user_videos_document.select(".VideoItem-videoDetail h5 a")
-
-        if len(video_links) == 0:
-            break
-
-        for link in video_links:
-            unstripped_id = link["href"]
-            video_ids.append(unstripped_id.lstrip("watch/"))
-
-        page_counter += 1
-
-    total_ids = len(video_ids)
-    if total_ids == 0:
-        raise ParameterExtractionException("Failed to collect user videos. Please verify that the user's videos page is public")
-
-    for index, video_id in enumerate(video_ids):
-        try:
-            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
-            request_video(session, video_id)
-
-        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-            log_exception(error)
-            traceback.print_exc()
-            continue
-
-
-def read_file(session, file):
-    """Read file and process each line as a URL."""
-
-    with open(file) as file:
-        content = file.readlines()
-
-    total_lines = len(content)
-    for index, line in enumerate(content):
-        try:
-            output("{0}/{1}\n".format(index + 1, total_lines), logging.INFO)
-            url_mo = valid_url(line)
-            if url_mo:
-                process_url_mo(session, url_mo)
-            else:
-                raise ArgumentException("Not a valid URL")
-
-        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-            log_exception(error)
-            traceback.print_exc()
-            continue
-
-
-def request_mylist(session, mylist_id):
-    """Download videos associated with a mylist."""
-
-    output("Downloading mylist {0}...\n".format(mylist_id), logging.INFO)
-    mylist_request = session.get(MYLIST_API.format(mylist_id))
-    mylist_request.raise_for_status()
-    mylist_json = json.loads(mylist_request.text)
-
-    total_mylist = len(mylist_json["items"])
-    if mylist_json["status"] != "ok":
-        raise FormatNotAvailableException("Could not retrieve mylist info")
-    else:
-        for index, item in enumerate(mylist_json["items"]):
-            try:
-                output("{0}/{1}\n".format(index + 1, total_mylist), logging.INFO)
-                request_video(session, item["video_id"])
-
-            except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-                log_exception(error)
-                traceback.print_exc()
-                continue
 
 def determine_quality(template_params, params):
     """Determine the quality parameter for all videos."""
@@ -815,7 +928,7 @@ def process_url_mo(session, url_mo):
     if url_mo.group(2) == "mylist":
         request_mylist(session, url_id)
     elif url_mo.group(1):
-        live_url_stub()
+        request_nama(session, url_id)
     elif url_mo.group(2) == "user":
         request_user(session, url_id)
     else:

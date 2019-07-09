@@ -12,7 +12,8 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/AlexAplin/nndownload",
     packages=["nndownload"],
-    install_requires=["requests", "beautifulsoup4"],
+    install_requires=["requests", "beautifulsoup4", "websockets"],
+    python_requires=">=3.6",
     classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",

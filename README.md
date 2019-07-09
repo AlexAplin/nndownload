@@ -1,6 +1,6 @@
 # nndownload
 
-[![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
+![PyPI](https://img.shields.io/pypi/v/nndownload.svg)
 
 nndownload allows you to process videos and other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
 
@@ -8,15 +8,17 @@ nndownload allows you to process videos and other links from [Niconico](http://n
  - Download videos with comments, thumbnails, and metadata
  - Download user videos
  - Download mylists
+ - Generate stream URLs for Niconama live broadcasts
  - Process text files with URLs
 
 ## Requirements
 ### Python version
-- Python 3.x
+- Python >=3.6
 
 ### Dependencies
 - beautifulsoup4
 - requests
+- websockets
 
 # Installation
 ```bash
@@ -71,6 +73,7 @@ output_path = "/tmp/{id}.{ext}"
 nndownload.execute("-g", "-o", output_path, url)
 ```
 
+### Custom Output Paths
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:
 
 - comment_count
@@ -92,6 +95,14 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - view_count
 - audio_quality (DMC)
 - video_quality (DMC)
+
+### Using Stream Links
+After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
+
+`mpv https://...`
+
+For streamlink, replace `http` with `hls` in the output stream URL:
+`streamlink hls://... best`
 
 ## Known Bugs
 - Check open issues.
