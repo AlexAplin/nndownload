@@ -337,7 +337,7 @@ def get_playlist_from_m3u8(m3u8_text):
     """Return last playlist from a master.m3u8 file."""
 
     m3u8 = m3u8_text.splitlines()
-    return m3u8[-2]
+    return m3u8[-2].rstrip("/n")
 
 
 def generate_stream(session, master_url):
@@ -350,7 +350,7 @@ def generate_stream(session, master_url):
 
     output("Retrieved master playlist.\n", logging.INFO)
 
-    playlist_slug = get_playlist_from_m3u8(m3u8.text).rstrip("/n")
+    playlist_slug = get_playlist_from_m3u8(m3u8.text)
     stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_slug
     # stream_url = stream_url.replace("https://", "hls://")
 

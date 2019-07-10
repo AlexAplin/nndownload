@@ -99,9 +99,12 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 ### Using Stream Links
 After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
 
+For mpv:
+
 `mpv https://...`
 
-For streamlink, replace `http` with `hls` in the output stream URL:
+For streamlink, replace `https` with `hls` in the output stream URL:
+
 `streamlink hls://... best`
 
 ## Known Bugs
