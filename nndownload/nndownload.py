@@ -35,9 +35,9 @@ __version__ = "0.9"
 
 HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
-VIDEO_URL = "http://nicovideo.jp/watch/{0}"
-NAMA_URL = "http://live.nicovideo.jp/watch/{0}"
-USER_VIDEOS_URL = "https://www.nicovideo.jp/user/{0}/video?page={1}"
+VIDEO_URL = "https://nicovideo.jp/watch/{0}"
+NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
+USER_VIDEOS_URL = "https://nicovideo.jp/user/{0}/video?page={1}"
 VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?|cas)\.)?(?:(?:nicovideo\.jp/(watch|mylist|user))|nico\.ms)/))(?:(?:[0-9]+)/)?((?:[a-z]{2})?[0-9]+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
@@ -65,11 +65,11 @@ EN_COOKIE = {
 
 NAMA_PERMIT_FRAME = json.loads("""
 {
-    "type":"watch",
-    "body":{
-        "command":"getpermit",
+    "type": "watch",
+    "body": {
+        "command": "getpermit",
         "requirement": {
-            "broadcastId": "0",
+            "broadcastId": "-1",
             "route": "",
             "stream": {
                 "protocol": "hls",
@@ -89,10 +89,10 @@ NAMA_PERMIT_FRAME = json.loads("""
 
 NAMA_WATCHING_FRAME = json.loads("""
 {
-    "type":"watch",
-    "body":{
-        "command":"watching",
-        "params":[
+    "type": "watch",
+    "body": {
+        "command": "watching",
+        "params": [
             "BROADCAST_ID",
             "-1",
             "0"
@@ -101,8 +101,10 @@ NAMA_WATCHING_FRAME = json.loads("""
 }
 """)
 
+PONG_FRAME = json.loads("""{"type":"pong","body":{}}""")
+
 RETRY_ATTEMPTS = 5
-BACKOFF_FACTOR = 2 # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({number_of_retries} - 1))
+BACKOFF_FACTOR = 2  # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +159,8 @@ class ParameterExtractionException(Exception):
 
 
 def configure_logger():
+    """Initialize logger."""
+
     if cmdl_opts.log:
         logger.setLevel(logging.INFO)
         log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
@@ -166,6 +170,8 @@ def configure_logger():
 
 
 def log_exception(error):
+    """Process exception for logger."""
+
     if cmdl_opts.log:
         logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
 
@@ -188,13 +194,13 @@ def login(username, password):
     session = requests.session()
 
     retry = Retry(
-        total = RETRY_ATTEMPTS,
-        read = RETRY_ATTEMPTS,
-        connect = RETRY_ATTEMPTS,
-        backoff_factor = BACKOFF_FACTOR,
-        status_forcelist = (500, 502, 503, 504),
+        total=RETRY_ATTEMPTS,
+        read=RETRY_ATTEMPTS,
+        connect=RETRY_ATTEMPTS,
+        backoff_factor=BACKOFF_FACTOR,
+        status_forcelist=(500, 502, 503, 504),
     )
-    adapter = HTTPAdapter(max_retries = retry)
+    adapter = HTTPAdapter(max_retries=retry)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
 
@@ -280,6 +286,7 @@ def replace_extension(filename, new_extension):
 
 def sanitize_for_path(value, replace=' '):
     """Remove potentially illegal characters from a path."""
+
     return re.sub(r'[<>\"\?\\\/\*:]', replace, value)
 
 
@@ -298,6 +305,7 @@ def create_filename(template_params):
             os.makedirs(os.path.dirname(filename), exist_ok=True)
 
         return filename
+
     else:
         filename = "{0} - {1}.{2}".format(template_params["id"], template_params["title"], template_params["ext"])
         return sanitize_for_path(filename)
@@ -333,6 +341,8 @@ def get_playlist_from_m3u8(m3u8_text):
 
 
 def generate_stream(session, master_url):
+    """Output the highest quality stream URL for a live Nicoanama broadcast."""
+
     output("Retrieving master playlist...\n", logging.INFO)
 
     m3u8 = session.get(master_url)
@@ -340,9 +350,9 @@ def generate_stream(session, master_url):
 
     output("Retrieved master playlist.\n", logging.INFO)
 
-    playlist_slug = get_playlist_from_m3u8(m3u8.text).rstrip("/n");
+    playlist_slug = get_playlist_from_m3u8(m3u8.text).rstrip("/n")
     stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_slug
-    # stream_url = stream_url.replace("https://", "hls://") # streamlink only recognizes hls://
+    # stream_url = stream_url.replace("https://", "hls://")
 
     output("Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n", logging.INFO)
     output("For more instructions on playing this stream, please consult the README.\n", logging.INFO)
@@ -350,6 +360,8 @@ def generate_stream(session, master_url):
 
 
 async def open_nama_websocket(session, uri, broadcast_id):
+    """Open WebSocket connection to receive and keep HLS playlist alive."""
+
     async with websockets.connect(uri) as websocket:
         watching_frame = NAMA_WATCHING_FRAME
         watching_frame["body"]["params"][0] = broadcast_id
@@ -361,16 +373,15 @@ async def open_nama_websocket(session, uri, broadcast_id):
         try:
             while True:
                 frame = json.loads(await websocket.recv())
-
-                type = frame["type"]
+                frame_type = frame["type"]
 
                 # output(f"SERVER: {frame}\n", logging.DEBUG);
 
-                if type == "watch":
+                if frame_type == "watch":
                     command = frame["body"]["command"]
 
                     if command == "statistics":
-                        await websocket.send(json.dumps(watching_frame)) # Overly aggressive, should be sent at regular interval
+                        await websocket.send(json.dumps(watching_frame))  # Overly aggressive, should be sent at regular interval
 
                     if command == "currentstream":
                         stream_url = frame["body"]["currentStream"]["uri"]
@@ -380,14 +391,17 @@ async def open_nama_websocket(session, uri, broadcast_id):
 
                         generate_stream(session, stream_url)
 
-                elif type == "ping":
-                    await websocket.send(json.dumps(json.loads("""{"type":"pong","body":{}}""")))
+                elif frame_type == "ping":
+                    await websocket.send(json.dumps(PONG_FRAME))
+
         except websockets.exceptions.ConnectionClosed:
             output("Connection was closed. Exiting...\n", logging.INFO)
             return
 
 
 def request_nama(session, nama_id):
+    """Generate a stream URL for a live Niconama broadcast."""
+
     response = session.get(NAMA_URL.format(nama_id))
     response.raise_for_status()
 
