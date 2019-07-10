@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import requests
-import websockets
 
 from itertools import tee
 import argparse
@@ -24,6 +23,7 @@ import threading
 import time
 import traceback
 import urllib.parse
+import websockets
 import xml.dom.minidom
 
 __author__ = "Alex Aplin"
