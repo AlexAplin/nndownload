@@ -28,7 +28,7 @@ import traceback
 import time
 
 __author__ = "Alex Aplin"
-__copyright__ = "Copyright 2016 Alex Aplin"
+__copyright__ = "Copyright 2019 Alex Aplin"
 
 __license__ = "MIT"
 __version__ = "0.9"
