@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="nndownload",
-    version="0.9",
+    version="1.0",
     author="AlexAplin",
     description="nndownload allows you to process videos and other links from Niconico.",
     long_description=long_description,
