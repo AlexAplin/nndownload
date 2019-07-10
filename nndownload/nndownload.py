@@ -3,29 +3,28 @@
 """Download videos from Niconico (nicovideo.jp), formerly known as Nico Nico Douga."""
 
 from bs4 import BeautifulSoup
-import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import requests
 import websockets
 
 from itertools import tee
-import asyncio
-import json
-import math
-import xml.dom.minidom
-import urllib.parse
-import re
 import argparse
+import asyncio
+import collections
+import getpass
+import json
+import logging
+import math
+import netrc
 import os
+import re
 import sys
 import threading
-import getpass
 import time
-import netrc
-import collections
-import logging
 import traceback
-import time
+import urllib.parse
+import xml.dom.minidom
 
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2019 Alex Aplin"
