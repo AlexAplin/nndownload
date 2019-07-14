@@ -513,13 +513,12 @@ def request_mylist(session, mylist_id):
     mylist_json = json.loads(mylist_request.text)
 
     items = mylist_json.get("items", [])
-    total_mylist = len(items)
     if mylist_json.get("status") != "ok":
         raise FormatNotAvailableException("Could not retrieve mylist info; response=" + mylist_request.text)
     else:
         for index, item in enumerate(items):
             try:
-                output("{0}/{1}\n".format(index + 1, total_mylist), logging.INFO)
+                output("{0}/{1}\n".format(index + 1, len(items)), logging.INFO)
                 request_video(session, item["video_id"])
 
             except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
