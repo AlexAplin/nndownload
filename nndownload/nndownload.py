@@ -512,10 +512,10 @@ def request_mylist(session, mylist_id):
     mylist_request.raise_for_status()
     mylist_json = json.loads(mylist_request.text)
 
-    total_mylist = len(mylist_json["items"])
-    if mylist_json["status"] != "ok":
-        raise FormatNotAvailableException("Could not retrieve mylist info")
+    if mylist_json.get("status") != "ok":
+        raise FormatNotAvailableException("Could not retrieve mylist info; response=" + mylist_request.text)
     else:
+        total_mylist = len(mylist_json["items"])
         for index, item in enumerate(mylist_json["items"]):
             try:
                 output("{0}/{1}\n".format(index + 1, total_mylist), logging.INFO)
