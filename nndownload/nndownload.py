@@ -205,6 +205,13 @@ def login(username, password):
 
     session.headers.update({"User-Agent": "nndownload/{0}".format(__version__)})
 
+    if cmdl_opts.proxy:
+        proxies = {
+            "http": cmdl_opts.proxy,
+            "https": cmdl_opts.proxy
+        }
+        session.proxies.update(proxies)
+
     if not cmdl_opts.no_login:
         output("Logging in...\n", logging.INFO)
 
@@ -212,13 +219,6 @@ def login(username, password):
             "mail_tel": username,
             "password": password
         }
-
-        if cmdl_opts.proxy:
-            proxies = {
-                "http": cmdl_opts.proxy,
-                "https": cmdl_opts.proxy
-            }
-            session.proxies.update(proxies)
 
         response = session.post(LOGIN_URL, data=LOGIN_POST)
         response.raise_for_status()
