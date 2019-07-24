@@ -49,7 +49,7 @@ COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from
 NAMA_HEARTBEAT_INTERVAL_S = 15
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
-BLOCK_SIZE = 1024 * KILOBYTE
+BLOCK_SIZE = 1024
 EPSILON = 0.0001
 
 HTML5_COOKIE = {
@@ -123,7 +123,8 @@ cmdl_parser.add_argument("input", help="URL or file")
 
 dl_group = cmdl_parser.add_argument_group("download options")
 dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
-dl_group.add_argument("-o", "--output-path", dest="output_path", help="custom output path (see template options)")
+dl_group.add_argument("-o", "--output-path", dest="output_path", metavar="TEMPLATE", help="custom output path (see template options)")
+dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", help="download using a specified number of threads")
 dl_group.add_argument("-g", "--no-login", action="store_true", dest="no_login", help="create a download session without logging in")
 dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
 dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
@@ -548,6 +549,30 @@ def request_mylist(session, mylist_id):
                 continue
 
 
+def download_video_part(start, end, filename, session, url):
+    """Download a video part using specified start and end byte boundaries."""
+
+    resume_header = {"Range": "bytes={0}-{1}".format(start, end)}
+
+    dl_stream = session.get(url, headers=resume_header, stream=True)
+    dl_stream.raise_for_status()
+    stream_iterator = dl_stream.iter_content(BLOCK_SIZE)
+
+    part_length = end - start
+    current_pos = start
+
+    with open(filename, "r+b") as file:
+        file.seek(current_pos)
+        start_time = time.time()
+        for block in stream_iterator:
+            current_pos += len(block)
+            block_pos = current_pos - start
+            file.write(block)
+            done = int(25 * block_pos / part_length)
+            percent = int(100 * block_pos / part_length)
+            speed_str = calculate_speed(start_time, time.time(), block_pos)
+            # TODO: Write progress for each thread to a separate lines
+
 def download_video(session, filename, template_params):
     """Download video from response URL and display progress."""
 
@@ -556,6 +581,38 @@ def download_video(session, filename, template_params):
     dl_stream = session.head(template_params["url"])
     dl_stream.raise_for_status()
     video_len = int(dl_stream.headers["content-length"])
+
+    if cmdl_opts.threads:
+        output("Multithreading is experimental and will overwrite any existing files.\n", logging.WARNING)
+        output("Download progress will not be shown.\n", logging.WARNING)
+
+        threads = int(cmdl_opts.threads)
+        if threads <= 0:
+            raise ArgumentException("Thread number must be a positive integer")
+
+        # Pad out file to full length
+        file = open(filename, "wb")
+        file.truncate(video_len)
+        file.close()
+
+        # Calculate ranges for threads and dispatch
+        part = math.ceil(video_len / threads)
+        for i in range(threads):
+            start = part * i
+            end = video_len if i == threads else start + part
+
+            thread = threading.Thread(target=download_video_part, kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"] })
+            thread.setDaemon(True)
+            thread.start()
+
+        # Join threads
+        main_thread = threading.current_thread()
+        for thread in threading.enumerate():
+            if thread is main_thread:
+                continue
+            thread.join()
+
+        return
 
     if os.path.isfile(filename):
         with open(filename, "rb") as file:

@@ -47,8 +47,10 @@ optional arguments:
 download options:
   -y PROXY, --proxy PROXY
                         http or socks proxy
-  -o OUTPUT_PATH, --output-path OUTPUT_PATH
+  -o TEMPLATE, --output-path TEMPLATE
                         custom output path (see template options)
+  -r N, --threads N
+                        download using a specified number of multithreads
   -g, --no-login        create a download session without logging in
   -f, --force-high-quality
                         only download if the high quality source is available
