@@ -8,7 +8,7 @@ nndownload allows you to process videos and other links from [Niconico](http://n
  - Download videos with comments, thumbnails, and metadata
  - Download user videos
  - Download mylists
- - Generate stream URLs for Niconama live broadcasts
+ - Generate stream URLs for Niconama broadcasts
  - Process text files with URLs
 
 ## Requirements
@@ -105,7 +105,7 @@ For mpv:
 
 For streamlink, replace `https` with `hls` in the output stream URL:
 
-`streamlink hls://... best`
+`streamlink "hls://..." best`
 
 ## Known Bugs
 - Check open issues.
