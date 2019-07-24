@@ -38,6 +38,7 @@ VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
 USER_VIDEOS_URL = "https://nicovideo.jp/user/{0}/video?page={1}"
 VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?|cas)\.)?(?:(?:nicovideo\.jp/(watch|mylist|user))|nico\.ms)/))(?:(?:[0-9]+)/)?((?:[a-z]{2})?[0-9]+)")
+M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
@@ -45,6 +46,7 @@ COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
 
+NAMA_HEARTBEAT_INTERVAL_S = 15
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 1024 * KILOBYTE
@@ -335,9 +337,20 @@ def read_file(session, file):
 def get_playlist_from_m3u8(m3u8_text):
     """Return last playlist from a master.m3u8 file."""
 
-    m3u8 = m3u8_text.splitlines()
-    return m3u8[-2].rstrip("/n")
+    best_bandwidth, best_stream = -1, None
+    matches = M3U8_STREAM_RE.findall(m3u8_text)
 
+    if not matches:
+        raise FormatNotAvailableException("Could not retrieve stream playlist from master playlist")
+
+    else:
+        for match in matches:
+            stream_bandwidth = int(match[0])
+            if stream_bandwidth > best_bandwidth:
+                best_bandwidth = stream_bandwidth
+                best_stream = match[1]
+
+    return best_stream
 
 def generate_stream(session, master_url):
     """Output the highest quality stream URL for a live Nicoanama broadcast."""
@@ -358,8 +371,16 @@ def generate_stream(session, master_url):
     output("{0}\n".format(stream_url), logging.INFO, force=True)
 
 
-async def open_nama_websocket(session, uri, broadcast_id):
-    """Open WebSocket connection to receive and keep HLS playlist alive."""
+async def perform_nama_heartbeat(websocket, watching_frame):
+    """Send a watching frame periodically to keep the stream alive."""
+
+    while True:
+        await websocket.send(json.dumps(watching_frame))
+        await asyncio.sleep(NAMA_HEARTBEAT_INTERVAL_S)
+
+
+async def open_nama_websocket(session, uri, broadcast_id, event_loop):
+    """Open a WebSocket connection to receive and generate the stream playlist URL."""
 
     async with websockets.connect(uri) as websocket:
         watching_frame = NAMA_WATCHING_FRAME
@@ -368,6 +389,8 @@ async def open_nama_websocket(session, uri, broadcast_id):
         permit_frame = NAMA_PERMIT_FRAME
         permit_frame["body"]["requirement"]["broadcastId"] = broadcast_id
         await websocket.send(json.dumps(permit_frame))
+
+        heartbeat = event_loop.create_task(perform_nama_heartbeat(websocket, watching_frame))
 
         try:
             while True:
@@ -380,14 +403,10 @@ async def open_nama_websocket(session, uri, broadcast_id):
                     command = frame["body"]["command"]
 
                     if command == "statistics":
-                        await websocket.send(json.dumps(watching_frame))  # Overly aggressive, should be sent at regular interval
+                        continue
 
-                    if command == "currentstream":
+                    elif command == "currentstream":
                         stream_url = frame["body"]["currentStream"]["uri"]
-                        sync_url = stream_url.replace("master.m3u8", "/1/stream_sync.json")
-                        sync = session.get(sync_url)
-                        sync.raise_for_status()
-
                         generate_stream(session, stream_url)
 
                 elif frame_type == "ping":
@@ -395,6 +414,7 @@ async def open_nama_websocket(session, uri, broadcast_id):
 
         except websockets.exceptions.ConnectionClosed:
             output("Connection was closed. Exiting...\n", logging.INFO)
+            heartbeat.cancel()
             return
 
 
@@ -412,8 +432,9 @@ def request_nama(session, nama_id):
         websocket_url = params["site"]["relive"]["webSocketUrl"]
         broadcast_id = params["program"]["broadcastId"]
 
-        asyncio.get_event_loop().run_until_complete(
-            open_nama_websocket(session, websocket_url, broadcast_id))
+        event_loop = asyncio.get_event_loop()
+        event_loop.run_until_complete(
+            open_nama_websocket(session, websocket_url, broadcast_id, event_loop))
 
     else:
         raise FormatNotAvailableException("Could not retrieve nama info")
