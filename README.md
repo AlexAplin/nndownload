@@ -8,6 +8,7 @@ nndownload allows you to process videos and other links from [Niconico](http://n
  - Download videos with comments, thumbnails, and metadata
  - Download user videos
  - Download mylists
+ - Download videos faster using multiple threads
  - Generate stream URLs for Niconama broadcasts
  - Process text files with URLs
 

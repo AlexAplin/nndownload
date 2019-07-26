@@ -624,6 +624,7 @@ def download_video(session, filename, template_params):
 
         # Calculate ranges for threads and dispatch
         part = math.ceil(video_len / threads)
+
         global start_time
         start_time = time.time()
 
