@@ -549,6 +549,32 @@ def request_mylist(session, mylist_id):
                 continue
 
 
+def show_multithread_progress(video_len):
+    """Track overall download progress across threads."""
+
+    global progress, start_time
+    finished = False
+    while not finished:
+        if progress >= video_len:
+            finished = True
+        done = int(25 * progress / video_len)
+        percent = int(100 * progress / video_len)
+        speed_str = calculate_speed(start_time, time.time(), progress)
+        output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
+
+
+def update_multithread_progress(bytes_len):
+    """Acquire lock on global download progress and update."""
+
+    lock = threading.Lock()
+    lock.acquire()
+    try:
+        global progress
+        progress += bytes_len
+    finally:
+        lock.release()
+
+
 def download_video_part(start, end, filename, session, url):
     """Download a video part using specified start and end byte boundaries."""
 
@@ -566,12 +592,10 @@ def download_video_part(start, end, filename, session, url):
         start_time = time.time()
         for block in stream_iterator:
             current_pos += len(block)
-            block_pos = current_pos - start
             file.write(block)
-            done = int(25 * block_pos / part_length)
-            percent = int(100 * block_pos / part_length)
-            speed_str = calculate_speed(start_time, time.time(), block_pos)
-            # TODO: Write progress for each thread to a separate lines
+            update_multithread_progress(len(block))
+    update_multithread_progress(-1) # NUL byte at end of each part
+
 
 def download_video(session, filename, template_params):
     """Download video from response URL and display progress."""
@@ -584,11 +608,14 @@ def download_video(session, filename, template_params):
 
     if cmdl_opts.threads:
         output("Multithreading is experimental and will overwrite any existing files.\n", logging.WARNING)
-        output("Download progress will not be shown.\n", logging.WARNING)
 
         threads = int(cmdl_opts.threads)
         if threads <= 0:
             raise ArgumentException("Thread number must be a positive integer")
+
+        # Track total bytes downloaded across threads
+        global progress
+        progress = 0
 
         # Pad out file to full length
         file = open(filename, "wb")
@@ -597,13 +624,19 @@ def download_video(session, filename, template_params):
 
         # Calculate ranges for threads and dispatch
         part = math.ceil(video_len / threads)
+        global start_time
+        start_time = time.time()
+
         for i in range(threads):
             start = part * i
-            end = video_len if i == threads else start + part
+            end = video_len if i == threads - 1 else start + part
 
-            thread = threading.Thread(target=download_video_part, kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"] })
+            thread = threading.Thread(target=download_video_part, kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"]})
             thread.setDaemon(True)
             thread.start()
+
+        progress_thread = threading.Thread(target=show_multithread_progress, kwargs={"video_len": video_len})
+        progress_thread.start()
 
         # Join threads
         main_thread = threading.current_thread()
@@ -612,6 +645,7 @@ def download_video(session, filename, template_params):
                 continue
             thread.join()
 
+        output("\nFinished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
         return
 
     if os.path.isfile(filename):
