@@ -1,11 +1,17 @@
 import setuptools
+from distutils.util import convert_path
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
+main_ns = {}
+ver_path = convert_path("nndownload/version.py")
+with open(ver_path) as ver_file:
+    exec(ver_file.read(), main_ns)
+
 setuptools.setup(
     name="nndownload",
-    version="1.1",
+    version=main_ns['__version__'],
     author="AlexAplin",
     description="nndownload allows you to process videos and other links from Niconico.",
     long_description=long_description,

@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Download videos from Niconico (nicovideo.jp), formerly known as Nico Nico Douga."""
+"""Download videos and process other links from Niconico (nicovideo.jp)."""
+
+try:
+    from version import __version__
+except ImportError:
+    from .version import __version__
 
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
@@ -30,7 +35,6 @@ __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2019 Alex Aplin"
 
 __license__ = "MIT"
-__version__ = "1.1"
 
 HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
@@ -51,6 +55,8 @@ DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 1024
 EPSILON = 0.0001
+RETRY_ATTEMPTS = 5
+BACKOFF_FACTOR = 2  # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
 
 HTML5_COOKIE = {
     "watch_flash": "0"
@@ -103,9 +109,6 @@ NAMA_WATCHING_FRAME = json.loads("""
 """)
 
 PONG_FRAME = json.loads("""{"type":"pong","body":{}}""")
-
-RETRY_ATTEMPTS = 5
-BACKOFF_FACTOR = 2  # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +163,8 @@ class ParameterExtractionException(Exception):
     pass
 
 
+# Utility methods
+
 def configure_logger():
     """Initialize logger."""
 
@@ -190,67 +195,12 @@ def output(string, level=logging.INFO, force=False):
         sys.stdout.flush()
 
 
-def login(username, password):
-    """Login to Nico. Will raise an exception for errors."""
-
-    session = requests.session()
-
-    retry = Retry(
-        total=RETRY_ATTEMPTS,
-        read=RETRY_ATTEMPTS,
-        connect=RETRY_ATTEMPTS,
-        backoff_factor=BACKOFF_FACTOR,
-        status_forcelist=(500, 502, 503, 504),
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
-
-    session.headers.update({"User-Agent": "nndownload/{0}".format(__version__)})
-
-    if cmdl_opts.proxy:
-        proxies = {
-            "http": cmdl_opts.proxy,
-            "https": cmdl_opts.proxy
-        }
-        session.proxies.update(proxies)
-
-    if not cmdl_opts.no_login:
-        output("Logging in...\n", logging.INFO)
-
-        LOGIN_POST = {
-            "mail_tel": username,
-            "password": password
-        }
-
-        response = session.post(LOGIN_URL, data=LOGIN_POST)
-        response.raise_for_status()
-        if not session.cookies.get_dict().get("user_session", None):
-            output("Failed to login.\n", logging.INFO)
-            raise AuthenticationException("Failed to login. Please verify your username and password")
-
-        output("Logged in.\n", logging.INFO)
-
-    return session
-
-
 def pairwise(iterable):
     """Helper method to pair RTMP URL with stream label."""
 
     a, b = tee(iterable)
     next(b, None)
     return zip(a, b)
-
-
-def perform_heartbeat(session, heartbeat_url, response):
-    """Perform a response heartbeat to keep the download connection alive."""
-
-    response = session.post(heartbeat_url, data=response.toxml())
-    response.raise_for_status()
-    response = xml.dom.minidom.parseString(response.text).getElementsByTagName("session")[0]
-    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (session, heartbeat_url, response))
-    heartbeat_timer.daemon = True
-    heartbeat_timer.start()
 
 
 def format_bytes(number_bytes):
@@ -353,6 +303,9 @@ def get_playlist_from_m3u8(m3u8_text):
 
     return best_stream
 
+
+## Nama methods
+
 def generate_stream(session, master_url):
     """Output the highest quality stream URL for a live Nicoanama broadcast."""
 
@@ -440,6 +393,8 @@ def request_nama(session, nama_id):
     else:
         raise FormatNotAvailableException("Could not retrieve nama info")
 
+
+## Download methods
 
 def request_video(session, video_id):
     """Request the video page and initiate download of the video URL."""
@@ -589,7 +544,6 @@ def download_video_part(start, end, filename, session, url):
 
     with open(filename, "r+b") as file:
         file.seek(current_pos)
-        start_time = time.time()
         for block in stream_iterator:
             current_pos += len(block)
             file.write(block)
@@ -712,56 +666,15 @@ def download_video(session, filename, template_params):
     output("\nFinished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
 
 
-def dump_metadata(filename, template_params):
-    """Dump the collected video metadata to a file."""
+def perform_heartbeat(session, heartbeat_url, response):
+    """Perform a response heartbeat to keep the video download connection alive."""
 
-    output("Downloading metadata for {0}...\n".format(template_params["id"]), logging.INFO)
-
-    filename = replace_extension(filename, "json")
-
-    with open(filename, "w") as file:
-        json.dump(template_params, file, sort_keys=True)
-
-    output("Finished downloading metadata for {0}.\n".format(template_params["id"]), logging.INFO)
-
-
-def download_thumbnail(session, filename, template_params):
-    """Download the video thumbnail."""
-
-    output("Downloading thumbnail for {0}...\n".format(template_params["id"]), logging.INFO)
-
-    filename = replace_extension(filename, "jpg")
-
-    # Try to retrieve the large thumbnail
-    get_thumb = session.get(template_params["thumbnail_url"] + ".L")
-    if get_thumb.status_code == 404:
-        get_thumb = session.get(template_params["thumbnail_url"])
-        get_thumb.raise_for_status()
-
-    with open(filename, "wb") as file:
-        for block in get_thumb.iter_content(BLOCK_SIZE):
-            file.write(block)
-
-    output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
-
-
-def download_comments(session, filename, template_params):
-    """Download the video comments."""
-
-    output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
-
-    filename = replace_extension(filename, "xml")
-
-    if cmdl_opts.download_english:
-        post_packet = COMMENTS_POST_EN
-    else:
-        post_packet = COMMENTS_POST_JP
-    get_comments = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
-    get_comments.raise_for_status()
-    with open(filename, "wb") as file:
-        file.write(get_comments.content)
-
-    output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
+    response = session.post(heartbeat_url, data=response.toxml())
+    response.raise_for_status()
+    response = xml.dom.minidom.parseString(response.text).getElementsByTagName("session")[0]
+    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (session, heartbeat_url, response))
+    heartbeat_timer.daemon = True
+    heartbeat_timer.start()
 
 
 def determine_quality(template_params, params):
@@ -982,6 +895,8 @@ def perform_api_request(session, document):
     return template_params
 
 
+# Metadata extraction
+
 def collect_parameters(session, template_params, params, is_html5):
     """Collect video parameters to make them available for an output filename template."""
 
@@ -1038,6 +953,105 @@ def collect_parameters(session, template_params, params, is_html5):
         template_params["uploader"] = channel_name[0].firstChild.nodeValue if channel_name else user_nickname[0].firstChild.nodeValue if user_nickname else None
 
     return template_params
+
+
+def dump_metadata(filename, template_params):
+    """Dump the collected video metadata to a file."""
+
+    output("Downloading metadata for {0}...\n".format(template_params["id"]), logging.INFO)
+
+    filename = replace_extension(filename, "json")
+
+    with open(filename, "w") as file:
+        json.dump(template_params, file, sort_keys=True)
+
+    output("Finished downloading metadata for {0}.\n".format(template_params["id"]), logging.INFO)
+
+
+def download_thumbnail(session, filename, template_params):
+    """Download the video thumbnail."""
+
+    output("Downloading thumbnail for {0}...\n".format(template_params["id"]), logging.INFO)
+
+    filename = replace_extension(filename, "jpg")
+
+    # Try to retrieve the large thumbnail
+    get_thumb = session.get(template_params["thumbnail_url"] + ".L")
+    if get_thumb.status_code == 404:
+        get_thumb = session.get(template_params["thumbnail_url"])
+        get_thumb.raise_for_status()
+
+    with open(filename, "wb") as file:
+        for block in get_thumb.iter_content(BLOCK_SIZE):
+            file.write(block)
+
+    output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
+
+
+def download_comments(session, filename, template_params):
+    """Download the video comments."""
+
+    output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
+
+    filename = replace_extension(filename, "xml")
+
+    if cmdl_opts.download_english:
+        post_packet = COMMENTS_POST_EN
+    else:
+        post_packet = COMMENTS_POST_JP
+    get_comments = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
+    get_comments.raise_for_status()
+    with open(filename, "wb") as file:
+        file.write(get_comments.content)
+
+    output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
+
+
+# Main entry
+
+
+def login(username, password):
+    """Login to Nico and create a session."""
+
+    session = requests.session()
+
+    retry = Retry(
+        total=RETRY_ATTEMPTS,
+        read=RETRY_ATTEMPTS,
+        connect=RETRY_ATTEMPTS,
+        backoff_factor=BACKOFF_FACTOR,
+        status_forcelist=(500, 502, 503, 504),
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+
+    session.headers.update({"User-Agent": "nndownload/{0}".format(__version__)})
+
+    if cmdl_opts.proxy:
+        proxies = {
+            "http": cmdl_opts.proxy,
+            "https": cmdl_opts.proxy
+        }
+        session.proxies.update(proxies)
+
+    if not cmdl_opts.no_login:
+        output("Logging in...\n", logging.INFO)
+
+        login_post = {
+            "mail_tel": username,
+            "password": password
+        }
+
+        response = session.post(LOGIN_URL, data=login_post)
+        response.raise_for_status()
+        if not session.cookies.get_dict().get("user_session", None):
+            output("Failed to login.\n", logging.INFO)
+            raise AuthenticationException("Failed to login. Please verify your username and password")
+
+        output("Logged in.\n", logging.INFO)
+
+    return session
 
 
 def valid_url(url):
