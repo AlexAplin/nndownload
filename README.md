@@ -6,7 +6,8 @@ nndownload allows you to process videos and other links from [Niconico](http://n
 
 ## Features
  - Download videos with comments, thumbnails, and metadata
- - Download user videos
+ - Download Nico Seiga images and manga
+ - Download a user's videos
  - Download mylists
  - Download videos faster using multiple threads
  - Generate stream URLs for Niconama broadcasts
@@ -77,7 +78,7 @@ nndownload.execute("-g", "-o", output_path, url)
 ```
 
 ### Custom Output Paths
-Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. The available options are:
+Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. For Nico Seiga manga and comics, the output path should be the template for a chapter directory, e.g. `{manga_id}\{id} - {title}`. The available options are:
 
 - comment_count
 - description
@@ -98,6 +99,10 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - view_count
 - audio_quality (DMC)
 - video_quality (DMC)
+- manga_id (Seiga)
+- manga_title (Seiga)
+- page_count (Seiga)
+- clip_count (Seiga)
 
 ### Using Stream Links
 After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.

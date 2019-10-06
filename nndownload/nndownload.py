@@ -20,6 +20,7 @@ import getpass
 import json
 import logging
 import math
+import mimetypes
 import netrc
 import os
 import re
@@ -37,12 +38,21 @@ __copyright__ = "Copyright 2019 Alex Aplin"
 __license__ = "MIT"
 
 HOST = "nicovideo.jp"
+
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
 USER_VIDEOS_URL = "https://nicovideo.jp/user/{0}/video?page={1}"
-VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(?:sp|www)\.)?(?:(live[0-9]?|cas)\.)?(?:(?:nicovideo\.jp/(watch|mylist|user))|nico\.ms)/))(?:(?:[0-9]+)/)?((?:[a-z]{2})?[0-9]+)")
+SEIGA_IMAGE_URL = "http://seiga.nicovideo.jp/seiga/{0}"
+SEIGA_MANGA_URL = "http://seiga.nicovideo.jp/comic/{0}"
+SEIGA_CHAPTER_URL = "http://seiga.nicovideo.jp/watch/{0}"
+SEIGA_SOURCE_URL = "http://seiga.nicovideo.jp/image/source/{0}"
+SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
+
+VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(sp|www|seiga)\.)?(?:(live[0-9]?|cas)\.)?(?:(?:nicovideo\.jp/(watch|mylist|user|comic|seiga))|nico\.ms)/))(?:(?:[0-9]+)/)?((?:[a-z]{2})?[0-9]+)")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
+SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
+SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
@@ -57,6 +67,13 @@ BLOCK_SIZE = 1024
 EPSILON = 0.0001
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2  # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
+
+
+MIMETYPES = {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png"
+}
 
 HTML5_COOKIE = {
     "watch_flash": "0"
@@ -242,7 +259,7 @@ def sanitize_for_path(value, replace=' '):
     return re.sub(r'[<>\"\?\\\/\*:]', replace, value)
 
 
-def create_filename(template_params):
+def create_filename(template_params, is_comic=False):
     """Create filename from document parameters."""
 
     filename_template = cmdl_opts.output_path
@@ -253,10 +270,17 @@ def create_filename(template_params):
         template_dict = collections.defaultdict(lambda: "__NONE__", template_dict)
 
         filename = filename_template.format_map(template_dict)
-        if (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(os.path.dirname(filename)):
+        if is_comic:
+            os.makedirs(filename, exist_ok=True)
+        elif (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(os.path.dirname(filename)):
             os.makedirs(os.path.dirname(filename), exist_ok=True)
 
         return filename
+
+    elif is_comic:
+        directory = os.path.join("{0} - {1}".format(template_params["manga_id"], sanitize_for_path(template_params["manga_title"])), "{0} - {1}".format(template_params["id"], sanitize_for_path(template_params["title"])))
+        os.makedirs(directory, exist_ok=True)
+        return directory
 
     else:
         filename = "{0} - {1}.{2}".format(template_params["id"], template_params["title"], template_params["ext"])
@@ -302,6 +326,12 @@ def get_playlist_from_m3u8(m3u8_text):
                 best_stream = match[1]
 
     return best_stream
+
+
+def find_extension(mimetype):
+    """Determine the file extension from the mimetype."""
+
+    return MIMETYPES.get(mimetype) or mimetypes.guess_extension(mimetype, strict=True)
 
 
 ## Nama methods
@@ -394,7 +424,176 @@ def request_nama(session, nama_id):
         raise FormatNotAvailableException("Could not retrieve nama info")
 
 
-## Download methods
+## Seiga methods
+
+def decrypt_seiga_drm(enc_bytes, key):
+    """Decrypt the light DRM applied to certain Seiga images."""
+
+    n = []
+    a = 8
+
+    for i in range(a):
+        start = 2 * i
+        value = int(key[start:start + 2], 16)
+        n.append(value)
+
+    dec_bytes = bytearray(enc_bytes)
+    for i in range(len(enc_bytes)):
+        dec_bytes[i] = dec_bytes[i] ^ n[i % a]
+
+    return dec_bytes
+
+
+def determine_seiga_file_type(dec_bytes):
+    """Determine the image file type from a bytes array using magic numbers."""
+
+    if 255 == dec_bytes[0] and 216 == dec_bytes[1] and 255 == dec_bytes[len(dec_bytes) - 2] and 217 == dec_bytes[len(dec_bytes) - 1]:
+        return "jpg"
+    elif 137 == dec_bytes[0] and 80 == dec_bytes[1] and 78 == dec_bytes[2] and 71 == dec_bytes[3]:
+        return "png"
+    elif 71 == dec_bytes[0] and 73 == dec_bytes[1] and 70 == dec_bytes[2] and 6 == dec_bytes[3]:
+        return "gif"
+    else:
+        raise FormatNotSupportedException("Could not succesffully determine image file type")
+
+
+def collect_seiga_image_parameters(session, document, template_params):
+    """Extract template parameters from a Seiga image page."""
+
+    template_params["id"] = document.select("#ko_cpp")[0]["data-target_id"]
+    template_params["title"] = document.select("h1.title")[0].text
+    template_params["description"] = document.select("p.discription")[0].text
+    template_params["published"] = document.select("span.created")[0].text
+    template_params["uploader"] = document.select("li.user_name strong")[0].text
+    template_params["uploader_id"] = document.select("li.user_link a")[0]["href"].replace("/user/illust/", "")
+    template_params["view_count"] = document.select("li.view span.count_value")[0].text
+    template_params["comment_count"] = document.select("li.comment span.count_value")[0].text
+    template_params["clip_count"] = document.select("li.clip span.count_value")[0].text
+
+    source_page = session.get(SEIGA_SOURCE_URL.format(template_params["id"].lstrip("im")))
+    source_document = BeautifulSoup(source_page.text, "html.parser")
+
+    source_url_relative = source_document.select("div.illust_view_big")[0]["data-src"]
+    template_params["url"] = source_url_relative.replace("/", SEIGA_CDN_URL, 1)
+
+    source_image = session.get(template_params["url"])
+    mimetype = source_image.headers["Content-Type"]
+    template_params["ext"] = find_extension(mimetype)
+
+    return template_params
+
+
+def collect_seiga_manga_parameters(document, template_params):
+    """Extract template parameters from a Seiga manga chapter page."""
+
+    template_params["manga_id"] = document.select("#full_watch_head_bar")[0]["data-content-id"]
+    template_params["manga_title"] = document.select("div.manga_title a")[0].text
+    template_params["id"] = "mg" + document.select("#full_watch_head_bar")[0]["data-theme-id"]
+    template_params["page_count"] = document.select("#full_watch_head_bar")[0]["data-page-count"]
+    template_params["title"] = document.select("span.episode_title")[0].text
+    template_params["published"] = document.select("span.created")[0].text
+    template_params["description"] = document.select("div.description .full")[0].text
+    template_params["comment_count"] = document.select("#comment_count")[0].text
+    template_params["view_count"] = document.select("#view_count")[0].text
+    template_params["uploader"] = document.select("span.author_name")[0].text
+    template_params["uploader_id"] = SEIGA_USER_ID_RE.search(document.select("dd.user_name a")[0]["href"]).group(1)
+
+    return template_params
+
+
+def download_manga_chapter(session, chapter_id):
+    """Download the requested chapter for a Seiga manga."""
+
+    response = session.get(SEIGA_CHAPTER_URL.format(chapter_id))
+    response.raise_for_status()
+
+    document = BeautifulSoup(response.text, "html.parser")
+
+    template_params = {}
+    template_params = collect_seiga_manga_parameters(document, template_params)
+    chapter_directory = create_filename(template_params, is_comic=True)
+
+    output("Downloading {0} to \"{1}\"...\n".format(chapter_id, chapter_directory), logging.INFO)
+
+    images = document.select("img.lazyload")
+    for index, image in enumerate(images):
+        image_url = image["data-original"]
+        bytes = session.get(image_url).content
+
+        if "drm.nicoseiga.jp" in image_url:
+            key_match = SEIGA_DRM_KEY_RE.search(image_url)
+            if key_match:
+                key = key_match.group(1)
+            else:
+                raise FormatNotSupportedException("Could not succesffully extract DRM key")
+            bytes = decrypt_seiga_drm(bytes, key)
+
+        data_type = determine_seiga_file_type(bytes)
+
+        filename = str(index) + "." + data_type
+        image_path = os.path.join(chapter_directory, filename)
+
+        with open(image_path, "wb") as file:
+            output("\rPage {0}/{1}".format(index + 1, len(images)), logging.INFO)
+            file.write(bytes)
+
+    output("\nFinished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
+
+    if cmdl_opts.dump_metadata:
+        metadata_path = os.path.join(chapter_directory, "metadata.json")
+        dump_metadata(metadata_path, template_params)
+    if cmdl_opts.download_thumbnail:
+        output("Downloading thumbnails for Seiga comics is not currently supported.", logging.WARNING)
+    if cmdl_opts.download_comments:
+        output("Downloading comments for Seiga comics is not currently supported.", logging.WARNING)
+
+
+def download_manga(session, manga_id):
+    """Download all chapters for a requested Seiga manga."""
+
+    output("Downloading comic {0}...\n".format(manga_id), logging.INFO)
+
+    response = session.get(SEIGA_MANGA_URL.format(manga_id))
+    response.raise_for_status()
+
+    document = BeautifulSoup(response.text, "html.parser")
+    chapters = document.select("div.episode .title a")
+    for index, chapter in enumerate(chapters):
+        chapter_id = chapter["href"].lstrip("/watch/").split("?")[0]
+        output("{0}/{1}\n".format(index + 1, len(chapters)), logging.INFO)
+        download_manga_chapter(session, chapter_id)
+
+
+def download_image(session, image_id):
+    """Download an individual Seiga image."""
+
+    response = session.get(SEIGA_IMAGE_URL.format(image_id))
+    response.raise_for_status()
+
+    document = BeautifulSoup(response.text, "html.parser")
+    template_params = {}
+    template_params = collect_seiga_image_parameters(session, document, template_params)
+
+    filename = create_filename(template_params)
+
+    output("Downloading {0} to \"{1}\"...\n".format(image_id, filename), logging.INFO)
+
+    source_image = session.get(template_params["url"], stream=True)
+    with open(filename, "wb") as file:
+        for block in source_image.iter_content(BLOCK_SIZE):
+            file.write(block)
+
+    output("Finished donwloading {0} to \"{1}\".\n".format(image_id, filename), logging.INFO)
+
+    if cmdl_opts.dump_metadata:
+        dump_metadata(filename, template_params)
+    if cmdl_opts.download_thumbnail:
+        output("Downloading thumbnails for Seiga images is not currently supported.", logging.WARNING)
+    if cmdl_opts.download_comments:
+        output("Downloading comments for Seiga images is not currently supported.", logging.WARNING)
+
+
+## Video methods
 
 def request_video(session, video_id):
     """Request the video page and initiate download of the video URL."""
@@ -1009,7 +1208,6 @@ def download_comments(session, filename, template_params):
 
 # Main entry
 
-
 def login(username, password):
     """Login to Nico and create a session."""
 
@@ -1064,13 +1262,20 @@ def valid_url(url):
 def process_url_mo(session, url_mo):
     """Determine which function should process this URL object."""
 
-    url_id = url_mo.group(3)
-    if url_mo.group(2) == "mylist":
+    url_id = url_mo.group(4)
+    if url_mo.group(3) == "mylist":
         request_mylist(session, url_id)
-    elif url_mo.group(1):
+    elif url_mo.group(2):
         request_nama(session, url_id)
-    elif url_mo.group(2) == "user":
+    elif url_mo.group(3) == "user":
         request_user(session, url_id)
+    elif url_mo.group(1) == "seiga":
+        if url_mo.group(3) == "watch":
+            download_manga_chapter(session, url_id)
+        elif url_mo.group(3) == "comic":
+            download_manga(session, url_id)
+        else:
+            download_image(session, url_id)
     else:
         request_video(session, url_id)
 
