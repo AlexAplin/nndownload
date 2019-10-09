@@ -2,11 +2,11 @@
 
 ![PyPI](https://img.shields.io/pypi/v/nndownload.svg)
 
-nndownload allows you to process videos and other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. It simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
+nndownload allows you to process videos and other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. For videos, it simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
 
 ## Features
  - Download videos with comments, thumbnails, and metadata
- - Download Nico Seiga images and manga
+ - Download Seiga images and manga
  - Download a user's videos
  - Download mylists
  - Download videos faster using multiple threads
@@ -27,8 +27,10 @@ nndownload allows you to process videos and other links from [Niconico](http://n
 pip install nndownload
 ```
 
+Binaries for Windows are available on the [releases page](https://github.com/AlexAplin/nndownload/releases).
+
 ## Usage
-### Standalone
+### CLI
 ```
 usage: nndownload.py [options] input
 
@@ -78,7 +80,7 @@ nndownload.execute("-g", "-o", output_path, url)
 ```
 
 ### Custom Output Paths
-Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. For Nico Seiga manga and comics, the output path should be the template for a chapter directory, e.g. `{manga_id}\{id} - {title}`. The available options are:
+Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. For Seiga manga, the output path should be the template for a chapter directory, e.g. `{manga_id}\{id} - {title}`. The available options are:
 
 - comment_count
 - description
@@ -99,10 +101,10 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - view_count
 - audio_quality (DMC)
 - video_quality (DMC)
-- manga_id (Seiga)
-- manga_title (Seiga)
-- page_count (Seiga)
-- clip_count (Seiga)
+- manga_id (Seiga, manga)
+- manga_title (Seiga, manga)
+- page_count (Seiga, manga)
+- clip_count (Seiga, images)
 
 ### Using Stream Links
 After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
