@@ -2,11 +2,6 @@
 # -*- coding: utf-8 -*-
 """Download videos and process other links from Niconico (nicovideo.jp)."""
 
-try:
-    from version import __version__
-except ImportError:
-    from .version import __version__
-
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
@@ -32,9 +27,9 @@ import urllib.parse
 import websockets
 import xml.dom.minidom
 
+__version__ = "1.2"
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2019 Alex Aplin"
-
 __license__ = "MIT"
 
 HOST = "nicovideo.jp"
