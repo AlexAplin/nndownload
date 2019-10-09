@@ -21,6 +21,7 @@ setuptools.setup(
     packages=["nndownload"],
     install_requires=["requests", "beautifulsoup4", "websockets"],
     python_requires=">=3.6",
+    scripts=["nndownload/nndownload.py"],
     classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
