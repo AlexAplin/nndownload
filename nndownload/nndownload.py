@@ -466,12 +466,14 @@ def collect_seiga_image_parameters(session, document, template_params):
     template_params["clip_count"] = document.select("li.clip span.count_value")[0].text
 
     source_page = session.get(SEIGA_SOURCE_URL.format(template_params["id"].lstrip("im")))
+    source_page.raise_for_status()
     source_document = BeautifulSoup(source_page.text, "html.parser")
 
     source_url_relative = source_document.select("div.illust_view_big")[0]["data-src"]
     template_params["url"] = source_url_relative.replace("/", SEIGA_CDN_URL, 1)
 
     source_image = session.get(template_params["url"])
+    source_image.raise_for_status()
     mimetype = source_image.headers["Content-Type"]
     template_params["ext"] = find_extension(mimetype)
 
@@ -513,7 +515,9 @@ def download_manga_chapter(session, chapter_id):
     images = document.select("img.lazyload")
     for index, image in enumerate(images):
         image_url = image["data-original"]
-        bytes = session.get(image_url).content
+        image_request = session.get(image_url)
+        image_request.raise_for_status()
+        image_bytes = image_request.content
 
         if "drm.nicoseiga.jp" in image_url:
             key_match = SEIGA_DRM_KEY_RE.search(image_url)
@@ -521,18 +525,19 @@ def download_manga_chapter(session, chapter_id):
                 key = key_match.group(1)
             else:
                 raise FormatNotSupportedException("Could not succesffully extract DRM key")
-            bytes = decrypt_seiga_drm(bytes, key)
+            image_bytes = decrypt_seiga_drm(image_bytes, key)
 
-        data_type = determine_seiga_file_type(bytes)
+        data_type = determine_seiga_file_type(image_bytes)
 
         filename = str(index) + "." + data_type
         image_path = os.path.join(chapter_directory, filename)
 
         with open(image_path, "wb") as file:
-            output("\rPage {0}/{1}".format(index + 1, len(images)), logging.INFO)
-            file.write(bytes)
+            output("\rPage {0}/{1}".format(index + 1, len(images)), logging.DEBUG)
+            file.write(image_bytes)
+        output("\n", logging.DEBUG)
 
-    output("\nFinished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
+    output("Finished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
 
     if cmdl_opts.dump_metadata:
         metadata_path = os.path.join(chapter_directory, "metadata.json")
@@ -574,6 +579,8 @@ def download_image(session, image_id):
     output("Downloading {0} to \"{1}\"...\n".format(image_id, filename), logging.INFO)
 
     source_image = session.get(template_params["url"], stream=True)
+    source_image.raise_for_status()
+
     with open(filename, "wb") as file:
         for block in source_image.iter_content(BLOCK_SIZE):
             file.write(block)
@@ -793,8 +800,9 @@ def download_video(session, filename, template_params):
             if thread is main_thread:
                 continue
             thread.join()
+        output("\n", logging.DEBUG)
 
-        output("\nFinished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
+        output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
         return
 
     if os.path.isfile(filename):
@@ -856,8 +864,9 @@ def download_video(session, filename, template_params):
             percent = int(100 * dl / video_len)
             speed_str = calculate_speed(start_time, time.time(), dl)
             output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
+        output("\n", logging.DEBUG)
 
-    output("\nFinished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
+    output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
 
 
 def perform_heartbeat(session, heartbeat_url, response):
