@@ -27,7 +27,7 @@ import urllib.parse
 import websockets
 import xml.dom.minidom
 
-__version__ = "1.3"
+__version__ = "1.4"
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2019 Alex Aplin"
 __license__ = "MIT"
