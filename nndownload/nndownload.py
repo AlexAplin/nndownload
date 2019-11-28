@@ -176,7 +176,7 @@ class ParameterExtractionException(Exception):
     pass
 
 
-# Utility methods
+## Utility methods
 
 def configure_logger():
     """Initialize logger."""
@@ -1214,7 +1214,7 @@ def download_comments(session, filename, template_params):
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
-# Main entry
+## Main entry
 
 def login(username, password):
     """Login to Nico and create a session."""
