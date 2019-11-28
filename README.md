@@ -53,8 +53,7 @@ download options:
                         http or socks proxy
   -o TEMPLATE, --output-path TEMPLATE
                         custom output path (see template options)
-  -r N, --threads N
-                        download using a specified number of multithreads
+  -r N, --threads N     download using a specified number of threads
   -g, --no-login        create a download session without logging in
   -f, --force-high-quality
                         only download if the high quality source is available
@@ -68,6 +67,7 @@ download options:
                         specify audio quality (DMC videos only)
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         specify video quality (DMC videos only)
+  -s, --skip-media      skip downloading media
 ```
 
 ### Module
