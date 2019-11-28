@@ -494,7 +494,10 @@ def collect_seiga_manga_parameters(document, template_params):
     template_params["comment_count"] = document.select("#comment_count")[0].text
     template_params["view_count"] = document.select("#view_count")[0].text
     template_params["uploader"] = document.select("span.author_name")[0].text
-    template_params["uploader_id"] = SEIGA_USER_ID_RE.search(document.select("dd.user_name a")[0]["href"]).group(1)
+
+    # No uploader ID for official manga uploads
+    if document.select("dd.user_name a"):
+        template_params["uploader_id"] = SEIGA_USER_ID_RE.search(document.select("dd.user_name a")[0]["href"]).group(1)
 
     return template_params
 
