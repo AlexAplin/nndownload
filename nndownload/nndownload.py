@@ -183,7 +183,7 @@ def configure_logger():
 
     if cmdl_opts.log:
         logger.setLevel(logging.INFO)
-        log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")))
+        log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")), encoding="utf-8")
         formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
         log_handler.setFormatter(formatter)
         logger.addHandler(log_handler)
@@ -540,8 +540,8 @@ def download_manga_chapter(session, chapter_id):
             with open(image_path, "wb") as file:
                 output("\rPage {0}/{1}".format(index + 1, len(images)), logging.DEBUG)
                 file.write(image_bytes)
-            output("\n", logging.DEBUG)
 
+        output("\n", logging.DEBUG)
         output("Finished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
 
     if cmdl_opts.dump_metadata:
