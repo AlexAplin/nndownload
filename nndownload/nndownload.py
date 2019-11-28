@@ -148,6 +148,7 @@ dl_group.add_argument("-c", "--download-comments", action="store_true", dest="do
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="request video on english site")
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality (DMC videos only)")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
+dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
 
 
 class AuthenticationException(Exception):
@@ -510,34 +511,35 @@ def download_manga_chapter(session, chapter_id):
     template_params = collect_seiga_manga_parameters(document, template_params)
     chapter_directory = create_filename(template_params, is_comic=True)
 
-    output("Downloading {0} to \"{1}\"...\n".format(chapter_id, chapter_directory), logging.INFO)
+    if not cmdl_opts.skip_media:
+        output("Downloading {0} to \"{1}\"...\n".format(chapter_id, chapter_directory), logging.INFO)
 
-    images = document.select("img.lazyload")
-    for index, image in enumerate(images):
-        image_url = image["data-original"]
-        image_request = session.get(image_url)
-        image_request.raise_for_status()
-        image_bytes = image_request.content
+        images = document.select("img.lazyload")
+        for index, image in enumerate(images):
+            image_url = image["data-original"]
+            image_request = session.get(image_url)
+            image_request.raise_for_status()
+            image_bytes = image_request.content
 
-        if "drm.nicoseiga.jp" in image_url:
-            key_match = SEIGA_DRM_KEY_RE.search(image_url)
-            if key_match:
-                key = key_match.group(1)
-            else:
-                raise FormatNotSupportedException("Could not succesffully extract DRM key")
-            image_bytes = decrypt_seiga_drm(image_bytes, key)
+            if "drm.nicoseiga.jp" in image_url:
+                key_match = SEIGA_DRM_KEY_RE.search(image_url)
+                if key_match:
+                    key = key_match.group(1)
+                else:
+                    raise FormatNotSupportedException("Could not succesffully extract DRM key")
+                image_bytes = decrypt_seiga_drm(image_bytes, key)
 
-        data_type = determine_seiga_file_type(image_bytes)
+            data_type = determine_seiga_file_type(image_bytes)
 
-        filename = str(index) + "." + data_type
-        image_path = os.path.join(chapter_directory, filename)
+            filename = str(index) + "." + data_type
+            image_path = os.path.join(chapter_directory, filename)
 
-        with open(image_path, "wb") as file:
-            output("\rPage {0}/{1}".format(index + 1, len(images)), logging.DEBUG)
-            file.write(image_bytes)
-        output("\n", logging.DEBUG)
+            with open(image_path, "wb") as file:
+                output("\rPage {0}/{1}".format(index + 1, len(images)), logging.DEBUG)
+                file.write(image_bytes)
+            output("\n", logging.DEBUG)
 
-    output("Finished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
+        output("Finished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
 
     if cmdl_opts.dump_metadata:
         metadata_path = os.path.join(chapter_directory, "metadata.json")
@@ -576,16 +578,17 @@ def download_image(session, image_id):
 
     filename = create_filename(template_params)
 
-    output("Downloading {0} to \"{1}\"...\n".format(image_id, filename), logging.INFO)
+    if not cmdl_opts.skip_media:
+        output("Downloading {0} to \"{1}\"...\n".format(image_id, filename), logging.INFO)
 
-    source_image = session.get(template_params["url"], stream=True)
-    source_image.raise_for_status()
+        source_image = session.get(template_params["url"], stream=True)
+        source_image.raise_for_status()
 
-    with open(filename, "wb") as file:
-        for block in source_image.iter_content(BLOCK_SIZE):
-            file.write(block)
+        with open(filename, "wb") as file:
+            for block in source_image.iter_content(BLOCK_SIZE):
+                file.write(block)
 
-    output("Finished donwloading {0} to \"{1}\".\n".format(image_id, filename), logging.INFO)
+        output("Finished donwloading {0} to \"{1}\".\n".format(image_id, filename), logging.INFO)
 
     if cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
@@ -634,7 +637,8 @@ def request_video(session, video_id):
 
     filename = create_filename(template_params)
 
-    download_video(session, filename, template_params)
+    if not cmdl_opts.skip_media:
+        download_video(session, filename, template_params)
     if cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
     if cmdl_opts.download_thumbnail:
@@ -644,9 +648,9 @@ def request_video(session, video_id):
 
 
 def request_user(session, user_id):
-    """Download videos associated with a user."""
+    """Request videos associated with a user."""
 
-    output("Downloading videos from user {0}...\n".format(user_id), logging.INFO)
+    output("Requesting videos from user {0}...\n".format(user_id), logging.INFO)
     page_counter = 1
     video_ids = []
 
@@ -683,9 +687,9 @@ def request_user(session, user_id):
 
 
 def request_mylist(session, mylist_id):
-    """Download videos associated with a mylist."""
+    """Request videos associated with a mylist."""
 
-    output("Downloading mylist {0}...\n".format(mylist_id), logging.INFO)
+    output("Requesting mylist {0}...\n".format(mylist_id), logging.INFO)
     mylist_request = session.get(MYLIST_API.format(mylist_id))
     mylist_request.raise_for_status()
     mylist_json = json.loads(mylist_request.text)
