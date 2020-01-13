@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 main_ns = {}
 ver_path = convert_path("nndownload/nndownload.py")
-with open(ver_path) as ver_file:
+with open(ver_path, encoding="utf8") as ver_file:
     exec(ver_file.read(), main_ns)
 
 setuptools.setup(
