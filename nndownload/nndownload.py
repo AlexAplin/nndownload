@@ -252,7 +252,7 @@ def replace_extension(filename, new_extension):
 def sanitize_for_path(value, replace=' '):
     """Remove potentially illegal characters from a path."""
 
-    return re.sub(r'[<>\"\?\\\/\*:]', replace, value)
+    return re.sub(r'[<>\"\?\\\/\*:|]', replace, value)
 
 
 def create_filename(template_params, is_comic=False):
