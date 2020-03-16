@@ -849,17 +849,20 @@ def download_video(session, filename, template_params):
             download_video(session, filename, template_params)
             return
 
-        with open(filename, "rb") as file:
-            file.seek(current_byte_pos - BLOCK_SIZE)
-            existing_data = file.read()[:new_data_len]
-            if new_data == existing_data:
-                dl += new_data_len
-                output("Resuming at byte position {0}.\n".format(dl))
-            else:
-                output("Byte comparison block does not match. Deleting existing file and redownloading...\n")
-                os.remove(filename)
-                download_video(session, filename, template_params)
-                return
+        file = open(filename, "rb")
+        file.seek(current_byte_pos - BLOCK_SIZE)
+        existing_data = file.read()[:new_data_len]
+        if new_data == existing_data:
+            dl += new_data_len
+            output("Resuming at byte position {0}.\n".format(dl))
+        else:
+            output("Byte comparison block does not match. Deleting existing file and redownloading...\n")
+            file.close()
+            os.remove(filename)
+            download_video(session, filename, template_params)
+            return
+
+        file.close()
 
     with open(filename, file_condition) as file:
         file.seek(dl)
