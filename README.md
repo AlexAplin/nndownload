@@ -2,7 +2,12 @@
 
 ![PyPI](https://img.shields.io/pypi/v/nndownload.svg)
 
-nndownload allows you to process videos and other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. For videos, it simulates the HTML5 player by performing a session request to get the HQ source. Where not available, it will fallback to the Flash player. Keep in mind that if your account doesn't have premium, it may download the LQ source during economy mode hours (12 PM - 2 AM JST). When not providing a login, some Flash videos will not be available for download or will only be available in a lower quality.
+nndownload allows you to download videos, images, manga, and process other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga.
+
+## Disclaimers
+- If you do not have a [premium account](https://secure.nicovideo.jp/secure/premium_detail/), you may download low quality videos during economy mode hours (typically 12 PM - 2 AM JST) or during other periods of high traffic.
+- When downloading without a login (using -g/--no-login), Flash videos (some video IDs starting with "nm") may not be available for download or will only be available in a lower quality.
+- Running multiple download sessions on the same connection may lead to temporary blocks or throttling.
 
 ## Features
  - Download videos with comments, thumbnails, and metadata
@@ -11,7 +16,7 @@ nndownload allows you to process videos and other links from [Niconico](http://n
  - Download mylists
  - Download videos faster using multiple threads
  - Generate stream URLs for Niconama broadcasts
- - Process text files with URLs
+ - Process lists of URLs from text files
 
 ## Requirements
 ### Python version
