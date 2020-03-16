@@ -134,7 +134,7 @@ cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", hel
 cmdl_parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
 cmdl_parser.add_argument("-l", "--log", action="store_true", dest="log", help="log output to file")
 cmdl_parser.add_argument("-v", "--version", action="version", version=cmdl_version)
-cmdl_parser.add_argument("input", action="store", nargs="*", help="URL or file")
+cmdl_parser.add_argument("input", action="store", nargs="*", help="URLs or files")
 
 dl_group = cmdl_parser.add_argument_group("download options")
 dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")

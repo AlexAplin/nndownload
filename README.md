@@ -35,7 +35,7 @@ Binaries for Windows are available on the [releases page](https://github.com/Ale
 usage: nndownload.py [options] input
 
 positional arguments:
-  input                 URL or file
+  input                 URLs or files
 
 optional arguments:
   -h, --help            show this help message and exit
