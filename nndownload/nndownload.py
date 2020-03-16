@@ -134,7 +134,7 @@ cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", hel
 cmdl_parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
 cmdl_parser.add_argument("-l", "--log", action="store_true", dest="log", help="log output to file")
 cmdl_parser.add_argument("-v", "--version", action="version", version=cmdl_version)
-cmdl_parser.add_argument("input", help="URL or file")
+cmdl_parser.add_argument("input", action="store", nargs="*", help="URL or file")
 
 dl_group = cmdl_parser.add_argument_group("download options")
 dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
@@ -1294,10 +1294,6 @@ def process_url_mo(session, url_mo):
 def main():
     try:
         configure_logger()
-        # Test if input is a valid URL or file
-        url_mo = valid_url(cmdl_opts.input)
-        if not url_mo:
-            open(cmdl_opts.input)
 
         account_username = cmdl_opts.username
         account_password = cmdl_opts.password
@@ -1321,13 +1317,25 @@ def main():
             output("Proceeding with no login. Some videos may not be available for download or may only be available in a lower quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.WARNING)
 
         session = login(account_username, account_password)
-        if url_mo:
-            process_url_mo(session, url_mo)
-        else:
-            read_file(session, cmdl_opts.input)
+
+        for arg_item in cmdl_opts.input:
+            try:
+                # Test if input is a valid URL or file
+                url_mo = valid_url(arg_item)
+
+                if url_mo:
+                    process_url_mo(session, url_mo)
+                else:
+                    read_file(session, arg_item)
+
+            except Exception as error:
+                log_exception(error)
+                traceback.print_exc()
+                continue
 
     except Exception as error:
         log_exception(error)
+        traceback.print_exc()
         raise
 
 
