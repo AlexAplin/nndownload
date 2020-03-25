@@ -61,7 +61,7 @@ KILOBYTE = 1024
 BLOCK_SIZE = 1024
 EPSILON = 0.0001
 RETRY_ATTEMPTS = 5
-BACKOFF_FACTOR = 2  # retry_timeout_s = BACK_OFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
+BACKOFF_FACTOR = 2  # retry_timeout_s = BACKOFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
 
 
 MIMETYPES = {
@@ -206,14 +206,6 @@ def output(string, level=logging.INFO, force=False):
     if not cmdl_opts.quiet or force:
         sys.stdout.write(string)
         sys.stdout.flush()
-
-
-def pairwise(iterable):
-    """Helper method to pair RTMP URL with stream label."""
-
-    a, b = tee(iterable)
-    next(b, None)
-    return zip(a, b)
 
 
 def format_bytes(number_bytes):
@@ -699,7 +691,7 @@ def request_mylist(session, mylist_id):
 
     items = mylist_json.get("items", [])
     if mylist_json.get("status") != "ok":
-        raise FormatNotAvailableException("Could not retrieve mylist info; response=" + mylist_request.text)
+        raise FormatNotAvailableException("Could not retrieve mylist info. Please verify that the mylist exists")
     else:
         for index, item in enumerate(items):
             try:
@@ -903,8 +895,15 @@ def determine_quality(template_params, params):
         elif params["video"].get("smileInfo"):
             template_params["quality"] = params["video"]["smileInfo"]["currentQualityId"]
 
-    if params.get("videoDetail"):
+        else:
+            raise ParameterExtractionException("Failed to determine video quality")
+
+    elif params.get("videoDetail"):
         template_params["quality"] = "auto"
+
+    else:
+        raise ParameterExtractionException("Failed to determine video quality")
+
 
 
 def select_dmc_quality(template_params, template_key, sources: list, quality=None):
@@ -1208,10 +1207,7 @@ def download_comments(session, filename, template_params):
 
     filename = replace_extension(filename, "xml")
 
-    if cmdl_opts.download_english:
-        post_packet = COMMENTS_POST_EN
-    else:
-        post_packet = COMMENTS_POST_JP
+    post_packet = COMMENTS_POST_EN if cmdl_opts.download_english else COMMENTS_POST_JP
     get_comments = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
     get_comments.raise_for_status()
     with open(filename, "wb") as file:
