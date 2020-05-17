@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """Download videos and process other links from Niconico (nicovideo.jp)."""
 
+import aiohttp
+from aiohttp_socks import ProxyType, ProxyConnector, ChainProxyConnector
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
@@ -24,7 +26,6 @@ import threading
 import time
 import traceback
 import urllib.parse
-import websockets
 import xml.dom.minidom
 
 __version__ = "1.4.2"
@@ -336,7 +337,6 @@ def generate_stream(session, master_url):
 
     playlist_slug = get_playlist_from_m3u8(m3u8.text)
     stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_slug
-    # stream_url = stream_url.replace("https://", "hls://")
 
     output("Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n", logging.INFO)
     output("For more instructions on playing this stream, please consult the README.\n", logging.INFO)
@@ -347,47 +347,63 @@ async def perform_nama_heartbeat(websocket, watching_frame):
     """Send a watching frame periodically to keep the stream alive."""
 
     while True:
-        await websocket.send(json.dumps(watching_frame))
+        await websocket.send_str(json.dumps(watching_frame))
+        # output("Sending watching frame.\n", logging.DEBUG)
         await asyncio.sleep(NAMA_HEARTBEAT_INTERVAL_S)
 
 
 async def open_nama_websocket(session, uri, broadcast_id, event_loop):
     """Open a WebSocket connection to receive and generate the stream playlist URL."""
 
-    async with websockets.connect(uri) as websocket:
-        watching_frame = NAMA_WATCHING_FRAME
-        watching_frame["body"]["params"][0] = broadcast_id
+    proxy = session.proxies.get("http://") # Same mount as https://
+    connector = ProxyConnector.from_url(proxy) if proxy else None
+    async with aiohttp.ClientSession(connector=connector) as websocket_session:
+        async with websocket_session.ws_connect(uri) as websocket:
+            watching_frame = NAMA_WATCHING_FRAME
+            watching_frame["body"]["params"][0] = broadcast_id
 
-        permit_frame = NAMA_PERMIT_FRAME
-        permit_frame["body"]["requirement"]["broadcastId"] = broadcast_id
-        await websocket.send(json.dumps(permit_frame))
+            permit_frame = NAMA_PERMIT_FRAME
+            permit_frame["body"]["requirement"]["broadcastId"] = broadcast_id
+            await websocket.send_str(json.dumps(permit_frame))
 
-        heartbeat = event_loop.create_task(perform_nama_heartbeat(websocket, watching_frame))
+            heartbeat = event_loop.create_task(perform_nama_heartbeat(websocket, watching_frame))
 
-        try:
-            while True:
-                frame = json.loads(await websocket.recv())
-                frame_type = frame["type"]
+            try:
+                while True:
+                    message = await websocket.receive()
+                    if message.type == aiohttp.WSMsgType.TEXT:
+                        frame = json.loads(message.data)
+                        frame_type = frame["type"]
 
-                # output(f"SERVER: {frame}\n", logging.DEBUG);
+                        # output(f"SERVER: {frame}\n", logging.DEBUG);
 
-                if frame_type == "watch":
-                    command = frame["body"]["command"]
+                        if frame_type == "watch":
+                            command = frame["body"]["command"]
 
-                    if command == "statistics":
-                        continue
+                            if command == "currentstream":
+                                stream_url = frame["body"]["currentStream"]["uri"]
+                                generate_stream(session, stream_url)
 
-                    elif command == "currentstream":
-                        stream_url = frame["body"]["currentStream"]["uri"]
-                        generate_stream(session, stream_url)
+                            elif command == "disconnect":
+                                command_param = frame["body"]["params"][1]
+                                output(f"Disconnect command sent by the server with parameter \"{command_param}\". Exiting...", logging.INFO)
+                                break
 
-                elif frame_type == "ping":
-                    await websocket.send(json.dumps(PONG_FRAME))
+                        elif frame_type == "ping":
+                            # output("Responding to ping frame.\n", logging.DEBUG)
+                            await websocket.send_str(json.dumps(PONG_FRAME))
 
-        except websockets.exceptions.ConnectionClosed:
-            output("Connection was closed. Exiting...\n", logging.INFO)
-            heartbeat.cancel()
-            return
+
+                    elif message.type == aiohttp.WSMsgType.CLOSED:
+                        output("Connection closed by the server. Exiting...\n", logging.INFO)
+                        break
+
+                    elif message.type == aiohttp.WSMsgType.ERROR:
+                        raise FormatNotAvailableException("Nama connection closed by server with error")
+
+            finally:
+                heartbeat.cancel()
+                return
 
 
 def request_nama(session, nama_id):
