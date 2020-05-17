@@ -20,7 +20,7 @@ nndownload allows you to download videos, images, manga, and process other links
 
 ## Requirements
 ### Python version
-- Python >=3.5
+- Python >=3.5.3
 
 ### Dependencies
 - aiohttp
