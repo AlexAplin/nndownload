@@ -20,7 +20,7 @@ setuptools.setup(
     url="https://github.com/AlexAplin/nndownload",
     packages=["nndownload"],
     install_requires=["requests", "beautifulsoup4", "websockets"],
-    python_requires=">=3.6",
+    python_requires=">=3.5.3",
     scripts=["nndownload/nndownload.py"],
     classifiers=[
         "Programming Language :: Python",
