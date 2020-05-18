@@ -20,12 +20,13 @@ nndownload allows you to download videos, images, manga, and process other links
 
 ## Requirements
 ### Python version
-- Python >=3.6
+- Python >=3.5.3
 
 ### Dependencies
+- aiohttp
+- aiohttp-socks
 - beautifulsoup4
 - requests
-- websockets
 
 # Installation
 ```bash
@@ -114,13 +115,8 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 ### Using Stream Links
 After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
 
-For mpv:
-
 `mpv https://...`
-
-For streamlink, replace `https` with `hls` in the output stream URL:
-
-`streamlink "hls://..." best`
+`streamlink https://... best`
 
 ## Known Bugs
 - Check open issues.
