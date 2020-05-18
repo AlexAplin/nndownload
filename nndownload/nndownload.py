@@ -375,7 +375,7 @@ async def open_nama_websocket(session, uri, broadcast_id, event_loop):
                         frame = json.loads(message.data)
                         frame_type = frame["type"]
 
-                        # output(f"SERVER: {frame}\n", logging.DEBUG);
+                        # output("SERVER: {0}\n".format(frame), logging.DEBUG);
 
                         if frame_type == "watch":
                             command = frame["body"]["command"]
@@ -386,7 +386,7 @@ async def open_nama_websocket(session, uri, broadcast_id, event_loop):
 
                             elif command == "disconnect":
                                 command_param = frame["body"]["params"][1]
-                                output(f"Disconnect command sent by the server with parameter \"{command_param}\". Exiting...", logging.INFO)
+                                output("Disconnect command sent by the server with parameter \"{0}\". Exiting...".format(command_param), logging.INFO)
                                 break
 
                         elif frame_type == "ping":
@@ -941,7 +941,7 @@ def select_dmc_quality(template_params, template_key, sources: list, quality=Non
 
     filtered = list(filter(lambda q: q.lower() == quality.lower(), sources))
     if not filtered:
-        raise FormatNotAvailableException(f"Quality '{quality}' is not available. Available qualities: {sources}")
+        raise FormatNotAvailableException("Quality '{quality}' is not available. Available qualities: {0}".format(sources))
 
     template_params[template_key] = filtered[:1][0]
     return filtered[:1]
