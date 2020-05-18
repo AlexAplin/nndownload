@@ -1,4 +1,4 @@
 aiohttp
-aiohttp_socks
+aiohttp-socks
 beautifulsoup4
 requests

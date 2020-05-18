@@ -19,7 +19,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/AlexAplin/nndownload",
     packages=["nndownload"],
-    install_requires=["requests", "beautifulsoup4", "websockets"],
+    install_requires=["aiohttp", "aiohttp-socks", "beautifulsoup4", "requests"],
     python_requires=">=3.5.3",
     scripts=["nndownload/nndownload.py"],
     classifiers=[

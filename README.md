@@ -24,7 +24,7 @@ nndownload allows you to download videos, images, manga, and process other links
 
 ### Dependencies
 - aiohttp
-- aiohttp_socks
+- aiohttp-socks
 - beautifulsoup4
 - requests
 
