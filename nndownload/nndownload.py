@@ -532,7 +532,7 @@ def download_manga_chapter(session, chapter_id):
             image_request.raise_for_status()
             image_bytes = image_request.content
 
-            if "drm.nicoseiga.jp" in image_url:
+            if "drm" in image_url:
                 key_match = SEIGA_DRM_KEY_RE.search(image_url)
                 if key_match:
                     key = key_match.group(1)
