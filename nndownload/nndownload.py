@@ -436,7 +436,7 @@ def request_nama(session, nama_id):
         event_loop = asyncio.get_event_loop()
         if params["program"]["status"] == "ENDED":
             event_loop.run_until_complete(
-                open_nama_webscoket(session, websocket_url, event_loop, is_timeshift=True))
+                open_nama_websocket(session, websocket_url, event_loop, is_timeshift=True))
         elif params["program"]["status"] == "ON_AIR":
             event_loop.run_until_complete(
                 open_nama_websocket(session, websocket_url, event_loop, is_timeshift=False))
