@@ -39,13 +39,14 @@ LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
 USER_VIDEOS_URL = "https://nicovideo.jp/user/{0}/video?page={1}"
+CHANNEL_VIDEOS_URL = "https://ch.nicovideo.jp/{0}/video?page={1}"
 SEIGA_IMAGE_URL = "http://seiga.nicovideo.jp/seiga/{0}"
 SEIGA_MANGA_URL = "http://seiga.nicovideo.jp/comic/{0}"
 SEIGA_CHAPTER_URL = "http://seiga.nicovideo.jp/watch/{0}"
 SEIGA_SOURCE_URL = "http://seiga.nicovideo.jp/image/source/{0}"
 SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
 
-VIDEO_URL_RE = re.compile(r"(?:https?://(?:(?:(sp|www|seiga)\.)?(?:(live[0-9]?|cas)\.)?(?:(?:nicovideo\.jp/(watch|mylist|user|comic|seiga))|nico\.ms)/))(?:(?:[0-9]+)/)?((?:[a-z]{2})?[0-9]+)")
+VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user|comic|seiga)?)(?(3)\/|))|nico\.ms\/))((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-]+)")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
@@ -95,7 +96,7 @@ NAMA_PERMIT_FRAME = json.loads("""
         },
         "room": {
             "protocol": "webSocket",
-            "commentable": true 
+            "commentable": true
         },
         "reconnect": false
     }
@@ -736,6 +737,45 @@ def request_mylist(session, mylist_id):
                 continue
 
 
+def request_channel(session, channel_slug):
+    """Request videos associated with a channel."""
+
+    output("Requesting videos from channel {0}...\n".format(channel_slug), logging.INFO)
+    page_counter = 1
+    video_ids = []
+
+    # Dumb loop, process pages until we reach a page with no videos
+    while True:
+        channel_videos_page = session.get(CHANNEL_VIDEOS_URL.format(channel_slug, page_counter))
+        channel_videos_page.raise_for_status()
+
+        channel_videos_document = BeautifulSoup(channel_videos_page.text, "html.parser")
+        video_links = channel_videos_document.select("h6.title a")
+
+        if len(video_links) == 0:
+            break
+
+        for link in video_links:
+            unstripped_id = link["href"]
+            video_ids.append(unstripped_id.lstrip("https://www.nicovideo.jp/watch/"))
+
+        page_counter += 1
+
+    total_ids = len(video_ids)
+    if total_ids == 0:
+        raise ParameterExtractionException("Failed to collect user videos. Please verify that the user's videos page is public")
+
+    for index, video_id in enumerate(video_ids):
+        try:
+            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
+            request_video(session, video_id)
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
+
+
 def show_multithread_progress(video_len):
     """Track overall download progress across threads."""
 
@@ -1297,7 +1337,7 @@ def login(username, password):
 def valid_url(url):
     """Check if the URL is valid and can be processed."""
 
-    url_mo = VIDEO_URL_RE.match(url)
+    url_mo = VALID_URL_RE.match(url)
     return url_mo if not None else False
 
 
@@ -1318,6 +1358,8 @@ def process_url_mo(session, url_mo):
             download_manga(session, url_id)
         else:
             download_image(session, url_id)
+    elif url_mo.group(1) == "ch":
+        request_channel(session, url_id)
     else:
         request_video(session, url_id)
 
