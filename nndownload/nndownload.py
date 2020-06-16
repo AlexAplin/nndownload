@@ -87,6 +87,8 @@ EN_COOKIE = {
     "lang": "en-us"
 }
 
+NAMA_ORIGIN_HEADER = {"Origin": "https://live2.nicovideo.jp"}
+
 NAMA_PERMIT_FRAME = json.loads("""
 {
     "type": "startWatching",
@@ -432,13 +434,9 @@ async def open_nama_websocket(session, uri, event_loop, is_timeshift=False):
 def reserve_timeshift(session, nama_id):
     """Attempt to reserve a timeshift and generate a WebSocket URL."""
 
-    origin_header = {"Origin": "https://live2.nicovideo.jp"}
+    timeshift_data = {"vid": nama_id.lstrip("lv")}
 
-    timeshift_data = {
-        "vid": nama_id.lstrip("lv")
-    }
-
-    timeshift_use_response = session.post(TIMESHIFT_USE_URL, headers=origin_header, data=timeshift_data)
+    timeshift_use_response = session.post(TIMESHIFT_USE_URL, headers=NAMA_ORIGIN_HEADER, data=timeshift_data)
     if timeshift_use_response.status_code == 403:
         timeshift_data["overwrite"] = "0"
 
