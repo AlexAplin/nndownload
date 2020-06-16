@@ -104,6 +104,7 @@ ENV/
 *.mp4
 *.flv
 *.swf
+*.ts
 
 # Comments, thumbnails, and metadata
 *.json
