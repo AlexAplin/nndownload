@@ -56,7 +56,7 @@ COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
 
-NAMA_HEARTBEAT_INTERVAL_S = 15
+NAMA_HEARTBEAT_INTERVAL_S = 30
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 1024
@@ -85,43 +85,38 @@ EN_COOKIE = {
 
 NAMA_PERMIT_FRAME = json.loads("""
 {
-    "type": "watch",
-    "body": {
-        "command": "getpermit",
-        "requirement": {
-            "broadcastId": "-1",
-            "route": "",
-            "stream": {
-                "protocol": "hls",
-                "requireNewStream": true,
-                "priorStreamQuality": "abr",
-                "isLowLatency": true,
-                "isChasePlay": false
-            },
-            "room": {
-                "isCommentable": true,
-                "protocol": "webSocket"
-            }
-        }
+    "type": "startWatching",
+    "data": {
+        "stream": {
+            "quality": "super_high",
+            "protocol": "hls",
+            "latency": "low",
+            "chasePlay": false
+        },
+        "room": {
+            "protocol": "webSocket",
+            "commentable": true 
+        },
+        "reconnect": false
     }
 }
 """)
 
-NAMA_WATCHING_FRAME = json.loads("""
+NAMA_QUALITY_FRAME = json.loads("""
 {
-    "type": "watch",
-    "body": {
-        "command": "watching",
-        "params": [
-            "BROADCAST_ID",
-            "-1",
-            "0"
-        ]
+    "type": "changeStream",
+    "data": {
+        "quality": "{0}",
+        "protocol": "hls",
+        "latency": "low",
+        "chasePlay": false
     }
 }
 """)
 
-PONG_FRAME = json.loads("""{"type":"pong","body":{}}""")
+NAMA_WATCHING_FRAME = json.loads("""{"type": "keepSeat"}""")
+
+PONG_FRAME = json.loads("""{"type":"pong"}""")
 
 logger = logging.getLogger(__name__)
 
@@ -338,9 +333,25 @@ def generate_stream(session, master_url):
     playlist_slug = get_playlist_from_m3u8(m3u8.text)
     stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_slug
 
-    output("Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n", logging.INFO)
-    output("For more instructions on playing this stream, please consult the README.\n", logging.INFO)
-    output("{0}\n".format(stream_url), logging.INFO, force=True)
+    return stream_url
+
+
+def download_stream_clips(session, stream_url):
+    """Download the clips assocaited with a stream playlist and stitch them into a file."""
+
+    output("Downloading timeshifts is not currently supported.\n", logging.WARNING)
+
+    stream_text = session.get(stream_url).text
+    stream_length = re.search(r"(?:#STREAM-DURATION:)(.*)", stream_text)[1]
+
+    clip_matches = re.compile(r"(?:#EXTINF):.*\n(.*)").findall(stream_text)
+    if not matches:
+        raise FormatNotAvailableException("Could not retrieve stream clips from playlist")
+
+    else:
+        for match in matches:
+            clip_slug = match
+            clip_url = stream_url.rsplit("/", maxsplit=1)[0] + "/" + clip_slug
 
 
 async def perform_nama_heartbeat(websocket, watching_frame):
@@ -352,21 +363,15 @@ async def perform_nama_heartbeat(websocket, watching_frame):
         await asyncio.sleep(NAMA_HEARTBEAT_INTERVAL_S)
 
 
-async def open_nama_websocket(session, uri, broadcast_id, event_loop):
+async def open_nama_websocket(session, uri, event_loop, is_timeshift=False):
     """Open a WebSocket connection to receive and generate the stream playlist URL."""
 
     proxy = session.proxies.get("http://") # Same mount as https://
     connector = ProxyConnector.from_url(proxy) if proxy else None
     async with aiohttp.ClientSession(connector=connector) as websocket_session:
         async with websocket_session.ws_connect(uri) as websocket:
-            watching_frame = NAMA_WATCHING_FRAME
-            watching_frame["body"]["params"][0] = broadcast_id
-
-            permit_frame = NAMA_PERMIT_FRAME
-            permit_frame["body"]["requirement"]["broadcastId"] = broadcast_id
-            await websocket.send_str(json.dumps(permit_frame))
-
-            heartbeat = event_loop.create_task(perform_nama_heartbeat(websocket, watching_frame))
+            await websocket.send_str(json.dumps(NAMA_PERMIT_FRAME))
+            heartbeat = event_loop.create_task(perform_nama_heartbeat(websocket, NAMA_WATCHING_FRAME))
 
             try:
                 while True:
@@ -377,22 +382,25 @@ async def open_nama_websocket(session, uri, broadcast_id, event_loop):
 
                         # output("SERVER: {0}\n".format(frame), logging.DEBUG);
 
-                        if frame_type == "watch":
-                            command = frame["body"]["command"]
+                        if frame_type == "stream":
+                            master_url = frame["data"]["uri"]
+                            stream_url = generate_stream(session, master_url)
 
-                            if command == "currentstream":
-                                stream_url = frame["body"]["currentStream"]["uri"]
-                                generate_stream(session, stream_url)
+                            if is_timeshift:
+                                download_stream_clips(session, stream_url)
+                            else:
+                                output("Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n", logging.INFO)
+                                output("For more instructions on playing this stream, please consult the README.\n", logging.INFO)
+                                output("{0}\n".format(stream_url), logging.INFO, force=True)
 
-                            elif command == "disconnect":
-                                command_param = frame["body"]["params"][1]
-                                output("Disconnect command sent by the server with parameter \"{0}\". Exiting...".format(command_param), logging.INFO)
-                                break
+                        elif frame_type == "disconnect":
+                            command_param = frame["body"]["params"][1]
+                            output("Disconnect command sent by the server with parameter \"{0}\". Exiting...".format(command_param), logging.INFO)
+                            break
 
                         elif frame_type == "ping":
                             # output("Responding to ping frame.\n", logging.DEBUG)
                             await websocket.send_str(json.dumps(PONG_FRAME))
-
 
                     elif message.type == aiohttp.WSMsgType.CLOSED:
                         output("Connection closed by the server. Exiting...\n", logging.INFO)
@@ -400,6 +408,11 @@ async def open_nama_websocket(session, uri, broadcast_id, event_loop):
 
                     elif message.type == aiohttp.WSMsgType.ERROR:
                         raise FormatNotAvailableException("Nama connection closed by server with error")
+
+            except Exception as error:
+                log_exception(error)
+                traceback.print_exc()
+                raise
 
             finally:
                 heartbeat.cancel()
@@ -418,11 +431,14 @@ def request_nama(session, nama_id):
         params = json.loads(document.find(id="embedded-data")["data-props"])
 
         websocket_url = params["site"]["relive"]["webSocketUrl"]
-        broadcast_id = params["program"]["broadcastId"]
 
         event_loop = asyncio.get_event_loop()
-        event_loop.run_until_complete(
-            open_nama_websocket(session, websocket_url, broadcast_id, event_loop))
+        if params["program"]["status"] == "ENDED":
+            event_loop.run_until_complete(
+                open_nama_webscoket(session, websocket_url, event_loop, is_timeshift=True))
+        elif params["program"]["status"] == "ON_AIR":
+            event_loop.run_until_complete(
+                open_nama_websocket(session, websocket_url, event_loop, is_timeshift=False))
 
     else:
         raise FormatNotAvailableException("Could not retrieve nama info")
