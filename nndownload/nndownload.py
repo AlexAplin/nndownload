@@ -45,6 +45,8 @@ SEIGA_MANGA_URL = "http://seiga.nicovideo.jp/comic/{0}"
 SEIGA_CHAPTER_URL = "http://seiga.nicovideo.jp/watch/{0}"
 SEIGA_SOURCE_URL = "http://seiga.nicovideo.jp/image/source/{0}"
 SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
+TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
+TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
 VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user|comic|seiga)?)(?(3)\/|))|nico\.ms\/))((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-]+)")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
@@ -58,6 +60,7 @@ COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
 
 NAMA_HEARTBEAT_INTERVAL_S = 30
+NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
 BLOCK_SIZE = 1024
@@ -337,22 +340,26 @@ def generate_stream(session, master_url):
     return stream_url
 
 
-def download_stream_clips(session, stream_url):
+async def download_stream_clips(session, stream_url):
     """Download the clips assocaited with a stream playlist and stitch them into a file."""
 
-    output("Downloading timeshifts is not currently supported.\n", logging.WARNING)
+    # TODO: Determine end condition, stitch downloads together, end task on completion
 
-    stream_text = session.get(stream_url).text
-    stream_length = re.search(r"(?:#STREAM-DURATION:)(.*)", stream_text)[1]
+    while True:
+        stream_text = session.get(stream_url).text
+        stream_length = re.search(r"(?:#STREAM-DURATION:)(.*)", stream_text)[1]
 
-    clip_matches = re.compile(r"(?:#EXTINF):.*\n(.*)").findall(stream_text)
-    if not matches:
-        raise FormatNotAvailableException("Could not retrieve stream clips from playlist")
+        clip_matches = re.compile(r"(?:#EXTINF):.*\n(.*)").findall(stream_text)
+        if not clip_matches:
+            raise FormatNotAvailableException("Could not retrieve stream clips from playlist")
 
-    else:
-        for match in matches:
-            clip_slug = match
-            clip_url = stream_url.rsplit("/", maxsplit=1)[0] + "/" + clip_slug
+        else:
+            for match in clip_matches:
+                # output("{0}\n".format(match), logging.DEBUG)
+                clip_slug = match
+                clip_url = stream_url.rsplit("/", maxsplit=1)[0] + "/" + clip_slug
+
+        await asyncio.sleep(NAMA_PLAYLIST_INTERVAL_S)
 
 
 async def perform_nama_heartbeat(websocket, watching_frame):
@@ -388,7 +395,9 @@ async def open_nama_websocket(session, uri, event_loop, is_timeshift=False):
                             stream_url = generate_stream(session, master_url)
 
                             if is_timeshift:
-                                download_stream_clips(session, stream_url)
+                                output("Downloading timeshifts is not currently supported.\n", logging.WARNING)
+                                break
+                                # event_loop.create_task(download_stream_clips(session, stream_url)
                             else:
                                 output("Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n", logging.INFO)
                                 output("For more instructions on playing this stream, please consult the README.\n", logging.INFO)
@@ -420,6 +429,34 @@ async def open_nama_websocket(session, uri, event_loop, is_timeshift=False):
                 return
 
 
+def reserve_timeshift(session, nama_id):
+    """Attempt to reserve a timeshift and generate a WebSocket URL."""
+
+    origin_header = {"Origin": "https://live2.nicovideo.jp"}
+
+    timeshift_data = {
+        "vid": nama_id.lstrip("lv")
+    }
+
+    timeshift_use_response = session.post(TIMESHIFT_USE_URL, headers=origin_header, data=timeshift_data)
+    if timeshift_use_response.status_code == 403:
+        timeshift_data["overwrite"] = "0"
+
+        timeshift_reservation_response = session.post(TIMESHIFT_RESERVE_URL, headers=origin_header, data=timeshift_data)
+        timeshift_reservation_response.raise_for_status()
+
+    response = session.get(NAMA_URL.format(nama_id))
+    response.raise_for_status()
+
+    document = BeautifulSoup(response.text, "html.parser")
+    params = json.loads(document.find(id="embedded-data")["data-props"])
+    websocket_url = params["site"]["relive"]["webSocketUrl"]
+    if not websocket_url:
+        raise FormatNotAvailableException("Failed to use timeshift ticket")
+
+    return websocket_url
+
+
 def request_nama(session, nama_id):
     """Generate a stream URL for a live Niconama broadcast."""
 
@@ -432,6 +469,8 @@ def request_nama(session, nama_id):
         params = json.loads(document.find(id="embedded-data")["data-props"])
 
         websocket_url = params["site"]["relive"]["webSocketUrl"]
+        if not websocket_url:
+            websocket_url = reserve_timeshift(session, nama_id)
 
         event_loop = asyncio.get_event_loop()
         if params["program"]["status"] == "ENDED":
