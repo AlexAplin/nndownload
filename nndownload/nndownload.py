@@ -48,7 +48,7 @@ SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
-VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user|comic|seiga)?)(?(3)\/|))|nico\.ms\/))((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-]+)")
+VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user|comic|seiga)?)(?(3)\/|))|nico\.ms\/))((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-0-9]+)")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
