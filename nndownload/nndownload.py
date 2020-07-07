@@ -441,7 +441,7 @@ def reserve_timeshift(session, nama_id):
     if timeshift_use_response.status_code == 403:
         timeshift_data["overwrite"] = "0"
 
-        timeshift_reservation_response = session.post(TIMESHIFT_RESERVE_URL, headers=origin_header, data=timeshift_data)
+        timeshift_reservation_response = session.post(TIMESHIFT_RESERVE_URL, headers=NAMA_ORIGIN_HEADER, data=timeshift_data)
         timeshift_reservation_response.raise_for_status()
 
     response = session.get(NAMA_URL.format(nama_id))
@@ -467,14 +467,19 @@ def request_nama(session, nama_id):
     if document.find(id="embedded-data"):
         params = json.loads(document.find(id="embedded-data")["data-props"])
 
-        websocket_url = params["site"]["relive"]["webSocketUrl"]
-        if not websocket_url:
-            websocket_url = reserve_timeshift(session, nama_id)
+        rejection_errors = params["userProgramWatch"]["rejectedReasons"]
+        if rejection_errors:
+            raise ParameterExtractionException("Stream not available to user with the following errors given: " + str(rejection_errors))
 
+        websocket_url = params["site"]["relive"]["webSocketUrl"]
         event_loop = asyncio.get_event_loop()
+
         if params["program"]["status"] == "ENDED":
+            if not websocket_url:
+                websocket_url = reserve_timeshift(session, nama_id)
             event_loop.run_until_complete(
                 open_nama_websocket(session, websocket_url, event_loop, is_timeshift=True))
+
         elif params["program"]["status"] == "ON_AIR":
             event_loop.run_until_complete(
                 open_nama_websocket(session, websocket_url, event_loop, is_timeshift=False))
