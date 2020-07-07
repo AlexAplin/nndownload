@@ -58,6 +58,8 @@ MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
+REGION_LOCK_ERROR = "お住まいの地域・国からは視聴することができません。"
+GONE_ERROR = "この動画は存在しないか、削除された可能性があります。"
 
 NAMA_HEARTBEAT_INTERVAL_S = 30
 NAMA_PLAYLIST_INTERVAL_S = 5
@@ -67,7 +69,6 @@ BLOCK_SIZE = 1024
 EPSILON = 0.0001
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2  # retry_timeout_s = BACKOFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
-
 
 MIMETYPES = {
     "image/gif": "gif",
@@ -676,7 +677,7 @@ def request_video(session, video_id):
     video_info = xml.dom.minidom.parseString(response.text)
 
     if video_info.firstChild.getAttribute("status") != "ok":
-        raise FormatNotAvailableException("Could not retrieve video info")
+        raise FormatNotAvailableException("Could not retrieve video info. This video may have been deleted")
 
     concat_cookies = {}
     if cmdl_opts.download_english:
@@ -1211,7 +1212,12 @@ def perform_api_request(session, document):
             raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
 
     else:
-        raise ParameterExtractionException("Failed to collect video paramters")
+        potential_region_error = document.select_one("p.font12")
+        if potential_region_error and potential_region_error.text == REGION_LOCK_ERROR:
+            raise ParameterExtractionException("This video is not available in your region")
+
+        else:
+            raise ParameterExtractionException("Failed to collect video paramters")
 
     return template_params
 
