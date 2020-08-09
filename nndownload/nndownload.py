@@ -40,6 +40,8 @@ VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
 USER_VIDEOS_URL = "https://nicovideo.jp/user/{0}/video?page={1}"
 CHANNEL_VIDEOS_URL = "https://ch.nicovideo.jp/{0}/video?page={1}"
+SEIGA_USER_ILLUST_URL = "https://seiga.nicovideo.jp/user/illust/{0}?page={1}"
+SEIGA_USER_MANGA_URL = "https://seiga.nicovideo.jp/user/manga/{0}?page={1}"
 SEIGA_IMAGE_URL = "http://seiga.nicovideo.jp/seiga/{0}"
 SEIGA_MANGA_URL = "http://seiga.nicovideo.jp/comic/{0}"
 SEIGA_CHAPTER_URL = "http://seiga.nicovideo.jp/watch/{0}"
@@ -548,7 +550,7 @@ def collect_seiga_image_parameters(session, document, template_params):
     source_document = BeautifulSoup(source_page.text, "html.parser")
 
     source_url_relative = source_document.select("div.illust_view_big")[0]["data-src"]
-    template_params["url"] = source_url_relative.replace("/", SEIGA_CDN_URL, 1)
+    template_params["url"] = source_url_relative
 
     source_image = session.get(template_params["url"])
     source_image.raise_for_status()
@@ -681,7 +683,41 @@ def download_image(session, image_id):
 def request_seiga_user(session, user_id):
     """Request images associated with a Seiga user."""
 
-    output("Downloading images for Seiga users is not currently supported.\n", logging.WARNING)
+    output("Downloading images from Seiga user {0}...\n".format(user_id), logging.INFO)
+
+    page_counter = 1
+    illust_ids = []
+
+    # Dumb loop, process pages until we reach a page with no images
+    while True:
+        user_illust_page = session.get(SEIGA_USER_ILLUST_URL.format(user_id, page_counter))
+        user_illust_page.raise_for_status()
+
+        user_illust_document = BeautifulSoup(user_illust_page.text, "html.parser")
+        illust_links = user_illust_document.select(".illust_list .list_item a")
+
+        if len(illust_links) == 0:
+            break
+
+        for link in illust_links:
+            unstripped_id = link["href"]
+            illust_ids.append(re.sub(r"^/seiga/", "", unstripped_id))
+
+        page_counter += 1
+
+    total_ids = len(illust_ids)
+    if total_ids == 0:
+        raise ParameterExtractionException("Failed to collect user images. Please verify that the user's videos page is public")
+
+    for index, illust_id in enumerate(illust_ids):
+        try:
+            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
+            download_image(session, illust_id)
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
 
 
 def request_seiga_user_manga(session, user_id):
@@ -712,7 +748,7 @@ def request_channel(session, channel_slug):
 
         for link in video_links:
             unstripped_id = link["href"]
-            video_ids.append(unstripped_id.lstrip("https://www.nicovideo.jp/watch/"))
+            video_ids.append(re.sub(r"^https://www.nicovideo.jp/watch/", "", unstripped_id))
 
         page_counter += 1
 
