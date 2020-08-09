@@ -48,7 +48,7 @@ SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
-VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user|comic|seiga)?)(?(3)\/|))|nico\.ms\/))((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-0-9]+)")
+VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate)?)(?(3)\/|))|(nico\.ms)\/))(?:((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-0-9]+?)\/?)(?:\/(video|mylist|live|blomaga))?(?(6)\/([0-9]+))?(\?.*)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
@@ -292,7 +292,7 @@ def read_file(session, file):
             if url_mo:
                 process_url_mo(session, url_mo)
             else:
-                raise ArgumentException("Not a valid URL")
+                raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
@@ -391,7 +391,7 @@ async def open_nama_websocket(session, uri, event_loop, is_timeshift=False):
                         frame = json.loads(message.data)
                         frame_type = frame["type"]
 
-                        # output("SERVER: {0}\n".format(frame), logging.DEBUG);
+                        # output("SERVER: {0}\n".format(frame), logging.DEBUG)
 
                         if frame_type == "stream":
                             master_url = frame["data"]["uri"]
@@ -616,9 +616,9 @@ def download_manga_chapter(session, chapter_id):
         metadata_path = os.path.join(chapter_directory, "metadata.json")
         dump_metadata(metadata_path, template_params)
     if cmdl_opts.download_thumbnail:
-        output("Downloading thumbnails for Seiga comics is not currently supported.", logging.WARNING)
+        output("Downloading thumbnails for Seiga comics is not currently supported.\n", logging.WARNING)
     if cmdl_opts.download_comments:
-        output("Downloading comments for Seiga comics is not currently supported.", logging.WARNING)
+        output("Downloading comments for Seiga comics is not currently supported.\n", logging.WARNING)
 
 
 def download_manga(session, manga_id):
@@ -664,9 +664,74 @@ def download_image(session, image_id):
     if cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
     if cmdl_opts.download_thumbnail:
-        output("Downloading thumbnails for Seiga images is not currently supported.", logging.WARNING)
+        output("Downloading thumbnails for Seiga images is not currently supported.\n", logging.WARNING)
     if cmdl_opts.download_comments:
-        output("Downloading comments for Seiga images is not currently supported.", logging.WARNING)
+        output("Downloading comments for Seiga images is not currently supported.\n", logging.WARNING)
+
+
+def request_seiga_user(session, user_id):
+    """Request images associated with a Seiga user."""
+
+    output("Downloading images for Seiga users is not currently supported.\n", logging.WARNING)
+
+
+def request_seiga_user_manga(session, user_id):
+    """Request manga associated with a Seiga user."""
+
+    output("Downloading manga for Seiga users is not currently supported.\n", logging.WARNING)
+
+
+## Channel methods
+
+def request_channel(session, channel_slug):
+    """Request videos associated with a channel."""
+
+    output("Requesting videos from channel {0}...\n".format(channel_slug), logging.INFO)
+    page_counter = 1
+    video_ids = []
+
+    # Dumb loop, process pages until we reach a page with no videos
+    while True:
+        channel_videos_page = session.get(CHANNEL_VIDEOS_URL.format(channel_slug, page_counter))
+        channel_videos_page.raise_for_status()
+
+        channel_videos_document = BeautifulSoup(channel_videos_page.text, "html.parser")
+        video_links = channel_videos_document.select("h6.title a")
+
+        if len(video_links) == 0:
+            break
+
+        for link in video_links:
+            unstripped_id = link["href"]
+            video_ids.append(unstripped_id.lstrip("https://www.nicovideo.jp/watch/"))
+
+        page_counter += 1
+
+    total_ids = len(video_ids)
+    if total_ids == 0:
+        raise ParameterExtractionException("Failed to collect channel videos. Please verify that the channel's videos page is public")
+
+    for index, video_id in enumerate(video_ids):
+        try:
+            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
+            request_video(session, video_id)
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
+
+
+def request_channel_blog(session, channel_id):
+    """Request a channel blog."""
+
+    output("Downloading channel blogs is not currently supported.\n", logging.WARNING)
+
+
+def request_channel_lives(session, channel_id):
+    """Request lives associated with a channel."""
+
+    output("Downloading channel lives is not currently supported.\n", logging.WARNING)
 
 
 ## Video methods
@@ -780,43 +845,10 @@ def request_mylist(session, mylist_id):
                 continue
 
 
-def request_channel(session, channel_slug):
-    """Request videos associated with a channel."""
+def request_user_mylists(session, user_id):
+    """Request mylists associated with a user."""
 
-    output("Requesting videos from channel {0}...\n".format(channel_slug), logging.INFO)
-    page_counter = 1
-    video_ids = []
-
-    # Dumb loop, process pages until we reach a page with no videos
-    while True:
-        channel_videos_page = session.get(CHANNEL_VIDEOS_URL.format(channel_slug, page_counter))
-        channel_videos_page.raise_for_status()
-
-        channel_videos_document = BeautifulSoup(channel_videos_page.text, "html.parser")
-        video_links = channel_videos_document.select("h6.title a")
-
-        if len(video_links) == 0:
-            break
-
-        for link in video_links:
-            unstripped_id = link["href"]
-            video_ids.append(unstripped_id.lstrip("https://www.nicovideo.jp/watch/"))
-
-        page_counter += 1
-
-    total_ids = len(video_ids)
-    if total_ids == 0:
-        raise ParameterExtractionException("Failed to collect user videos. Please verify that the user's videos page is public")
-
-    for index, video_id in enumerate(video_ids):
-        try:
-            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
-            request_video(session, video_id)
-
-        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-            log_exception(error)
-            traceback.print_exc()
-            continue
+    output("Downloading a user's mylists is not currently supported.\n", logging.WARNING)
 
 
 def show_multithread_progress(video_len):
@@ -1392,24 +1424,50 @@ def valid_url(url):
 def process_url_mo(session, url_mo):
     """Determine which function should process this URL object."""
 
-    url_id = url_mo.group(4)
+    url_id = url_mo.group(5)
+    if url_mo.group(8):
+        output("Additional URL parameters will be ignored.\n", logging.WARNING)
     if url_mo.group(3) == "mylist":
         request_mylist(session, url_id)
     elif url_mo.group(2):
         request_nama(session, url_id)
     elif url_mo.group(3) == "user":
-        request_user(session, url_id)
+        if not url_mo.group(6) or url_mo.group(6) == "video":
+            request_user(session, url_id)
+        elif url_mo.group(6) == "mylist":
+            if url_mo.group(7):
+                url_id = url_mo.group(7)
+                request_mylist(session, url_id)
+            else:
+                request_user_mylists(session, url_id)
+        else:
+            raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(1) == "seiga":
         if url_mo.group(3) == "watch":
             download_manga_chapter(session, url_id)
         elif url_mo.group(3) == "comic":
             download_manga(session, url_id)
-        else:
+        elif url_mo.group(3) == "user/illust":
+            request_seiga_user(session, url_id)
+        elif url_mo.group(3) == "user/manga":
+            request_seiga_user_manga(session, url_id)
+        elif url_mo.group(3) == "seiga":
             download_image(session, url_id)
+        else:
+            raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(1) == "ch":
-        request_channel(session, url_id)
-    else:
+        if not url_mo.group(6) or url_mo.group(6) == "video":
+            request_channel(session, url_id)
+        elif url_mo.group(6) == "live":
+            request_channel_lives(session, url_id)
+        elif url_mo.group(6) == "blomaga":
+            request_channel_blog(session, url_id)
+        else:
+            raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
+    elif url_mo.group(3) == "watch" or url_mo.group(4) == "nico.ms":
         request_video(session, url_id)
+    else:
+        raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
 
 
 def main():
@@ -1447,6 +1505,7 @@ def main():
                 if url_mo:
                     process_url_mo(session, url_mo)
                 else:
+                    output("Argument not recognized as a valid Nico URL. Attemtping to read argument as file path...\n", logging.INFO)
                     read_file(session, arg_item)
 
             except Exception as error:
