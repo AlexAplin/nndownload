@@ -56,6 +56,7 @@ SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
+USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
@@ -88,6 +89,12 @@ FLASH_COOKIE = {
 
 EN_COOKIE = {
     "lang": "en-us"
+}
+
+API_HEADERS = {
+    "X-Frontend-Id": "6",
+    "X-Frontend-Version": "0",
+    "X-Niconico-Language": "ja-jp"
 }
 
 NAMA_ORIGIN_HEADER = {"Origin": "https://live2.nicovideo.jp"}
@@ -791,14 +798,9 @@ def request_user(session, user_id):
     output("Requesting videos from user {0}...\n".format(user_id), logging.INFO)
 
     video_ids = []
-    headers = {
-        "X-Frontend-Id": "6",
-        "X-Frontend-Version": "0",
-        "X-Niconico-Language": "ja-jp"
-    }
 
-    session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=headers)
-    user_videos_json = json.loads(session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=headers).text)
+    session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
+    user_videos_json = json.loads(session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS).text)
     user_videos_count = int(user_videos_json["data"]["totalCount"])
     if user_videos_count == 0:
         output("No videos identified for speicifed user.\n", logging.INFO)
@@ -806,7 +808,7 @@ def request_user(session, user_id):
     total_pages = math.ceil(user_videos_count / USER_VIDEOS_API_N)
 
     for page in range(1, total_pages + 1):
-        user_videos_json = json.loads(session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, page), headers=headers).text)
+        user_videos_json = json.loads(session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, page), headers=API_HEADERS).text)
         for video in user_videos_json["data"]["items"]:
             # print(video)
             video_ids.append(video["id"])
@@ -848,7 +850,19 @@ def request_mylist(session, mylist_id):
 def request_user_mylists(session, user_id):
     """Request mylists associated with a user."""
 
-    output("Downloading a user's mylists is not currently supported.\n", logging.WARNING)
+    output("Requesting mylists from user {0}...\n".format(user_id), logging.INFO)
+
+    user_mylists_json = json.loads(session.get(USER_MYLISTS_API.format(user_id), headers=API_HEADERS).text)
+    user_mylists = user_mylists_json["data"]["mylists"]
+    for index, item in enumerate(user_mylists):
+        try:
+            output("{0}/{1}\n".format(index + 1, len(user_mylists)), logging.INFO)
+            request_mylist(session, item["id"])
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
 
 
 def show_multithread_progress(video_len):
