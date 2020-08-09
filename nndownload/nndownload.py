@@ -40,7 +40,7 @@ VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
 CHANNEL_VIDEOS_URL = "https://ch.nicovideo.jp/{0}/video?page={1}"
 CHANNEL_LIVES_URL = "https://ch.nicovideo.jp/{0}/live?page={1}"
-CHANNEL_BLOMAGA_URL = "https://ch.nicovideo.jp/{0}/blomaga/{1}?page={2}"
+CHANNEL_BLOMAGA_URL = "https://ch.nicovideo.jp/{0}/blomaga?page={1}"
 CHANNEL_ARTICLE_URL = "https://ch.nicovideo.jp/article/{0}"
 SEIGA_USER_ILLUST_URL = "https://seiga.nicovideo.jp/user/illust/{0}?page={1}"
 SEIGA_USER_MANGA_URL = "https://seiga.nicovideo.jp/user/manga/{0}?page={1}"
@@ -734,6 +734,7 @@ def download_channel_article(session, article_id):
     """Download a blog article."""
 
     article_page = session.get(CHANNEL_ARTICLE_URL.format(article_id))
+    article_page.raise_for_status()
     article_document = BeautifulSoup(article_page.text, "html.parser")
 
     template_params = {}
@@ -752,15 +753,17 @@ def download_channel_article(session, article_id):
     filename = create_filename(template_params)
 
     if not cmdl_opts.skip_media:
-        output("Downloading article {0}...\n".format(article_id), logging.INFO)
+        output("Downloading {0} to \"{1}\"...\n".format(article_id, filename), logging.INFO)
 
         with open(filename, "w", encoding="utf-8") as article_file:
-            pretty_article_text = template_params["article"].replace("<br/>", "\n").replace("<br>", "\n").replace("</br>", "").replace("<p>", "\n").replace("</p>", "\n").replace("<hr/>", "---\n").replace("<strong>", "**").replace("</strong>", "**").replace("<h2>", "\n## ").replace("</h2>", "\n").replace("<h3>", "\n### ").replace("</h3>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<li>", "- ").replace("</li>", "\n")
+            pretty_article_text = template_params["article"].replace("<br/>", "\n").replace("<br>", "\n").replace("</br>", "").replace("<p>", "\n").replace("</p>", "\n").replace("<hr/>", "---\n").replace("<strong>", "**").replace("</strong>", "**").replace("<h2>", "\n## ").replace("</h2>", "\n").replace("<h3>", "\n### ").replace("</h3>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<li>", "- ").replace("</li>", "\n").strip()
             article_file.write(pretty_article_text)
     if cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
     if cmdl_opts.download_comments:
         output("Downloading article comments is not currently supported.\n", logging.WARNING)
+
+    output("Finished downloading {0} to \"{1}\".\n".format(article_id, filename), logging.INFO)
 
 
 def request_channel(session, channel_slug):
@@ -774,7 +777,6 @@ def request_channel(session, channel_slug):
     while True:
         channel_videos_page = session.get(CHANNEL_VIDEOS_URL.format(channel_slug, page_counter))
         channel_videos_page.raise_for_status()
-
         channel_videos_document = BeautifulSoup(channel_videos_page.text, "html.parser")
         video_links = channel_videos_document.select("h6.title a")
 
@@ -802,11 +804,23 @@ def request_channel(session, channel_slug):
             continue
 
 
-def request_channel_blog(session, channel_id):
-    """Request a channel blog."""
+def request_channel_blog(session, channel_slug):
+    """Request articles associated with a channel blog."""
 
-    output("Downloading channel blogs is not currently supported.\n", logging.WARNING)
 
+    blog_page = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, 1))
+    blog_page.raise_for_status()
+    blog_document = BeautifulSoup(blog_page.text, "html.parser")
+    total_pages = int(blog_document.select_one("span.page_all").text)
+
+    for page in range(1, total_pages + 1):
+            output("Page {0}/{1}\n".format(page, total_pages), logging.INFO)
+            blog_page = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, page))
+            blog_page.raise_for_status()
+            blog_document = BeautifulSoup(blog_page.text, "html.parser")
+            articles = blog_document.select("h3:first-child a")
+            for article in articles:
+                download_channel_article(session, article["href"].rsplit("/")[-1])
 
 def request_channel_lives(session, channel_id):
     """Request lives associated with a channel."""
@@ -871,7 +885,9 @@ def request_user(session, user_id):
     video_ids = []
 
     session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
-    user_videos_json = json.loads(session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS).text)
+    videos_page = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
+    videos_page.raise_for_status()
+    user_videos_json = json.loads(videos_page.text)
     user_videos_count = int(user_videos_json["data"]["totalCount"])
     if user_videos_count == 0:
         output("No videos identified for speicifed user.\n", logging.INFO)
@@ -879,9 +895,10 @@ def request_user(session, user_id):
     total_pages = math.ceil(user_videos_count / USER_VIDEOS_API_N)
 
     for page in range(1, total_pages + 1):
-        user_videos_json = json.loads(session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, page), headers=API_HEADERS).text)
+        videos_page = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, page), headers=API_HEADERS)
+        videos_page.raise_for_status()
+        user_videos_json = json.loads(videos_page.text)
         for video in user_videos_json["data"]["items"]:
-            # print(video)
             video_ids.append(video["id"])
 
     for index, video_id in enumerate(video_ids):
@@ -923,7 +940,9 @@ def request_user_mylists(session, user_id):
 
     output("Requesting mylists from user {0}...\n".format(user_id), logging.INFO)
 
-    user_mylists_json = json.loads(session.get(USER_MYLISTS_API.format(user_id), headers=API_HEADERS).text)
+    mylists_page = session.get(USER_MYLISTS_API.format(user_id), headers=API_HEADERS)
+    mylists_page.raise_for_status()
+    user_mylists_json = json.loads(mylists_page.text)
     user_mylists = user_mylists_json["data"]["mylists"]
     for index, item in enumerate(user_mylists):
         try:
@@ -1517,14 +1536,14 @@ def process_url_mo(session, url_mo):
     elif url_mo.group(2):
         request_nama(session, url_id)
     elif url_mo.group(3) == "user":
-        if not url_mo.group(6) or url_mo.group(6) == "video":
-            request_user(session, url_id)
-        elif url_mo.group(6) == "mylist":
+        if url_mo.group(6) == "mylist":
             if url_mo.group(7):
                 url_id = url_mo.group(7)
                 request_mylist(session, url_id)
             else:
                 request_user_mylists(session, url_id)
+        elif not url_mo.group(6) or url_mo.group(6) == "video":
+            request_user(session, url_id)
         else:
             raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(1) == "seiga":
@@ -1541,18 +1560,18 @@ def process_url_mo(session, url_mo):
         else:
             raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(1) == "ch":
-        if not url_mo.group(6) or url_mo.group(6) == "video":
-            request_channel(session, url_id)
+        if url_mo.group(3) == "article":
+            download_channel_article(session, url_id)
         elif url_mo.group(6) == "live":
             request_channel_lives(session, url_id)
-        elif url_mo.group(3) == "article":
-            download_channel_article(session, article_id)
         elif url_mo.group(6) == "blomaga":
             if url_mo.group(7):
                 article_id = url_mo.group(7)
                 download_channel_article(session, article_id)
             else:
                 request_channel_blog(session, url_id)
+        elif not url_mo.group(6) or url_mo.group(6) == "video":
+            request_channel(session, url_id)
         else:
             raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(3) == "watch" or url_mo.group(4) == "nico.ms":
