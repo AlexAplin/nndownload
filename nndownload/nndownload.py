@@ -38,8 +38,10 @@ HOST = "nicovideo.jp"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
-USER_VIDEOS_URL = "https://nicovideo.jp/user/{0}/video?page={1}"
 CHANNEL_VIDEOS_URL = "https://ch.nicovideo.jp/{0}/video?page={1}"
+CHANNEL_LIVES_URL = "https://ch.nicovideo.jp/{0}/live?page={1}"
+CHANNEL_BLOMAGA_URL = "https://ch.nicovideo.jp/{0}/blomaga/{1}?page={2}"
+CHANNEL_ARTICLE_URL = "https://ch.nicovideo.jp/article/{0}"
 SEIGA_USER_ILLUST_URL = "https://seiga.nicovideo.jp/user/illust/{0}?page={1}"
 SEIGA_USER_MANGA_URL = "https://seiga.nicovideo.jp/user/manga/{0}?page={1}"
 SEIGA_IMAGE_URL = "http://seiga.nicovideo.jp/seiga/{0}"
@@ -50,7 +52,7 @@ SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
-VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate)?)(?(3)\/|))|(nico\.ms)\/))(?:((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-0-9]+?)\/?)(?:\/(video|mylist|live|blomaga))?(?(6)\/([0-9]+))?(\?.*)?$")
+VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel)?)(?(3)\/|))|(nico\.ms)\/))(?:((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-0-9]+?)\/?)(?:\/(video|mylist|live|blomaga))?(?(6)\/((?:[a-z]{2})?[0-9]+))?(\?.*)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
@@ -728,6 +730,39 @@ def request_seiga_user_manga(session, user_id):
 
 ## Channel methods
 
+def download_channel_article(session, article_id):
+    """Download a blog article."""
+
+    article_page = session.get(CHANNEL_ARTICLE_URL.format(article_id))
+    article_document = BeautifulSoup(article_page.text, "html.parser")
+
+    template_params = {}
+    template_params["id"] = article_id
+    template_params["ext"] = "txt"
+    template_params["blog_title"] = article_document.select_one(".blomaga_name").text
+    template_params["url"] = article_page.url
+    template_params["uploader"] = article_document.select_one(".profileArea span.name a").text
+    template_params["uploader_id"] = article_document.select_one(".profileArea span.name a")["href"].rsplit("/")[-1]
+    template_params["comment_count"] = int(article_document.select_one("header.content .comment_count").text if article_document.select_one("header.content .comment_count") else 0)
+    template_params["title"] = article_title = article_document.select_one("#article_blog_title").text
+    template_params["published"] = article_document.select_one(".article_blog_data_first span").text
+    template_params["article"] = article_text = article_document.select_one(".main_blog_txt").decode_contents()
+    template_params["tags"] = article_document.select_one(".tag_list").text
+
+    filename = create_filename(template_params)
+
+    if not cmdl_opts.skip_media:
+        output("Downloading article {0}...\n".format(article_id), logging.INFO)
+
+        with open(filename, "w", encoding="utf-8") as article_file:
+            pretty_article_text = template_params["article"].replace("<br/>", "\n").replace("<br>", "\n").replace("</br>", "").replace("<p>", "\n").replace("</p>", "\n").replace("<hr/>", "---\n").replace("<strong>", "**").replace("</strong>", "**").replace("<h2>", "\n## ").replace("</h2>", "\n").replace("<h3>", "\n### ").replace("</h3>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<li>", "- ").replace("</li>", "\n")
+            article_file.write(pretty_article_text)
+    if cmdl_opts.dump_metadata:
+        dump_metadata(filename, template_params)
+    if cmdl_opts.download_comments:
+        output("Downloading article comments is not currently supported.\n", logging.WARNING)
+
+
 def request_channel(session, channel_slug):
     """Request videos associated with a channel."""
 
@@ -1376,7 +1411,7 @@ def dump_metadata(filename, template_params):
 
     filename = replace_extension(filename, "json")
 
-    with open(filename, "w") as file:
+    with open(filename, "w", encoding="utf-8") as file:
         json.dump(template_params, file, sort_keys=True)
 
     output("Finished downloading metadata for {0}.\n".format(template_params["id"]), logging.INFO)
@@ -1510,8 +1545,14 @@ def process_url_mo(session, url_mo):
             request_channel(session, url_id)
         elif url_mo.group(6) == "live":
             request_channel_lives(session, url_id)
+        elif url_mo.group(3) == "article":
+            download_channel_article(session, article_id)
         elif url_mo.group(6) == "blomaga":
-            request_channel_blog(session, url_id)
+            if url_mo.group(7):
+                article_id = url_mo.group(7)
+                download_channel_article(session, article_id)
+            else:
+                request_channel_blog(session, url_id)
         else:
             raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(3) == "watch" or url_mo.group(4) == "nico.ms":
