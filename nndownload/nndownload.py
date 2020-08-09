@@ -55,12 +55,14 @@ SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
+USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
 REGION_LOCK_ERROR = "お住まいの地域・国からは視聴することができません。"
 GONE_ERROR = "この動画は存在しないか、削除された可能性があります。"
 
+USER_VIDEOS_API_N = 25
 NAMA_HEARTBEAT_INTERVAL_S = 30
 NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
@@ -787,33 +789,31 @@ def request_user(session, user_id):
     """Request videos associated with a user."""
 
     output("Requesting videos from user {0}...\n".format(user_id), logging.INFO)
-    page_counter = 1
+
     video_ids = []
+    headers = {
+        "X-Frontend-Id": "6",
+        "X-Frontend-Version": "0",
+        "X-Niconico-Language": "ja-jp"
+    }
 
-    # Dumb loop, process pages until we reach a page with no videos
-    while True:
-        user_videos_page = session.get(USER_VIDEOS_URL.format(user_id, page_counter))
-        user_videos_page.raise_for_status()
+    session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=headers)
+    user_videos_json = json.loads(session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=headers).text)
+    user_videos_count = int(user_videos_json["data"]["totalCount"])
+    if user_videos_count == 0:
+        output("No videos identified for speicifed user.\n", logging.INFO)
+        return
+    total_pages = math.ceil(user_videos_count / USER_VIDEOS_API_N)
 
-        user_videos_document = BeautifulSoup(user_videos_page.text, "html.parser")
-        video_links = user_videos_document.select(".VideoItem-videoDetail h5 a")
-
-        if len(video_links) == 0:
-            break
-
-        for link in video_links:
-            unstripped_id = link["href"]
-            video_ids.append(unstripped_id.lstrip("watch/"))
-
-        page_counter += 1
-
-    total_ids = len(video_ids)
-    if total_ids == 0:
-        raise ParameterExtractionException("Failed to collect user videos. Please verify that the user's videos page is public")
+    for page in range(1, total_pages + 1):
+        user_videos_json = json.loads(session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, page), headers=headers).text)
+        for video in user_videos_json["data"]["items"]:
+            # print(video)
+            video_ids.append(video["id"])
 
     for index, video_id in enumerate(video_ids):
         try:
-            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
+            output("{0}/{1}\n".format(index + 1, user_videos_count), logging.INFO)
             request_video(session, video_id)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
