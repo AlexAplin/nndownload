@@ -12,7 +12,7 @@ nndownload allows you to download videos, images, manga, and process other links
   - Downloading Niconama timeshifts
   - Downloading a user's manga
   - Downloading Seiga thumbnails and comments
-  - Dwnloading channel blog comments
+  - Downloading channel blog comments
 
 ## Features
  - Download videos with comments, thumbnails, and metadata
