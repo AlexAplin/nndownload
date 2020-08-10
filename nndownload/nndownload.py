@@ -544,9 +544,9 @@ def collect_seiga_image_parameters(session, document, template_params):
     template_params["published"] = document.select("span.created")[0].text
     template_params["uploader"] = document.select("li.user_name strong")[0].text
     template_params["uploader_id"] = int(document.select("li.user_link a")[0]["href"].replace("/user/illust/", ""))
-    template_params["view_count"] = document.select("li.view span.count_value")[0].text
-    template_params["comment_count"] = document.select("li.comment span.count_value")[0].text
-    template_params["clip_count"] = document.select("li.clip span.count_value")[0].text
+    template_params["view_count"] = int(document.select("li.view span.count_value")[0].text)
+    template_params["comment_count"] = int(document.select("li.comment span.count_value")[0].text)
+    template_params["clip_count"] = int(document.select("li.clip span.count_value")[0].text)
     template_params["tags"] = document.select("meta[name=\"keywords\"]")[0]["content"]
 
     source_page = session.get(SEIGA_SOURCE_URL.format(template_params["id"].lstrip("im")))
@@ -567,15 +567,15 @@ def collect_seiga_image_parameters(session, document, template_params):
 def collect_seiga_manga_parameters(session, document, template_params):
     """Extract template parameters from a Seiga manga chapter page."""
 
-    template_params["manga_id"] = document.select("#full_watch_head_bar")[0]["data-content-id"]
+    template_params["manga_id"] = int(document.select("#full_watch_head_bar")[0]["data-content-id"])
     template_params["manga_title"] = document.select("div.manga_title a")[0].text
     template_params["id"] = "mg" + document.select("#full_watch_head_bar")[0]["data-theme-id"]
-    template_params["page_count"] = document.select("#full_watch_head_bar")[0]["data-page-count"]
+    template_params["page_count"] = int(document.select("#full_watch_head_bar")[0]["data-page-count"])
     template_params["title"] = document.select("span.episode_title")[0].text
     template_params["published"] = document.select("span.created")[0].text
     template_params["description"] = document.select("div.description .full")[0].text
-    template_params["comment_count"] = document.select("#comment_count")[0].text
-    template_params["view_count"] = document.select("#view_count")[0].text
+    template_params["comment_count"] = int(document.select("#comment_count")[0].text)
+    template_params["view_count"] = int(document.select("#view_count")[0].text)
     template_params["uploader"] = document.select("span.author_name")[0].text
 
     tags = []
@@ -585,9 +585,6 @@ def collect_seiga_manga_parameters(session, document, template_params):
     for tag in tags_json["tag_list"]:
         tags.append(tag["name"])
     template_params["tags"] = str(tags)
-    print(template_params["tags"])
-
-    # template_params["tags"] = ...
 
     # No uploader ID for official manga uploads
     if document.select("dd.user_name a"):
@@ -754,7 +751,6 @@ def download_channel_article(session, article_id):
     template_params["id"] = article_id
     template_params["ext"] = "txt"
     template_params["blog_title"] = article_document.select_one(".blomaga_name").text
-    template_params["url"] = article_page.url
     template_params["uploader"] = article_document.select_one(".profileArea span.name").text
     if article_document.select_one(".profileArea span.name a"):
         template_params["uploader_id"] = int(article_document.select_one(".profileArea span.name a")["href"].rsplit("/")[-1])
@@ -766,6 +762,7 @@ def download_channel_article(session, article_id):
     tags = []
     for tag in article_document.select(".tag_list li"):
         tags.append(tag.text)
+    template_params["tags"] = str(tags)
 
     filename = create_filename(template_params)
 
@@ -1395,9 +1392,9 @@ def collect_parameters(session, template_params, params, is_html5):
         template_params["thread_id"] = int(params["thread"]["ids"]["default"])
         template_params["published"] = params["video"]["postedDateTime"]
         template_params["duration"] = params["video"]["duration"]
-        template_params["view_count"] = params["video"]["viewCount"]
-        template_params["mylist_count"] = params["video"]["mylistCount"]
-        template_params["comment_count"] = params["thread"]["commentCount"]
+        template_params["view_count"] = int(params["video"]["viewCount"])
+        template_params["mylist_count"] = int(params["video"]["mylistCount"])
+        template_params["comment_count"] = int(params["thread"]["commentCount"])
 
         tags = []
         for tag in params["tags"]:

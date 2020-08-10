@@ -95,31 +95,32 @@ nndownload.execute("-g", "-o", output_path, url)
 ### Custom Output Paths
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. For Seiga manga, the output path should be the template for a chapter directory, e.g. `{manga_id}\{id} - {title}`. The available options are:
 
-- comment_count
-- description
-- duration
-- ext
-- id
-- mylist_count
-- published
-- quality
-- size_high
-- size_low
-- tags
-- thread_id
-- thumbnail_url
-- title
-- uploader
-- uploader_id
-- url
-- view_count
-- audio_quality (DMC)
-- video_quality (DMC)
+- comment_count (videos, images, manga, articles)
+- description (videos, images, manga)
+- ext (videos, images, articles)
+- id (videos, images, manga, articles)
+- published (videos, images, manga, articles)
+- tags (videos, images, manga, articles)
+- title (videos, images, manga, articles)
+- uploader (videos, images, manga, articles)
+- uploader_id (videos, images, manga, articles)
+- url (videos, images)
+- view_count (videos, images, manga)
+- article (articles)
+- blog_title (articles)
+- clip_count (images)
+- duration (videos)
 - manga_id (manga)
 - manga_title (manga)
+- mylist_count (videos)
 - page_count (manga)
-- clip_count (images)
-- blog_title (articles)
+- quality (videos)
+- size_high (videos)
+- size_low (videos)
+- thread_id (videos)
+- thumbnail_url (videos)
+- audio_quality (DMC videos)
+- video_quality (DMC videos)
 
 ### Using Stream Links
 After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
