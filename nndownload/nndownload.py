@@ -61,6 +61,7 @@ THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
+SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
 COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
@@ -563,7 +564,7 @@ def collect_seiga_image_parameters(session, document, template_params):
     return template_params
 
 
-def collect_seiga_manga_parameters(document, template_params):
+def collect_seiga_manga_parameters(session, document, template_params):
     """Extract template parameters from a Seiga manga chapter page."""
 
     template_params["manga_id"] = document.select("#full_watch_head_bar")[0]["data-content-id"]
@@ -576,6 +577,16 @@ def collect_seiga_manga_parameters(document, template_params):
     template_params["comment_count"] = document.select("#comment_count")[0].text
     template_params["view_count"] = document.select("#view_count")[0].text
     template_params["uploader"] = document.select("span.author_name")[0].text
+
+    tags = []
+    tags_request = session.get(SEIGA_MANGA_TAGS_API.format(template_params["manga_id"]))
+    tags_request.raise_for_status()
+    tags_json = tags_request.json()
+    for tag in tags_json["tag_list"]:
+        tags.append(tag["name"])
+    template_params["tags"] = str(tags)
+    print(template_params["tags"])
+
     # template_params["tags"] = ...
 
     # No uploader ID for official manga uploads
@@ -594,7 +605,7 @@ def download_manga_chapter(session, chapter_id):
     document = BeautifulSoup(response.text, "html.parser")
 
     template_params = {}
-    template_params = collect_seiga_manga_parameters(document, template_params)
+    template_params = collect_seiga_manga_parameters(session, document, template_params)
     chapter_directory = create_filename(template_params, is_comic=True)
 
     if not cmdl_opts.skip_media:

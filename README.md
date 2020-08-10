@@ -105,6 +105,7 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - quality
 - size_high
 - size_low
+- tags
 - thread_id
 - thumbnail_url
 - title
@@ -119,7 +120,6 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - page_count (manga)
 - clip_count (images)
 - blog_title (articles)
-- tags (videos, images, articles)
 
 ### Using Stream Links
 After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
