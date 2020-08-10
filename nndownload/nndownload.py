@@ -548,6 +548,7 @@ def collect_seiga_image_parameters(session, document, template_params):
     template_params["comment_count"] = int(document.select("li.comment span.count_value")[0].text)
     template_params["clip_count"] = int(document.select("li.clip span.count_value")[0].text)
     template_params["tags"] = document.select("meta[name=\"keywords\"]")[0]["content"]
+    template_params["document_url"] = SEIGA_IMAGE_URL.format(template_params["id"])
 
     source_page = session.get(SEIGA_SOURCE_URL.format(template_params["id"].lstrip("im")))
     source_page.raise_for_status()
@@ -577,6 +578,7 @@ def collect_seiga_manga_parameters(session, document, template_params):
     template_params["comment_count"] = int(document.select("#comment_count")[0].text)
     template_params["view_count"] = int(document.select("#view_count")[0].text)
     template_params["uploader"] = document.select("span.author_name")[0].text
+    template_params["document_url"] = SEIGA_CHAPTER_URL.format(template_params["id"])
 
     tags = []
     tags_request = session.get(SEIGA_MANGA_TAGS_API.format(template_params["manga_id"]))
@@ -758,6 +760,7 @@ def download_channel_article(session, article_id):
     template_params["title"] = article_title = article_document.select_one("#article_blog_title").text
     template_params["published"] = article_document.select_one(".article_blog_data_first span").text
     template_params["article"] = article_text = article_document.select_one(".main_blog_txt").decode_contents()
+    template_params["document_url"] = article_page.url
 
     tags = []
     for tag in article_document.select(".tag_list li"):
@@ -1419,6 +1422,8 @@ def collect_parameters(session, template_params, params, is_html5):
         for tag in params["videoDetail"]["tagList"]:
             tags.append(tag["tag"])
         template_params["tags"] = str(tags)
+
+    template_params["document_url"] = VIDEO_URL.format(template_params["id"])
 
     response = session.get(THUMB_INFO_API.format(template_params["id"]))
     response.raise_for_status()

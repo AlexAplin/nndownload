@@ -97,6 +97,7 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 
 - comment_count (videos, images, manga, articles)
 - description (videos, images, manga)
+- document_url (videos, images, manga, articles)
 - ext (videos, images, articles)
 - id (videos, images, manga, articles)
 - published (videos, images, manga, articles)
