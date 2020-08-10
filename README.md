@@ -17,10 +17,9 @@ nndownload allows you to download videos, images, manga, and process other links
 ## Features
  - Download videos with comments, thumbnails, and metadata
  - Download Seiga images and manga with metadata
- - Download channel blog articles
+ - Download channel videos or blogs with metadata
  - Download mylists
  - Download a user's videos, mylists, or illustrations
- - Download a channel's videos or blog
  - Generate stream URLs for Niconama broadcasts
  - Download videos faster using multiple threads
  - Process lists of URLs from text files

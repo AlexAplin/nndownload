@@ -28,7 +28,7 @@ import traceback
 import urllib.parse
 import xml.dom.minidom
 
-__version__ = "1.6"
+__version__ = "1.7"
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2019 Alex Aplin"
 __license__ = "MIT"
