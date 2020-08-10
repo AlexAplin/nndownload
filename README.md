@@ -114,11 +114,12 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - view_count
 - audio_quality (DMC)
 - video_quality (DMC)
-- manga_id (Seiga, manga)
-- manga_title (Seiga, manga)
-- page_count (Seiga, manga)
-- clip_count (Seiga, images)
+- manga_id (manga)
+- manga_title (manga)
+- page_count (manga)
+- clip_count (images)
 - blog_title (articles)
+- tags (videos, images, articles)
 
 ### Using Stream Links
 After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.

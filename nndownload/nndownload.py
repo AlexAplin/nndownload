@@ -542,10 +542,11 @@ def collect_seiga_image_parameters(session, document, template_params):
     template_params["description"] = document.select("p.discription")[0].text
     template_params["published"] = document.select("span.created")[0].text
     template_params["uploader"] = document.select("li.user_name strong")[0].text
-    template_params["uploader_id"] = document.select("li.user_link a")[0]["href"].replace("/user/illust/", "")
+    template_params["uploader_id"] = int(document.select("li.user_link a")[0]["href"].replace("/user/illust/", ""))
     template_params["view_count"] = document.select("li.view span.count_value")[0].text
     template_params["comment_count"] = document.select("li.comment span.count_value")[0].text
     template_params["clip_count"] = document.select("li.clip span.count_value")[0].text
+    template_params["tags"] = document.select("meta[name=\"keywords\"]")[0]["content"]
 
     source_page = session.get(SEIGA_SOURCE_URL.format(template_params["id"].lstrip("im")))
     source_page.raise_for_status()
@@ -575,10 +576,11 @@ def collect_seiga_manga_parameters(document, template_params):
     template_params["comment_count"] = document.select("#comment_count")[0].text
     template_params["view_count"] = document.select("#view_count")[0].text
     template_params["uploader"] = document.select("span.author_name")[0].text
+    # template_params["tags"] = ...
 
     # No uploader ID for official manga uploads
     if document.select("dd.user_name a"):
-        template_params["uploader_id"] = SEIGA_USER_ID_RE.search(document.select("dd.user_name a")[0]["href"]).group(1)
+        template_params["uploader_id"] = int(SEIGA_USER_ID_RE.search(document.select("dd.user_name a")[0]["href"]).group(1))
 
     return template_params
 
@@ -742,13 +744,17 @@ def download_channel_article(session, article_id):
     template_params["ext"] = "txt"
     template_params["blog_title"] = article_document.select_one(".blomaga_name").text
     template_params["url"] = article_page.url
-    template_params["uploader"] = article_document.select_one(".profileArea span.name a").text
-    template_params["uploader_id"] = article_document.select_one(".profileArea span.name a")["href"].rsplit("/")[-1]
+    template_params["uploader"] = article_document.select_one(".profileArea span.name").text
+    if article_document.select_one(".profileArea span.name a"):
+        template_params["uploader_id"] = int(article_document.select_one(".profileArea span.name a")["href"].rsplit("/")[-1])
     template_params["comment_count"] = int(article_document.select_one("header.content .comment_count").text if article_document.select_one("header.content .comment_count") else 0)
     template_params["title"] = article_title = article_document.select_one("#article_blog_title").text
     template_params["published"] = article_document.select_one(".article_blog_data_first span").text
     template_params["article"] = article_text = article_document.select_one(".main_blog_txt").decode_contents()
-    template_params["tags"] = article_document.select_one(".tag_list").text
+
+    tags = []
+    for tag in article_document.select(".tag_list li"):
+        tags.append(tag.text)
 
     filename = create_filename(template_params)
 
@@ -1382,6 +1388,11 @@ def collect_parameters(session, template_params, params, is_html5):
         template_params["mylist_count"] = params["video"]["mylistCount"]
         template_params["comment_count"] = params["thread"]["commentCount"]
 
+        tags = []
+        for tag in params["tags"]:
+            tags.append(tag["name"])
+        template_params["tags"] = str(tags)
+
     elif params.get("videoDetail"):
         template_params["id"] = params["videoDetail"]["id"]
         template_params["title"] = params["videoDetail"]["title"]
@@ -1395,6 +1406,11 @@ def collect_parameters(session, template_params, params, is_html5):
         template_params["view_count"] = params["videoDetail"]["viewCount"]
         template_params["mylist_count"] = params["videoDetail"]["mylistCount"]
         template_params["comment_count"] = params["videoDetail"]["commentCount"]
+
+        tags = []
+        for tag in params["videoDetail"]["tagList"]:
+            tags.append(tag["tag"])
+        template_params["tags"] = str(tags)
 
     response = session.get(THUMB_INFO_API.format(template_params["id"]))
     response.raise_for_status()
@@ -1413,7 +1429,7 @@ def collect_parameters(session, template_params, params, is_html5):
     if not template_params["uploader_id"]:
         channel_id = video_info.getElementsByTagName("ch_id")
         user_id = video_info.getElementsByTagName("user_id")
-        template_params["uploader_id"] = channel_id[0].firstChild.nodeValue if channel_id else user_id[0].firstChild.nodeValue if user_id else None
+        template_params["uploader_id"] = int(channel_id[0].firstChild.nodeValue) if channel_id else int(user_id[0].firstChild.nodeValue) if user_id else None
 
     if not template_params["uploader"]:
         channel_name = video_info.getElementsByTagName("ch_name")
