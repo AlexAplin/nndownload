@@ -71,7 +71,7 @@ download options:
   -f, --force-high-quality
                         only download if the high quality source is available
   -a, --add-metadata    add metadata to video file (MP4 only)
-  -m, --dump-metadata   dump video metadata to file
+  -m, --dump-metadata   dump metadata to file
   -t, --download-thumbnail
                         download video thumbnail
   -c, --download-comments

@@ -161,7 +161,7 @@ dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", help="down
 dl_group.add_argument("-g", "--no-login", action="store_true", dest="no_login", help="create a download session without logging in")
 dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
 dl_group.add_argument("-a", "--add-metadata", action="store_true", dest="add_metadata", help="add metadata to video file (MP4 only)")
-dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
+dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump metadata to file")
 dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="request video on english site")
