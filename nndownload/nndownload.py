@@ -1091,9 +1091,9 @@ def download_video(session, filename, template_params):
                         output("Existing file container has metadata written and should be complete.\n", logging.INFO)
                         return
                     else:
-                        raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the interity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
-                except MP4StreamInfoError as error:
-                    raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the interity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
+                        raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
+                except MP4StreamInfoError as error: # Thrown if not a valid MP4 (FLV, SWF)
+                    raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
 
             # current_byte_pos == video_len
             else:
