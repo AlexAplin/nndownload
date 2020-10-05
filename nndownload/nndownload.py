@@ -5,6 +5,7 @@
 import aiohttp
 from aiohttp_socks import ProxyType, ProxyConnector, ChainProxyConnector
 from bs4 import BeautifulSoup
+from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import requests
@@ -159,6 +160,7 @@ dl_group.add_argument("-o", "--output-path", dest="output_path", metavar="TEMPLA
 dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", help="download using a specified number of threads")
 dl_group.add_argument("-g", "--no-login", action="store_true", dest="no_login", help="create a download session without logging in")
 dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality source is available")
+dl_group.add_argument("-a", "--add-metadata", action="store_true", dest="add_metadata", help="add metadata to video file (MP4 only)")
 dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump video metadata to file")
 dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
@@ -886,6 +888,8 @@ def request_video(session, video_id):
 
     if not cmdl_opts.skip_media:
         download_video(session, filename, template_params)
+        if cmdl_opts.add_metadata:
+            add_metadata_to_video(filename, template_params)
     if cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
     if cmdl_opts.download_thumbnail:
@@ -1082,7 +1086,14 @@ def download_video(session, filename, template_params):
                 output("Checking file integrity before resuming.\n")
 
             elif current_byte_pos > video_len:
-                raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the interity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
+                try:
+                    if MP4(filename).tags: # Video metadata is only written after a complete download
+                        output("Existing file container has metadata written and should be complete.\n", logging.INFO)
+                        return
+                    else:
+                        raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the interity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
+                except MP4StreamInfoError as error:
+                    raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the interity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
 
             # current_byte_pos == video_len
             else:
@@ -1104,7 +1115,7 @@ def download_video(session, filename, template_params):
 
         existing_byte_pos = os.path.getsize(filename)
         if current_byte_pos - new_data_len <= 0:
-            output("Byte comparison block exceeds the length of the existing file. Deleting existing file and redownloading...\n")
+            output("Byte comparison block exceeds the length of the existing file. Deleting existing file and redownloading...\n", logging.WARNING)
             os.remove(filename)
             download_video(session, filename, template_params)
             return
@@ -1116,7 +1127,7 @@ def download_video(session, filename, template_params):
             dl += new_data_len
             output("Resuming at byte position {0}.\n".format(dl))
         else:
-            output("Byte comparison block does not match. Deleting existing file and redownloading...\n")
+            output("Byte comparison block does not match. Deleting existing file and redownloading...\n", logging.WARNING)
             file.close()
             os.remove(filename)
             download_video(session, filename, template_params)
@@ -1137,6 +1148,7 @@ def download_video(session, filename, template_params):
         output("\n", logging.DEBUG)
 
     output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
+    return
 
 
 def perform_heartbeat(session, heartbeat_url, response):
@@ -1380,7 +1392,7 @@ def perform_api_request(session, document):
     return template_params
 
 
-# Metadata extraction
+## Metadata extraction
 
 def collect_parameters(session, template_params, params, is_html5):
     """Collect video parameters to make them available for an output filename template."""
@@ -1499,6 +1511,22 @@ def download_comments(session, filename, template_params):
         file.write(get_comments.content)
 
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
+
+
+def add_metadata_to_video(filename, template_params):
+    """Add metadata to MP4 container."""
+
+    if template_params["ext"] == "mp4":
+        output("Adding metadata to {}...\n".format(filename), logging.INFO)
+        video_file = MP4(filename)
+        if not video_file.tags:
+            video_file.add_tags()
+        video_file["\251nam"] = template_params["title"] # Title
+        video_file["\251ART"] = template_params["uploader"] # Uploader
+        video_file["desc"] = template_params["description"] # Description
+        video_file.save(filename)
+    else:
+        output("Container metadata is only supported for MP4s. Skipping...\n", logging.INFO)
 
 
 ## Main entry

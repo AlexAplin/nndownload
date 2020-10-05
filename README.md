@@ -33,6 +33,7 @@ nndownload allows you to download videos, images, manga, and process other links
 - aiohttp-socks
 - beautifulsoup4
 - requests
+- mutagen
 
 # Installation
 ```bash
@@ -69,6 +70,7 @@ download options:
   -g, --no-login        create a download session without logging in
   -f, --force-high-quality
                         only download if the high quality source is available
+  -a, --add-metadata    add metadata to video file (MP4 only)
   -m, --dump-metadata   dump video metadata to file
   -t, --download-thumbnail
                         download video thumbnail
