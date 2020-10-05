@@ -82,6 +82,7 @@ download options:
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         specify video quality (DMC videos only)
   -s, --skip-media      skip downloading media
+  --html5               always download on HTML5 player
 ```
 
 ### Module

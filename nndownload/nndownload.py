@@ -168,6 +168,7 @@ dl_group.add_argument("-e", "--english", action="store_true", dest="download_eng
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality (DMC videos only)")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
 dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
+dl_group.add_argument("--html5", action="store_true", dest="html5_only", help="always download on HTML5 player")
 
 
 class AuthenticationException(Exception):
@@ -865,9 +866,9 @@ def request_video(session, video_id):
     # When logged out, Flash videos will sometimes be served on the HTML5 player with a low quality .mp4 re-encode
     # Some Flash videos are not available outside of the Flash player
     video_type = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
-    if video_type == "swf" or video_type == "flv":
+    if (video_type == "swf" or video_type == "flv") and not cmdl_opts.html5_only:
         concat_cookies = {**concat_cookies, **FLASH_COOKIE}
-    elif video_type == "mp4":
+    elif video_type == "mp4" or cmdl_opts.html5_only:
         concat_cookies = {**concat_cookies, **HTML5_COOKIE}
     else:
         raise FormatNotAvailableException("Video type not supported")
