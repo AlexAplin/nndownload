@@ -438,11 +438,6 @@ async def open_nama_websocket(session, uri, event_loop, is_timeshift=False):
                     elif message.type == aiohttp.WSMsgType.ERROR:
                         raise FormatNotAvailableException("Nama connection closed by server with error")
 
-            except Exception as error:
-                log_exception(error)
-                traceback.print_exc()
-                raise
-
             finally:
                 heartbeat.cancel()
                 return
