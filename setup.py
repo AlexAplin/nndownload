@@ -2,8 +2,11 @@ import setuptools
 from distutils.util import convert_path
 
 
-with open("README.md", "r") as fh:
-    long_description = fh.read()
+with open("README.md", "r") as description_file:
+    long_description = description_file.read()
+
+with open("requirements.txt", "r") as requirements_file:
+    requirements = requirements_file.read().split("\n")
 
 main_ns = {}
 ver_path = convert_path("nndownload/nndownload.py")
@@ -19,7 +22,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/AlexAplin/nndownload",
     packages=["nndownload"],
-    install_requires=["aiohttp", "aiohttp-socks", "beautifulsoup4", "requests"],
+    install_requires=requirements,
     python_requires=">=3.5.3",
     scripts=["nndownload/nndownload.py"],
     classifiers=[
