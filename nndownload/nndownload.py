@@ -1054,19 +1054,13 @@ def download_video(session, filename, template_params):
             start = part * i
             end = video_len if i == threads - 1 else start + part
 
-            thread = threading.Thread(target=download_video_part, kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"]})
-            thread.setDaemon(True)
-            thread.start()
+            part_thread = threading.Thread(target=download_video_part, kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"]})
+            part_thread.setDaemon(True)
+            part_thread.start()
 
         progress_thread = threading.Thread(target=show_multithread_progress, kwargs={"video_len": video_len})
         progress_thread.start()
-
-        # Join threads
-        main_thread = threading.current_thread()
-        for thread in threading.enumerate():
-            if thread is main_thread:
-                continue
-            thread.join()
+        progress_thread.join() # Wait for progress thread to terminate
         output("\n", logging.DEBUG)
 
         output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
