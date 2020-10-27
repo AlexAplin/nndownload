@@ -66,10 +66,10 @@ download options:
                         http or socks proxy
   -o TEMPLATE, --output-path TEMPLATE
                         custom output path (see template options)
-  -r N, --threads N     download using a specified number of threads
+  -r N, --threads N     download videos using a specified number of threads
   -g, --no-login        create a download session without logging in
   -f, --force-high-quality
-                        only download if the high quality source is available
+                        only download if the high quality video source is available
   -a, --add-metadata    add metadata to video file (MP4 only)
   -m, --dump-metadata   dump metadata to file
   -t, --download-thumbnail
