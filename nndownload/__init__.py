@@ -1,4 +1,4 @@
-from nndownload import nndownload
+from . import nndownload
 
 
 def execute(*args):
