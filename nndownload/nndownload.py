@@ -566,9 +566,10 @@ def collect_seiga_image_parameters(session, document, template_params):
 def collect_seiga_manga_parameters(session, document, template_params):
     """Extract template parameters from a Seiga manga chapter page."""
 
+    bare_chapter_id =  document.select("#full_watch_head_bar")[0]["data-theme-id"]
     template_params["manga_id"] = int(document.select("#full_watch_head_bar")[0]["data-content-id"])
     template_params["manga_title"] = document.select("div.manga_title a")[0].text
-    template_params["id"] = "mg" + document.select("#full_watch_head_bar")[0]["data-theme-id"]
+    template_params["id"] = "mg" + bare_chapter_id
     template_params["page_count"] = int(document.select("#full_watch_head_bar")[0]["data-page-count"])
     template_params["title"] = document.select("span.episode_title")[0].text
     template_params["published"] = document.select("span.created")[0].text
@@ -579,11 +580,12 @@ def collect_seiga_manga_parameters(session, document, template_params):
     template_params["document_url"] = SEIGA_CHAPTER_URL.format(template_params["id"])
 
     tags = []
-    tags_request = session.get(SEIGA_MANGA_TAGS_API.format(template_params["manga_id"]))
+    tags_request = session.get(SEIGA_MANGA_TAGS_API.format(bare_chapter_id))
     tags_request.raise_for_status()
     tags_json = tags_request.json()
-    for tag in tags_json["tag_list"]:
-        tags.append(tag["name"])
+    if tags_json.get("tag_list"):
+        for tag in tags_json["tag_list"]:
+            tags.append(tag["name"])
     template_params["tags"] = str(tags)
 
     # No uploader ID for official manga uploads
