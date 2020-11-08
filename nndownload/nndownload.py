@@ -29,9 +29,9 @@ import traceback
 import urllib.parse
 import xml.dom.minidom
 
-__version__ = "1.7"
+__version__ = "1.8"
 __author__ = "Alex Aplin"
-__copyright__ = "Copyright 2019 Alex Aplin"
+__copyright__ = "Copyright 2020 Alex Aplin"
 __license__ = "MIT"
 
 HOST = "nicovideo.jp"
