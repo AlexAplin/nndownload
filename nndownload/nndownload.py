@@ -28,6 +28,7 @@ import time
 import traceback
 import urllib.parse
 import xml.dom.minidom
+import subprocess
 
 __version__ = "1.8"
 __author__ = "Alex Aplin"
@@ -169,6 +170,7 @@ dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="spec
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
 dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
 dl_group.add_argument("--html5", action="store_true", dest="html5_only", help="always download on HTML5 player")
+dl_group.add_argument("--post-script", dest="post_script", metavar="POSTSCRIPT", help="script executed after every video download, taking filename as 1st arg")
 
 
 class AuthenticationException(Exception):
@@ -888,6 +890,8 @@ def request_video(session, video_id):
         download_video(session, filename, template_params)
         if cmdl_opts.add_metadata:
             add_metadata_to_video(filename, template_params)
+        if cmdl_opts.post_script:
+            run_post_script(filename)
     if cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
     if cmdl_opts.download_thumbnail:
@@ -1382,6 +1386,12 @@ def perform_api_request(session, document):
             raise ParameterExtractionException("Failed to collect video paramters")
 
     return template_params
+
+
+def run_post_script(filename):
+    proc = subprocess.run([cmdl_opts.post_script, filename])
+    if proc.returncode != 0:
+        output("Failed to execute post script.\n", logging.WARNING)
 
 
 ## Metadata extraction
