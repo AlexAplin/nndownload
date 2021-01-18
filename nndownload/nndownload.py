@@ -277,7 +277,7 @@ def create_filename(template_params, is_comic=False):
         template_dict = dict((k, sanitize_for_path(str(v))) for k, v in template_dict.items() if v)
         template_dict = collections.defaultdict(lambda: "__NONE__", template_dict)
 
-        filename = filename_template.format_map(template_dict)
+        filename = filename_template.format_map(template_dict).strip()
         if is_comic:
             os.makedirs(filename, exist_ok=True)
         elif (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(os.path.dirname(filename)):
@@ -286,7 +286,7 @@ def create_filename(template_params, is_comic=False):
         return filename
 
     elif is_comic:
-        directory = os.path.join("{0} - {1}".format(template_params["manga_id"], sanitize_for_path(template_params["manga_title"])), "{0} - {1}".format(template_params["id"], sanitize_for_path(template_params["title"])))
+        directory = os.path.join("{0} - {1}".format(template_params["manga_id"], sanitize_for_path(template_params["manga_title"])), "{0} - {1}".format(template_params["id"], sanitize_for_path(template_params["title"]))).strip()
         os.makedirs(directory, exist_ok=True)
         return directory
 
