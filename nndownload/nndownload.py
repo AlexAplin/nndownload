@@ -1003,7 +1003,7 @@ def update_multithread_progress(bytes_len):
 def download_video_part(start, end, filename, session, url):
     """Download a video part using specified start and end byte boundaries."""
 
-    resume_header = {"Range": "bytes={0}-{1}".format(start, end)}
+    resume_header = {"Range": "bytes={0}-{1}".format(start, end - 1)}
 
     dl_stream = session.get(url, headers=resume_header, stream=True)
     dl_stream.raise_for_status()
@@ -1018,7 +1018,6 @@ def download_video_part(start, end, filename, session, url):
             current_pos += len(block)
             file.write(block)
             update_multithread_progress(len(block))
-    update_multithread_progress(-1) # NUL byte at end of each part
 
 
 def download_video(session, filename, template_params):
