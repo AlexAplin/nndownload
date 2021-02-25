@@ -1,3 +1,4 @@
+import re
 import setuptools
 from distutils.util import convert_path
 
@@ -8,14 +9,13 @@ with open("README.md", "r") as description_file:
 with open("requirements.txt", "r") as requirements_file:
     requirements = requirements_file.read().split("\n")
 
-main_ns = {}
 ver_path = convert_path("nndownload/nndownload.py")
 with open(ver_path, encoding="utf8") as ver_file:
-    exec(ver_file.read(), main_ns)
+    version = re.search(r'__version__ = "(.+)"', ver_file.read()).group(1)
 
 setuptools.setup(
     name="nndownload",
-    version=main_ns["__version__"],
+    version=version,
     author="AlexAplin",
     description="nndownload allows you to process videos and other links from Niconico.",
     long_description=long_description,
