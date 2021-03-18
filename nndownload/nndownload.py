@@ -1153,30 +1153,6 @@ def perform_heartbeat(session, heartbeat_url, response):
     heartbeat_timer.start()
 
 
-def determine_quality(template_params, params):
-    """Determine the quality parameter for all videos."""
-
-    if params.get("video"):
-        if params["video"].get("dmcInfo"):
-            if params["video"]["dmcInfo"]["quality"]["videos"][0]["id"] == template_params["video_quality"] and params["video"]["dmcInfo"]["quality"]["audios"][0]["id"] == template_params["audio_quality"]:
-                template_params["quality"] = "auto"
-            else:
-                template_params["quality"] = "low"
-
-        elif params["video"].get("smileInfo"):
-            template_params["quality"] = params["video"]["smileInfo"]["currentQualityId"]
-
-        else:
-            raise ParameterExtractionException("Failed to determine video quality")
-
-    elif params.get("videoDetail"):
-        template_params["quality"] = "auto"
-
-    else:
-        raise ParameterExtractionException("Failed to determine video quality")
-
-
-
 def select_dmc_quality(template_params, template_key, sources: list, quality=None):
     """Select the specified quality from a sources list on DMC videos."""
 
@@ -1208,35 +1184,33 @@ def perform_api_request(session, document):
     template_params = {}
 
     # .mp4 videos (HTML5)
+    # As of 2021, all videos are served this way
     if document.find(id="js-initial-watch-data"):
         params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
 
         if params["video"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        template_params = collect_parameters(session, template_params, params, is_html5=True)
+        template_params = collect_video_parameters(session, template_params, params)
 
         # Perform request to Dwango Media Cluster (DMC)
-        if params["video"].get("dmcInfo"):
-            api_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "?suppress_response_codes=true&_format=xml"
-            recipe_id = params["video"]["dmcInfo"]["session_api"]["recipe_id"]
-            content_id = params["video"]["dmcInfo"]["session_api"]["content_id"]
-            protocol = params["video"]["dmcInfo"]["session_api"]["protocols"][0]
+        if params["media"]["delivery"]["movie"].get("session"):
+            api_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"] + "?suppress_response_codes=true&_format=xml"
+            recipe_id = params["media"]["delivery"]["movie"]["session"]["recipeId"]
+            content_id = params["media"]["delivery"]["movie"]["session"]["contentId"]
+            protocol = params["media"]["delivery"]["movie"]["session"]["protocols"][0]
             file_extension = template_params["ext"]
-            priority = params["video"]["dmcInfo"]["session_api"]["priority"]
+            priority = params["media"]["delivery"]["movie"]["session"]["priority"]
 
-            video_sources = select_dmc_quality(template_params, "video_quality", params["video"]["dmcInfo"]["session_api"]["videos"], cmdl_opts.video_quality)
-            audio_sources = select_dmc_quality(template_params, "audio_quality", params["video"]["dmcInfo"]["session_api"]["audios"], cmdl_opts.audio_quality)
-            determine_quality(template_params, params)
-            if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
-                raise FormatNotAvailableException("High quality source is not available")
+            video_sources = select_dmc_quality(template_params, "video_quality", params["media"]["delivery"]["movie"]["session"]["videos"], cmdl_opts.video_quality)
+            audio_sources = select_dmc_quality(template_params, "audio_quality", params["media"]["delivery"]["movie"]["session"]["audios"], cmdl_opts.audio_quality)
 
-            heartbeat_lifetime = params["video"]["dmcInfo"]["session_api"]["heartbeat_lifetime"]
-            token = params["video"]["dmcInfo"]["session_api"]["token"]
-            signature = params["video"]["dmcInfo"]["session_api"]["signature"]
-            auth_type = params["video"]["dmcInfo"]["session_api"]["auth_types"]["http"]
-            service_user_id = params["video"]["dmcInfo"]["session_api"]["service_user_id"]
-            player_id = params["video"]["dmcInfo"]["session_api"]["player_id"]
+            heartbeat_lifetime = params["media"]["delivery"]["movie"]["session"]["heartbeatLifetime"]
+            token = params["media"]["delivery"]["movie"]["session"]["token"]
+            signature = params["media"]["delivery"]["movie"]["session"]["signature"]
+            auth_type = params["media"]["delivery"]["movie"]["session"]["authTypes"]["http"]
+            service_user_id = params["media"]["delivery"]["movie"]["session"]["serviceUserId"]
+            player_id = params["media"]["delivery"]["movie"]["session"]["playerId"]
 
             # Build initial heartbeat request
             post = """
@@ -1331,43 +1305,8 @@ def perform_api_request(session, document):
             # Collect response for heartbeat
             session_id = response.getElementsByTagName("id")[0].firstChild.nodeValue
             response = response.getElementsByTagName("session")[0]
-            heartbeat_url = params["video"]["dmcInfo"]["session_api"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
+            heartbeat_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
             perform_heartbeat(session, heartbeat_url, response)
-
-        # Legacy URL for videos uploaded pre-HTML5 player (~2016-10-27)
-        elif params["video"].get("smileInfo"):
-            output("Using legacy URL...\n", logging.INFO)
-
-            if cmdl_opts.video_quality or cmdl_opts.audio_quality:
-                output("Video and audio qualities can't be specified on legacy videos. Ignoring...\n", logging.WARNING)
-            determine_quality(template_params, params)
-            if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
-                raise FormatNotAvailableException("High quality source is not available")
-
-            template_params["url"] = params["video"]["smileInfo"]["url"]
-
-        else:
-            raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
-
-    # Flash videos (.flv, .swf)
-    # NicoMovieMaker videos (.swf) may need conversion to play properly in an external player
-    elif document.find(id="watchAPIDataContainer"):
-        params = json.loads(document.find(id="watchAPIDataContainer").text)
-
-        if params["videoDetail"]["isDeleted"]:
-            raise FormatNotAvailableException("Video was deleted")
-
-        template_params = collect_parameters(session, template_params, params, is_html5=False)
-
-        if cmdl_opts.video_quality or cmdl_opts.audio_quality:
-            output("Video and audio qualities can't be specified on Flash videos. Ignoring...\n", logging.WARNING)
-        determine_quality(template_params, params)
-        if template_params["quality"] != "auto" and cmdl_opts.force_high_quality:
-            raise FormatNotAvailableException("High quality source is not available")
-
-        video_url_param = urllib.parse.parse_qs(urllib.parse.unquote(urllib.parse.unquote(params["flashvars"]["flvInfo"])))
-        if ("url" in video_url_param):
-            template_params["url"] = video_url_param["url"][0]
 
         else:
             raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
@@ -1385,7 +1324,7 @@ def perform_api_request(session, document):
 
 ## Metadata extraction
 
-def collect_parameters(session, template_params, params, is_html5):
+def collect_video_parameters(session, template_params, params):
     """Collect video parameters to make them available for an output filename template."""
 
     if params.get("video"):
@@ -1394,36 +1333,21 @@ def collect_parameters(session, template_params, params, is_html5):
         template_params["uploader"] = params["owner"]["nickname"].rstrip(" さん") if params.get("owner") else None
         template_params["uploader_id"] = int(params["owner"]["id"]) if params.get("owner") else None
         template_params["description"] = params["video"]["description"]
-        template_params["thumbnail_url"] = params["video"]["thumbnailURL"]
-        template_params["thread_id"] = int(params["thread"]["ids"]["default"])
-        template_params["published"] = params["video"]["postedDateTime"]
+
+        template_params["thumbnail_url"] = params["video"]["thumbnail"]["url"]
+        # params["video"]["thumbnail"]["largeUrl"] if available
+
+        template_params["thread_id"] = int(params["comment"]["threads"][0]["id"])
+        template_params["published"] = params["video"]["registeredAt"]
         template_params["duration"] = params["video"]["duration"]
-        template_params["view_count"] = int(params["video"]["viewCount"])
-        template_params["mylist_count"] = int(params["video"]["mylistCount"])
-        template_params["comment_count"] = int(params["thread"]["commentCount"])
+        template_params["view_count"] = int(params["video"]["count"]["view"])
+        template_params["mylist_count"] = int(params["video"]["count"]["mylist"])
+        template_params["comment_count"] = int(params["video"]["count"]["comment"])
+        template_params["like_count"] = int(params["video"]["count"]["like"])
 
         tags = []
-        for tag in params["tags"]:
+        for tag in params["tag"]["items"]:
             tags.append(tag["name"])
-        template_params["tags"] = str(tags)
-
-    elif params.get("videoDetail"):
-        template_params["id"] = params["videoDetail"]["id"]
-        template_params["title"] = params["videoDetail"]["title"]
-        template_params["uploader"] = params["uploaderInfo"]["nickname"].rstrip(" さん") if params.get("uploaderInfo") else None
-        template_params["uploader_id"] = int(params["uploaderInfo"]["id"]) if params.get("uploaderInfo") else None
-        template_params["description"] = params["videoDetail"]["description"]
-        template_params["thumbnail_url"] = params["videoDetail"]["thumbnail"]
-        template_params["thread_id"] = int(params["videoDetail"]["thread_id"])
-        template_params["published"] = params["videoDetail"]["postedAt"]
-        template_params["duration"] = params["videoDetail"]["length"]
-        template_params["view_count"] = params["videoDetail"]["viewCount"]
-        template_params["mylist_count"] = params["videoDetail"]["mylistCount"]
-        template_params["comment_count"] = params["videoDetail"]["commentCount"]
-
-        tags = []
-        for tag in params["videoDetail"]["tagList"]:
-            tags.append(tag["tag"])
         template_params["tags"] = str(tags)
 
     template_params["document_url"] = VIDEO_URL.format(template_params["id"])
@@ -1433,9 +1357,10 @@ def collect_parameters(session, template_params, params, is_html5):
     video_info = xml.dom.minidom.parseString(response.text)
 
     # DMC videos do not expose the file type in the video page parameters when not logged in
-    # If this is a Flash video being served on the HTML5 player, it's guaranteed to be a low quality .mp4 re-encode
+    # As of 2021, all videos are served on the HTML5 player as .mp4
+    # This is maintained as a sanity check
     template_params["ext"] = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
-    if is_html5 and (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
+    if (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
         template_params["ext"] = "mp4"
 
     template_params["size_high"] = int(video_info.getElementsByTagName("size_high")[0].firstChild.nodeValue)
