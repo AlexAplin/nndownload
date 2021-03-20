@@ -165,8 +165,8 @@ dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_m
 dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="request video on english site")
-dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality (DMC videos only)")
-dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality (DMC videos only)")
+dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality")
+dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality")
 dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
 dl_group.add_argument("--html5", action="store_true", dest="html5_only", help="always download on HTML5 player")
 
@@ -1153,29 +1153,48 @@ def perform_heartbeat(session, heartbeat_url, response):
     heartbeat_timer.start()
 
 
-def select_dmc_quality(template_params, template_key, sources: list, quality=None):
+def select_dmc_quality(template_params, template_key, sources, quality=""):
     """Select the specified quality from a sources list on DMC videos."""
 
-    # TODO: Make sure source is available
-    # Haven't seen a source marked as unavailable in the wild rather than be unlisted, but we might as well be sure
-
     if quality and cmdl_opts.force_high_quality:
-        output("Video or audio quality specified with --force-high-quality. Ignoring quality...\n", logging.WARNING)
+        output("-f/--force-high-quality active. Ignoring quality...\n", logging.WARNING)
 
-    if not quality or cmdl_opts.force_high_quality or quality.lower() == "highest":
-        template_params[template_key] = sources[:1][0]
-        return sources[:1]
+    # Assumes qualities are in descending order
+    highest_quality = sources[0]
+    lowest_quality = sources[-1]
+    hq_available = highest_quality["isAvailable"]
+    lq_available = lowest_quality["isAvailable"]
 
-    if quality.lower() == "lowest":
-        template_params[template_key] = sources[-1:][0]
-        return sources[-1:]
+    # quality = "highest"
+    if not hq_available and (cmdl_opts.force_high_quality or (quality and quality.lower() == "highest")):
+        raise FormatNotAvailableException("Highest quality is not currently available")
+    elif cmdl_opts.force_high_quality or (quality and quality.lower() == "highest"):
+        template_params[template_key] = highest_quality["id"]
+        return [template_params[template_key]]
 
-    filtered = list(filter(lambda q: q.lower() == quality.lower(), sources))
-    if not filtered:
-        raise FormatNotAvailableException("Quality '{quality}' is not available. Available qualities: {0}".format(sources))
+    # quality = "lowest"
+    if (quality and quality.lower() == "lowest") and lq_available:
+        template_params[template_key] = lowest_quality["id"]
+        return [template_params[template_key]]
+    elif (quality and quality.lower() == "lowest"):
+        raise FormatNotAvailableException("Lowest quality not available. Please verify that the video is able to be viewed")
 
-    template_params[template_key] = filtered[:1][0]
-    return filtered[:1]
+    # Other specified quality
+    bare_sources = [item["id"] for item in sources if item["isAvailable"]]
+    if quality:
+        filtered = list(filter(lambda q: q.lower() == quality.lower(), bare_sources))
+        if not filtered:
+            raise FormatNotAvailableException("{1} '{0}' is not available. Available qualities: {2}".format(quality, template_key, bare_sources))
+        else:
+            potential_quality = filtered[:1]
+            template_params[template_key] = potential_quality
+            return list(filtered[:1])
+
+    # Default (return all qualities)
+    else:
+        defaulty_quality = bare_sources[0]
+        template_params[template_key] = defaulty_quality
+        return [defaulty_quality]
 
 
 def perform_api_request(session, document):
@@ -1202,8 +1221,8 @@ def perform_api_request(session, document):
             file_extension = template_params["ext"]
             priority = params["media"]["delivery"]["movie"]["session"]["priority"]
 
-            video_sources = select_dmc_quality(template_params, "video_quality", params["media"]["delivery"]["movie"]["session"]["videos"], cmdl_opts.video_quality)
-            audio_sources = select_dmc_quality(template_params, "audio_quality", params["media"]["delivery"]["movie"]["session"]["audios"], cmdl_opts.audio_quality)
+            video_sources = select_dmc_quality(template_params, "video_quality", params["media"]["delivery"]["movie"]["videos"], cmdl_opts.video_quality)
+            audio_sources = select_dmc_quality(template_params, "audio_quality", params["media"]["delivery"]["movie"]["audios"], cmdl_opts.audio_quality)
 
             heartbeat_lifetime = params["media"]["delivery"]["movie"]["session"]["heartbeatLifetime"]
             token = params["media"]["delivery"]["movie"]["session"]["token"]
