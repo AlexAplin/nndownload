@@ -168,6 +168,7 @@ dl_group.add_argument("-e", "--english", action="store_true", dest="download_eng
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality")
 dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
+dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", type=int, default=0, help="specify the index to start a playlist from (begins at 0)")
 
 
 class AuthenticationException(Exception):
@@ -808,10 +809,19 @@ def request_channel(session, channel_slug):
     total_ids = len(video_ids)
     if total_ids == 0:
         raise ParameterExtractionException("Failed to collect channel videos. Please verify that the channel's videos page is public")
+    output("{} videos returned.\n".format(total_ids), logging.INFO)
+
+    if cmdl_opts.playlist_start:
+        start_index = cmdl_opts.playlist_start
+        if start_index >= len(video_ids):
+            raise ArgumentException("Starting index exceeds length of the channel's video playlist")
+        else:
+            video_ids = video_ids[start_index:]
+            output("Beginning at index {}.\n".format(start_index, logging.INFO))
 
     for index, video_id in enumerate(video_ids):
         try:
-            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
+            output("{0}/{1}\n".format(index + 1, len(video_ids)), logging.INFO)
             request_video(session, video_id)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
@@ -822,7 +832,6 @@ def request_channel(session, channel_slug):
 
 def request_channel_blog(session, channel_slug):
     """Request articles associated with a channel blog."""
-
 
     blog_page = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, 1))
     blog_page.raise_for_status()
@@ -899,6 +908,7 @@ def request_user(session, user_id):
     if user_videos_count == 0:
         output("No videos identified for speicifed user.\n", logging.INFO)
         return
+    output("{} videos returned.\n".format(user_videos_count), logging.INFO)
     total_pages = math.ceil(user_videos_count / USER_VIDEOS_API_N)
 
     for page in range(1, total_pages + 1):
@@ -908,9 +918,17 @@ def request_user(session, user_id):
         for video in user_videos_json["data"]["items"]:
             video_ids.append(video["id"])
 
+    if cmdl_opts.playlist_start:
+        start_index = cmdl_opts.playlist_start
+        if start_index >= len(video_ids):
+            raise ArgumentException("Starting index exceeds length of the user's video playlist")
+        else:
+            video_ids = video_ids[start_index:]
+            output("Beginning at index {}.\n".format(start_index, logging.INFO))
+
     for index, video_id in enumerate(video_ids):
         try:
-            output("{0}/{1}\n".format(index + 1, user_videos_count), logging.INFO)
+            output("{0}/{1}\n".format(index + 1, len(video_ids), logging.INFO))
             request_video(session, video_id)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
@@ -931,6 +949,14 @@ def request_mylist(session, mylist_id):
     if mylist_json.get("status") != "ok":
         raise FormatNotAvailableException("Could not retrieve mylist info. Please verify that the mylist exists")
     else:
+        if cmdl_opts.playlist_start:
+            start_index = cmdl_opts.playlist_start
+            if start_index >= len(items):
+                raise ArgumentException("Starting index exceeds length of the mylist")
+            else:
+                items = items[start_index:]
+                output("Beginning at index {}.\n".format(start_index, logging.INFO))
+
         for index, item in enumerate(items):
             try:
                 output("{0}/{1}\n".format(index + 1, len(items)), logging.INFO)
