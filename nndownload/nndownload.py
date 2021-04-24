@@ -157,7 +157,7 @@ cmdl_parser.add_argument("input", action="store", nargs="*", help="URLs or files
 dl_group = cmdl_parser.add_argument_group("download options")
 dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
 dl_group.add_argument("-o", "--output-path", dest="output_path", metavar="TEMPLATE", help="custom output path (see template options)")
-dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", help="download videos using a specified number of threads")
+dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", type=int, default=1, help="download videos using a specified number of threads")
 dl_group.add_argument("-g", "--no-login", action="store_true", dest="no_login", help="create a download session without logging in")
 dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality video source is available")
 dl_group.add_argument("-a", "--add-metadata", action="store_true", dest="add_metadata", help="add metadata to video file (MP4 only)")
