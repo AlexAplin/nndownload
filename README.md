@@ -56,6 +56,8 @@ optional arguments:
                         account username
   -p PASSWORD, --password PASSWORD
                         account password
+  --session-cookie COOKIE
+                        session cookie
   -n, --netrc           use .netrc authentication
   -q, --quiet           suppress output to console
   -l, --log             log output to file

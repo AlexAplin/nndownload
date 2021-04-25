@@ -36,6 +36,7 @@ __license__ = "MIT"
 
 HOST = "nicovideo.jp"
 
+MY_URL =" https://www.nicovideo.jp/my"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
@@ -148,6 +149,7 @@ cmdl_parser = argparse.ArgumentParser(usage=cmdl_usage, conflict_handler="resolv
 
 cmdl_parser.add_argument("-u", "--username", dest="username", metavar="USERNAME", help="account username")
 cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
+cmdl_parser.add_argument("--session-cookie", dest="session_cookie", metavar="COOKIE", help="session cookie")
 cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
 cmdl_parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
 cmdl_parser.add_argument("-l", "--log", action="store_true", dest="log", help="log output to file")
@@ -1483,7 +1485,7 @@ def add_metadata_to_video(filename, template_params):
 
 ## Main entry
 
-def login(username, password):
+def login(username, password, session_cookie):
     """Login to Nico and create a session."""
 
     session = requests.session()
@@ -1509,20 +1511,34 @@ def login(username, password):
         session.proxies.update(proxies)
 
     if not cmdl_opts.no_login:
-        output("Logging in...\n", logging.INFO)
+        if not session_cookie:
+            output("Logging in...\n", logging.INFO)
 
-        login_post = {
-            "mail_tel": username,
-            "password": password
-        }
+            login_post = {
+                "mail_tel": username,
+                "password": password
+            }
 
-        response = session.post(LOGIN_URL, data=login_post)
-        response.raise_for_status()
-        if not session.cookies.get_dict().get("user_session", None):
-            output("Failed to login.\n", logging.INFO)
-            raise AuthenticationException("Failed to login. Please verify your username and password")
+            response = session.post(LOGIN_URL, data=login_post)
+            response.raise_for_status()
+            if not session.cookies.get_dict().get("user_session", None):
+                output("Failed to login.\n", logging.INFO)
+                raise AuthenticationException("Failed to login. Please verify your username and password")
 
-        output("Logged in.\n", logging.INFO)
+            output("Logged in.\n", logging.INFO)
+        else:
+            output("Using provided session cookie.\n", logging.INFO)
+
+            session_dict = {
+                "user_session": session_cookie
+            }
+
+            cookie_jar = session.cookies
+            session.cookies = requests.utils.add_dict_to_cookiejar(cookie_jar, session_dict)
+
+            response = session.get(MY_URL)
+            if response.history:
+                raise AuthenticationException("Failed to login. Please verify your session cookie")
 
     return session
 
@@ -1595,9 +1611,10 @@ def main():
 
         account_username = cmdl_opts.username
         account_password = cmdl_opts.password
+        session_cookie = cmdl_opts.session_cookie
 
         if cmdl_opts.netrc:
-            if cmdl_opts.username or cmdl_opts.password:
+            if cmdl_opts.username or cmdl_opts.password or cmdl_opts.session_cookie:
                 output("Ignorning input credentials in favor of .netrc.\n", logging.WARNING)
 
             account_credentials = netrc.netrc().authenticators(HOST)
@@ -1607,14 +1624,16 @@ def main():
             else:
                 raise netrc.NetrcParseError("No authenticator available for {0}".format(HOST))
         elif not cmdl_opts.no_login:
-            if not account_username:
+            while not account_username and not account_password and not session_cookie:
                 account_username = input("Username: ")
-            if not account_password:
-                account_password = getpass.getpass("Password: ")
+                if account_username and not account_password:
+                    account_password = getpass.getpass("Password: ")
+                else:
+                    session_cookie = input("Session cookie: ")
         else:
             output("Proceeding with no login. Some videos may not be available for download or may only be available in a lower quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.WARNING)
 
-        session = login(account_username, account_password)
+        session = login(account_username, account_password, session_cookie)
 
         for arg_item in cmdl_opts.input:
             try:
