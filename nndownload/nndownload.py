@@ -723,9 +723,17 @@ def request_seiga_user(session, user_id):
     if total_ids == 0:
         raise ParameterExtractionException("Failed to collect user images. Please verify that the user's videos page is public")
 
+    if cmdl_opts.playlist_start:
+        start_index = cmdl_opts.playlist_start
+        if start_index >= len(illust_ids):
+            raise ArgumentException("Starting index exceeds length of the user's available images")
+        else:
+            illust_ids = illust_ids[start_index:]
+            output("Beginning at index {}.\n".format(start_index, logging.INFO))
+
     for index, illust_id in enumerate(illust_ids):
         try:
-            output("{0}/{1}\n".format(index + 1, total_ids), logging.INFO)
+            output("{0}/{1}\n".format(index + 1, len(illust_ids), logging.INFO))
             download_image(session, illust_id)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
