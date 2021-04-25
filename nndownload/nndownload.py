@@ -59,7 +59,7 @@ SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
-MYLIST_API = "http://flapi.nicovideo.jp/api/getplaylist/mylist/{0}"
+MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}"
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
@@ -157,7 +157,7 @@ cmdl_parser.add_argument("input", action="store", nargs="*", help="URLs or files
 dl_group = cmdl_parser.add_argument_group("download options")
 dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
 dl_group.add_argument("-o", "--output-path", dest="output_path", metavar="TEMPLATE", help="custom output path (see template options)")
-dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", type=int, default=1, help="download videos using a specified number of threads")
+dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", type=int, help="download videos using a specified number of threads")
 dl_group.add_argument("-g", "--no-login", action="store_true", dest="no_login", help="create a download session without logging in")
 dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality video source is available")
 dl_group.add_argument("-a", "--add-metadata", action="store_true", dest="add_metadata", help="add metadata to video file (MP4 only)")
@@ -941,31 +941,28 @@ def request_mylist(session, mylist_id):
     """Request videos associated with a mylist."""
 
     output("Requesting mylist {0}...\n".format(mylist_id), logging.INFO)
-    mylist_request = session.get(MYLIST_API.format(mylist_id))
-    mylist_request.raise_for_status()
+    session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS)
+    mylist_request = session.get(MYLIST_API.format(mylist_id), headers=API_HEADERS)
     mylist_json = json.loads(mylist_request.text)
+    items = mylist_json["data"]["mylist"]["items"]
 
-    items = mylist_json.get("items", [])
-    if mylist_json.get("status") != "ok":
-        raise FormatNotAvailableException("Could not retrieve mylist info. Please verify that the mylist exists")
-    else:
-        if cmdl_opts.playlist_start:
-            start_index = cmdl_opts.playlist_start
-            if start_index >= len(items):
-                raise ArgumentException("Starting index exceeds length of the mylist")
-            else:
-                items = items[start_index:]
-                output("Beginning at index {}.\n".format(start_index, logging.INFO))
+    if cmdl_opts.playlist_start:
+        start_index = cmdl_opts.playlist_start
+        if start_index >= len(items):
+            raise ArgumentException("Starting index exceeds length of the mylist")
+        else:
+            items = items[start_index:]
+            output("Beginning at index {}.\n".format(start_index, logging.INFO))
 
-        for index, item in enumerate(items):
-            try:
-                output("{0}/{1}\n".format(index + 1, len(items)), logging.INFO)
-                request_video(session, item["video_id"])
+    for index, item in enumerate(items):
+        try:
+            output("{0}/{1}\n".format(index + 1, len(items)), logging.INFO)
+            request_video(session, item["watchId"])
 
-            except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
-                log_exception(error)
-                traceback.print_exc()
-                continue
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
 
 
 def request_user_mylists(session, user_id):
