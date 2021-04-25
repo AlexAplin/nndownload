@@ -858,11 +858,10 @@ def request_channel_lives(session, channel_id):
 def request_video(session, video_id):
     """Request the video page and initiate download of the video URL."""
 
-    # Determine whether to request the Flash or HTML5 player
-    # Only .mp4 videos are served on the HTML5 player, so we can sometimes miss the high quality .flv source
+    # Retrieve video info to check for availability
+    # Preserved as a sanity check, previously used to check video type
     response = session.get(THUMB_INFO_API.format(video_id))
     response.raise_for_status()
-
     video_info = xml.dom.minidom.parseString(response.text)
 
     if video_info.firstChild.getAttribute("status") != "ok":
@@ -874,7 +873,6 @@ def request_video(session, video_id):
 
     response = session.get(VIDEO_URL.format(video_id), cookies=concat_cookies)
     response.raise_for_status()
-
     document = BeautifulSoup(response.text, "html.parser")
 
     template_params = perform_api_request(session, document)
