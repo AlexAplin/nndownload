@@ -1416,8 +1416,12 @@ def collect_video_parameters(session, template_params, params):
         template_params["uploader_id"] = int(params["owner"]["id"]) if params.get("owner") else None
         template_params["description"] = params["video"]["description"]
 
-        template_params["thumbnail_url"] = params["video"]["thumbnail"]["url"]
-        # params["video"]["thumbnail"]["largeUrl"] if available
+        template_params["thumbnail_url"] = ( # Use highest quality thumbnail available
+            params["video"]["thumbnail"]["ogp"]
+            or params["video"]["thumbnail"]["player"]
+            or params["video"]["thumbnail"]["largeUrl"]
+            or params["video"]["thumbnail"]["middleUrl"]
+            or params["video"]["thumbnail"]["url"])
 
         template_params["thread_id"] = int(params["comment"]["threads"][0]["id"])
         template_params["published"] = params["video"]["registeredAt"]
@@ -1482,11 +1486,8 @@ def download_thumbnail(session, filename, template_params):
 
     filename = replace_extension(filename, "jpg")
 
-    # Try to retrieve the large thumbnail
-    get_thumb = session.get(template_params["thumbnail_url"] + ".L")
-    if get_thumb.status_code == 404:
-        get_thumb = session.get(template_params["thumbnail_url"])
-        get_thumb.raise_for_status()
+    get_thumb = session.get(template_params["thumbnail_url"])
+    get_thumb.raise_for_status()
 
     with open(filename, "wb") as file:
         for block in get_thumb.iter_content(BLOCK_SIZE):
