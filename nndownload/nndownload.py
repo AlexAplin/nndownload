@@ -352,12 +352,12 @@ def generate_stream(session, master_url):
 
     output("Retrieving master playlist...\n", logging.INFO)
 
-    m3u8 = session.get(master_url)
-    m3u8.raise_for_status()
+    m3u8_request = session.get(master_url)
+    m3u8_request.raise_for_status()
 
     output("Retrieved master playlist.\n", logging.INFO)
 
-    playlist_slug = get_playlist_from_m3u8(m3u8.text)
+    playlist_slug = get_playlist_from_m3u8(m3u8_request.text)
     stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_slug
 
     return stream_url
@@ -453,18 +453,18 @@ def reserve_timeshift(session, nama_id):
 
     timeshift_data = {"vid": nama_id.lstrip("lv")}
 
-    timeshift_use_response = session.post(TIMESHIFT_USE_URL, headers=NAMA_ORIGIN_HEADER, data=timeshift_data)
-    if timeshift_use_response.status_code == 403:
+    timeshift_use_request = session.post(TIMESHIFT_USE_URL, headers=NAMA_ORIGIN_HEADER, data=timeshift_data)
+    if timeshift_use_request.status_code == 403:
         timeshift_data["overwrite"] = "0"
 
-        timeshift_reservation_response = session.post(TIMESHIFT_RESERVE_URL, headers=NAMA_ORIGIN_HEADER, data=timeshift_data)
-        timeshift_reservation_response.raise_for_status()
+        timeshift_reservation_request = session.post(TIMESHIFT_RESERVE_URL, headers=NAMA_ORIGIN_HEADER, data=timeshift_data)
+        timeshift_reservation_request.raise_for_status()
 
-    response = session.get(NAMA_URL.format(nama_id))
-    response.raise_for_status()
+    nama_request = session.get(NAMA_URL.format(nama_id))
+    nama_request.raise_for_status()
 
-    document = BeautifulSoup(response.text, "html.parser")
-    params = json.loads(document.find(id="embedded-data")["data-props"])
+    nama_document = BeautifulSoup(nama_request.text, "html.parser")
+    params = json.loads(nama_document.find(id="embedded-data")["data-props"])
     websocket_url = params["site"]["relive"]["webSocketUrl"]
     if not websocket_url:
         raise FormatNotAvailableException("Failed to use timeshift ticket")
@@ -475,13 +475,13 @@ def reserve_timeshift(session, nama_id):
 def request_nama(session, nama_id):
     """Generate a stream URL for a live Niconama broadcast."""
 
-    response = session.get(NAMA_URL.format(nama_id))
-    response.raise_for_status()
+    nama_request = session.get(NAMA_URL.format(nama_id))
+    nama_request.raise_for_status()
 
-    document = BeautifulSoup(response.text, "html.parser")
+    nama_document = BeautifulSoup(nama_request.text, "html.parser")
 
-    if document.find(id="embedded-data"):
-        params = json.loads(document.find(id="embedded-data")["data-props"])
+    if nama_document.find(id="embedded-data"):
+        params = json.loads(nama_document.find(id="embedded-data")["data-props"])
 
         rejection_errors = params["userProgramWatch"]["rejectedReasons"]
         if rejection_errors:
@@ -552,16 +552,16 @@ def collect_seiga_image_parameters(session, document, template_params):
     template_params["tags"] = document.select("meta[name=\"keywords\"]")[0]["content"]
     template_params["document_url"] = SEIGA_IMAGE_URL.format(template_params["id"])
 
-    source_page = session.get(SEIGA_SOURCE_URL.format(template_params["id"].lstrip("im")))
-    source_page.raise_for_status()
-    source_document = BeautifulSoup(source_page.text, "html.parser")
+    seiga_source_request = session.get(SEIGA_SOURCE_URL.format(template_params["id"].lstrip("im")))
+    seiga_source_request.raise_for_status()
+    seiga_source_document = BeautifulSoup(seiga_source_request.text, "html.parser")
 
-    source_url_relative = source_document.select("div.illust_view_big")[0]["data-src"]
+    source_url_relative = seiga_source_document.select("div.illust_view_big")[0]["data-src"]
     template_params["url"] = source_url_relative
 
-    source_image = session.get(template_params["url"])
-    source_image.raise_for_status()
-    mimetype = source_image.headers["Content-Type"]
+    source_image_request = session.get(template_params["url"])
+    source_image_request.raise_for_status()
+    mimetype = source_image_request.headers["Content-Type"]
     template_params["ext"] = find_extension(mimetype)
 
     return template_params
@@ -602,19 +602,19 @@ def collect_seiga_manga_parameters(session, document, template_params):
 def download_manga_chapter(session, chapter_id):
     """Download the requested chapter for a Seiga manga."""
 
-    response = session.get(SEIGA_CHAPTER_URL.format(chapter_id))
-    response.raise_for_status()
+    chapter_request = session.get(SEIGA_CHAPTER_URL.format(chapter_id))
+    chapter_request.raise_for_status()
 
-    document = BeautifulSoup(response.text, "html.parser")
+    chapter_document = BeautifulSoup(managa_request.text, "html.parser")
 
     template_params = {}
-    template_params = collect_seiga_manga_parameters(session, document, template_params)
+    template_params = collect_seiga_manga_parameters(session, chapter_document, template_params)
     chapter_directory = create_filename(template_params, is_comic=True)
 
     if not cmdl_opts.skip_media:
         output("Downloading {0} to \"{1}\"...\n".format(chapter_id, chapter_directory), logging.INFO)
 
-        images = document.select("img.lazyload")
+        images = chapter_document.select("img.lazyload")
         for index, image in enumerate(images):
             image_url = image["data-original"]
             image_request = session.get(image_url)
@@ -655,11 +655,11 @@ def download_manga(session, manga_id):
 
     output("Downloading comic {0}...\n".format(manga_id), logging.INFO)
 
-    response = session.get(SEIGA_MANGA_URL.format(manga_id))
-    response.raise_for_status()
+    manga_request = session.get(SEIGA_MANGA_URL.format(manga_id))
+    manga_request.raise_for_status()
 
-    document = BeautifulSoup(response.text, "html.parser")
-    chapters = document.select("div.episode .title a")
+    manga_document = BeautifulSoup(manga_request.text, "html.parser")
+    chapters = manga_document.select("div.episode .title a")
     for index, chapter in enumerate(chapters):
         chapter_id = chapter["href"].lstrip("/watch/").split("?")[0]
         output("{0}/{1}\n".format(index + 1, len(chapters)), logging.INFO)
@@ -669,23 +669,23 @@ def download_manga(session, manga_id):
 def download_image(session, image_id):
     """Download an individual Seiga image."""
 
-    response = session.get(SEIGA_IMAGE_URL.format(image_id))
-    response.raise_for_status()
+    seiga_image_request = session.get(SEIGA_IMAGE_URL.format(image_id))
+    seiga_image_request.raise_for_status()
 
-    document = BeautifulSoup(response.text, "html.parser")
+    seiga_image_document = BeautifulSoup(seiga_image_request.text, "html.parser")
     template_params = {}
-    template_params = collect_seiga_image_parameters(session, document, template_params)
+    template_params = collect_seiga_image_parameters(session, seiga_image_document, template_params)
 
     filename = create_filename(template_params)
 
     if not cmdl_opts.skip_media:
         output("Downloading {0} to \"{1}\"...\n".format(image_id, filename), logging.INFO)
 
-        source_image = session.get(template_params["url"], stream=True)
-        source_image.raise_for_status()
+        source_image_request = session.get(template_params["url"], stream=True)
+        source_image_request.raise_for_status()
 
         with open(filename, "wb") as file:
-            for block in source_image.iter_content(BLOCK_SIZE):
+            for block in source_image_request.iter_content(BLOCK_SIZE):
                 file.write(block)
 
         output("Finished donwloading {0} to \"{1}\".\n".format(image_id, filename), logging.INFO)
@@ -708,10 +708,10 @@ def request_seiga_user(session, user_id):
 
     # Dumb loop, process pages until we reach a page with no images
     while True:
-        user_illust_page = session.get(SEIGA_USER_ILLUST_URL.format(user_id, page_counter))
-        user_illust_page.raise_for_status()
+        user_illust_request = session.get(SEIGA_USER_ILLUST_URL.format(user_id, page_counter))
+        user_illust_request.raise_for_status()
 
-        user_illust_document = BeautifulSoup(user_illust_page.text, "html.parser")
+        user_illust_document = BeautifulSoup(user_illust_request.text, "html.parser")
         illust_links = user_illust_document.select(".illust_list .list_item a")
 
         if len(illust_links) == 0:
@@ -756,10 +756,10 @@ def request_seiga_user_manga(session, user_id):
 
     # Dumb loop, process pages until we reach a page with no images
     while True:
-        user_manga_page = session.get(SEIGA_USER_MANGA_URL.format(user_id, page_counter))
-        user_manga_page.raise_for_status()
+        user_manga_request = session.get(SEIGA_USER_MANGA_URL.format(user_id, page_counter))
+        user_manga_request.raise_for_status()
 
-        user_manga_document = BeautifulSoup(user_manga_page.text, "html.parser")
+        user_manga_document = BeautifulSoup(user_manga_request.text, "html.parser")
         manga_links = user_manga_document.select("#comic_list .mg_item .title a")
 
         if len(manga_links) == 0:
@@ -800,9 +800,9 @@ def request_seiga_user_manga(session, user_id):
 def download_channel_article(session, article_id):
     """Download a blog article."""
 
-    article_page = session.get(CHANNEL_ARTICLE_URL.format(article_id))
-    article_page.raise_for_status()
-    article_document = BeautifulSoup(article_page.text, "html.parser")
+    article_request = session.get(CHANNEL_ARTICLE_URL.format(article_id))
+    article_request.raise_for_status()
+    article_document = BeautifulSoup(article_request.text, "html.parser")
 
     template_params = {}
     template_params["id"] = article_id
@@ -815,7 +815,7 @@ def download_channel_article(session, article_id):
     template_params["title"] = article_title = article_document.select_one("#article_blog_title").text
     template_params["published"] = article_document.select_one(".article_blog_data_first span").text
     template_params["article"] = article_text = article_document.select_one(".main_blog_txt").decode_contents()
-    template_params["document_url"] = article_page.url
+    template_params["document_url"] = article_request.url
 
     tags = []
     for tag in article_document.select(".tag_list li"):
@@ -847,9 +847,9 @@ def request_channel(session, channel_slug):
 
     # Dumb loop, process pages until we reach a page with no videos
     while True:
-        channel_videos_page = session.get(CHANNEL_VIDEOS_URL.format(channel_slug, page_counter))
-        channel_videos_page.raise_for_status()
-        channel_videos_document = BeautifulSoup(channel_videos_page.text, "html.parser")
+        channel_videos_request = session.get(CHANNEL_VIDEOS_URL.format(channel_slug, page_counter))
+        channel_videos_request.raise_for_status()
+        channel_videos_document = BeautifulSoup(channel_videos_request.text, "html.parser")
         video_links = channel_videos_document.select("h6.title a")
 
         if len(video_links) == 0:
@@ -888,16 +888,16 @@ def request_channel(session, channel_slug):
 def request_channel_blog(session, channel_slug):
     """Request articles associated with a channel blog."""
 
-    blog_page = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, 1))
-    blog_page.raise_for_status()
-    blog_document = BeautifulSoup(blog_page.text, "html.parser")
+    blog_request = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, 1))
+    blog_request.raise_for_status()
+    blog_document = BeautifulSoup(blog_request.text, "html.parser")
     total_pages = int(blog_document.select_one("span.page_all").text)
 
     for page in range(1, total_pages + 1):
             output("Page {0}/{1}\n".format(page, total_pages), logging.INFO)
-            blog_page = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, page))
-            blog_page.raise_for_status()
-            blog_document = BeautifulSoup(blog_page.text, "html.parser")
+            blog_request = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, page))
+            blog_request.raise_for_status()
+            blog_document = BeautifulSoup(blog_request.text, "html.parser")
             articles = blog_document.select("h3:first-child a")
             for article in articles:
                 download_channel_article(session, article["href"].rsplit("/")[-1])
@@ -915,9 +915,9 @@ def request_video(session, video_id):
 
     # Retrieve video info to check for availability
     # Preserved as a sanity check, previously used to check video type
-    response = session.get(THUMB_INFO_API.format(video_id))
-    response.raise_for_status()
-    video_info = xml.dom.minidom.parseString(response.text)
+    thumb_info_request = session.get(THUMB_INFO_API.format(video_id))
+    thumb_info_request.raise_for_status()
+    video_info = xml.dom.minidom.parseString(thumb_info_request.text)
 
     if video_info.firstChild.getAttribute("status") != "ok":
         raise FormatNotAvailableException("Could not retrieve video info. This video may have been deleted")
@@ -926,9 +926,9 @@ def request_video(session, video_id):
     if cmdl_opts.download_english:
         concat_cookies = {**concat_cookies, **EN_COOKIE}
 
-    response = session.get(VIDEO_URL.format(video_id), cookies=concat_cookies)
-    response.raise_for_status()
-    document = BeautifulSoup(response.text, "html.parser")
+    video_request = session.get(VIDEO_URL.format(video_id), cookies=concat_cookies)
+    video_request.raise_for_status()
+    document = BeautifulSoup(video_request.text, "html.parser")
 
     template_params = perform_api_request(session, document)
 
@@ -955,10 +955,11 @@ def request_user(session, user_id):
 
     video_api_request = session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
     video_api_request.raise_on_status()
-    videos_page = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
-    videos_page.raise_for_status()
-    user_videos_json = json.loads(videos_page.text)
+    videos_request = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
+    videos_request.raise_for_status()
+    user_videos_json = json.loads(videos_request.text)
     user_videos_count = int(user_videos_json["data"]["totalCount"])
+
     if user_videos_count == 0:
         output("No videos identified for speicifed user.\n", logging.INFO)
         return
@@ -966,9 +967,9 @@ def request_user(session, user_id):
     total_pages = math.ceil(user_videos_count / USER_VIDEOS_API_N)
 
     for page in range(1, total_pages + 1):
-        videos_page = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, page), headers=API_HEADERS)
-        videos_page.raise_for_status()
-        user_videos_json = json.loads(videos_page.text)
+        videos_request = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, page), headers=API_HEADERS)
+        videos_request.raise_for_status()
+        user_videos_json = json.loads(videos_request.text)
         for video in user_videos_json["data"]["items"]:
             video_ids.append(video["id"])
 
@@ -1026,9 +1027,9 @@ def request_user_mylists(session, user_id):
 
     output("Requesting mylists from user {0}...\n".format(user_id), logging.INFO)
 
-    mylists_page = session.get(USER_MYLISTS_API.format(user_id), headers=API_HEADERS)
-    mylists_page.raise_for_status()
-    user_mylists_json = json.loads(mylists_page.text)
+    mylists_request = session.get(USER_MYLISTS_API.format(user_id), headers=API_HEADERS)
+    mylists_request.raise_for_status()
+    user_mylists_json = json.loads(mylists_request.text)
     user_mylists = user_mylists_json["data"]["mylists"]
     for index, item in enumerate(user_mylists):
         try:
@@ -1209,13 +1210,13 @@ def download_video(session, filename, template_params):
     return
 
 
-def perform_heartbeat(session, heartbeat_url, response):
+def perform_heartbeat(session, heartbeat_url, heartbeat_request):
     """Perform a response heartbeat to keep the video download connection alive."""
 
-    response = session.post(heartbeat_url, data=response.toxml())
-    response.raise_for_status()
-    response = xml.dom.minidom.parseString(response.text).getElementsByTagName("session")[0]
-    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (session, heartbeat_url, response))
+    heartbeat_request = session.post(heartbeat_url, data=heartbeat_request.toxml())
+    heartbeat_request.raise_for_status()
+    heartbeat_request = xml.dom.minidom.parseString(heartbeat_request.text).getElementsByTagName("session")[0]
+    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (session, heartbeat_url, heartbeat_request))
     heartbeat_timer.daemon = True
     heartbeat_timer.start()
 
@@ -1382,17 +1383,17 @@ def perform_api_request(session, document):
 
             output("Performing initial API request...\n", logging.INFO)
             headers = {"Content-Type": "application/xml"}
-            response = session.post(api_url, headers=headers, data=root.toxml())
-            response.raise_for_status()
-            response = xml.dom.minidom.parseString(response.text)
-            template_params["url"] = response.getElementsByTagName("content_uri")[0].firstChild.nodeValue
+            api_request = session.post(api_url, headers=headers, data=root.toxml())
+            api_request.raise_for_status()
+            api_request = xml.dom.minidom.parseString(api_request.text)
+            template_params["url"] = api_request.getElementsByTagName("content_uri")[0].firstChild.nodeValue
             output("Performed initial API request.\n", logging.INFO)
 
             # Collect response for heartbeat
-            session_id = response.getElementsByTagName("id")[0].firstChild.nodeValue
-            response = response.getElementsByTagName("session")[0]
+            session_id = api_request.getElementsByTagName("id")[0].firstChild.nodeValue
+            api_request = api_request.getElementsByTagName("session")[0]
             heartbeat_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
-            perform_heartbeat(session, heartbeat_url, response)
+            perform_heartbeat(session, heartbeat_url, api_request)
 
         else:
             raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
@@ -1442,29 +1443,29 @@ def collect_video_parameters(session, template_params, params):
 
     template_params["document_url"] = VIDEO_URL.format(template_params["id"])
 
-    response = session.get(THUMB_INFO_API.format(template_params["id"]))
-    response.raise_for_status()
-    video_info = xml.dom.minidom.parseString(response.text)
+    thumb_info_request = session.get(THUMB_INFO_API.format(template_params["id"]))
+    thumb_info_request.raise_for_status()
+    thumb_info_document = xml.dom.minidom.parseString(thumb_info_request.text)
 
     # DMC videos do not expose the file type in the video page parameters when not logged in
     # As of 2021, all videos are served on the HTML5 player as .mp4
     # This is maintained as a sanity check
-    template_params["ext"] = video_info.getElementsByTagName("movie_type")[0].firstChild.nodeValue
+    template_params["ext"] = thumb_info_document.getElementsByTagName("movie_type")[0].firstChild.nodeValue
     if (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
         template_params["ext"] = "mp4"
 
-    template_params["size_high"] = int(video_info.getElementsByTagName("size_high")[0].firstChild.nodeValue)
-    template_params["size_low"] = int(video_info.getElementsByTagName("size_low")[0].firstChild.nodeValue)
+    template_params["size_high"] = int(thumb_info_document.getElementsByTagName("size_high")[0].firstChild.nodeValue)
+    template_params["size_low"] = int(thumb_info_document.getElementsByTagName("size_low")[0].firstChild.nodeValue)
 
     # Check if we couldn't capture uploader info before
     if not template_params["uploader_id"]:
-        channel_id = video_info.getElementsByTagName("ch_id")
-        user_id = video_info.getElementsByTagName("user_id")
+        channel_id = thumb_info_document.getElementsByTagName("ch_id")
+        user_id = thumb_info_document.getElementsByTagName("user_id")
         template_params["uploader_id"] = int(channel_id[0].firstChild.nodeValue) if channel_id else int(user_id[0].firstChild.nodeValue) if user_id else None
 
     if not template_params["uploader"]:
-        channel_name = video_info.getElementsByTagName("ch_name")
-        user_nickname = video_info.getElementsByTagName("user_nickname")
+        channel_name = thumb_info_document.getElementsByTagName("ch_name")
+        user_nickname = thumb_info_document.getElementsByTagName("user_nickname")
         template_params["uploader"] = channel_name[0].firstChild.nodeValue if channel_name else user_nickname[0].firstChild.nodeValue if user_nickname else None
 
     return template_params
@@ -1490,11 +1491,11 @@ def download_thumbnail(session, filename, template_params):
 
     filename = replace_extension(filename, "jpg")
 
-    get_thumb = session.get(template_params["thumbnail_url"])
-    get_thumb.raise_for_status()
+    thumb_request = session.get(template_params["thumbnail_url"])
+    thumb_request.raise_for_status()
 
     with open(filename, "wb") as file:
-        for block in get_thumb.iter_content(BLOCK_SIZE):
+        for block in thumb_request.iter_content(BLOCK_SIZE):
             file.write(block)
 
     output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
@@ -1508,10 +1509,10 @@ def download_comments(session, filename, template_params):
     filename = replace_extension(filename, "xml")
 
     post_packet = COMMENTS_POST_EN if cmdl_opts.download_english else COMMENTS_POST_JP
-    get_comments = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
-    get_comments.raise_for_status()
+    get_comments_request = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
+    get_comments_request.raise_for_status()
     with open(filename, "wb") as file:
-        file.write(get_comments.content)
+        file.write(get_comments_request.content)
 
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
@@ -1568,8 +1569,8 @@ def login(username, password, session_cookie):
                 "password": password
             }
 
-            response = session.post(LOGIN_URL, data=login_post)
-            response.raise_for_status()
+            login_request = session.post(LOGIN_URL, data=login_post)
+            login_request.raise_for_status()
             if not session.cookies.get_dict().get("user_session", None):
                 output("Failed to login.\n", logging.INFO)
                 raise AuthenticationException("Failed to login. Please verify your username and password")
@@ -1585,9 +1586,9 @@ def login(username, password, session_cookie):
             cookie_jar = session.cookies
             session.cookies = requests.utils.add_dict_to_cookiejar(cookie_jar, session_dict)
 
-            response = session.get(MY_URL)
-            response.raise_for_status()
-            if response.history:
+            my_request = session.get(MY_URL)
+            my_request.raise_for_status()
+            if my_request.history:
                 raise AuthenticationException("Failed to login. Please verify your session cookie")
 
     return session
