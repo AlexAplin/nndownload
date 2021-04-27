@@ -45,7 +45,7 @@ CHANNEL_LIVES_URL = "https://ch.nicovideo.jp/{0}/live?page={1}"
 CHANNEL_BLOMAGA_URL = "https://ch.nicovideo.jp/{0}/blomaga?page={1}"
 CHANNEL_ARTICLE_URL = "https://ch.nicovideo.jp/article/{0}"
 SEIGA_USER_ILLUST_URL = "https://seiga.nicovideo.jp/user/illust/{0}?page={1}"
-SEIGA_USER_MANGA_URL = "https://seiga.nicovideo.jp/user/manga/{0}?page={1}"
+SEIGA_USER_MANGA_URL = "https://seiga.nicovideo.jp/manga/list?user_id={0}&page={1}" # Not all manga are not listed with /user/manga/{0}
 SEIGA_IMAGE_URL = "https://seiga.nicovideo.jp/seiga/{0}"
 SEIGA_MANGA_URL = "https://seiga.nicovideo.jp/comic/{0}"
 SEIGA_CHAPTER_URL = "https://seiga.nicovideo.jp/watch/{0}"
@@ -54,10 +54,11 @@ SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
-VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel)?)(?(3)\/|))|(nico\.ms)\/))(?:((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-0-9]+?)\/?)(?:\/(video|mylist|live|blomaga))?(?(6)\/((?:[a-z]{2})?[0-9]+))?(\?.*)?$")
+VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust)?)(?(3)\/|))|(nico\.ms)\/))(?:((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-0-9]+?)\/?)(?:\/(video|mylist|live|blomaga|list))?(?(6)\/((?:[a-z]{2})?[0-9]+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
+SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}"
@@ -723,7 +724,7 @@ def request_seiga_user(session, user_id):
 
     total_ids = len(illust_ids)
     if total_ids == 0:
-        raise ParameterExtractionException("Failed to collect user images. Please verify that the user's videos page is public")
+        raise ParameterExtractionException("Failed to collect user images. Please verify that the user's images page is public")
 
     if cmdl_opts.playlist_start:
         start_index = cmdl_opts.playlist_start
@@ -731,7 +732,7 @@ def request_seiga_user(session, user_id):
             raise ArgumentException("Starting index exceeds length of the user's available images")
         else:
             illust_ids = illust_ids[start_index:]
-            output("Beginning at index {}.\n".format(start_index, logging.INFO))
+            output("Beginning at index {}.\n".format(start_index), logging.INFO)
 
     for index, illust_id in enumerate(illust_ids):
         try:
@@ -747,7 +748,50 @@ def request_seiga_user(session, user_id):
 def request_seiga_user_manga(session, user_id):
     """Request manga associated with a Seiga user."""
 
-    output("Downloading manga for Seiga users is not currently supported.\n", logging.WARNING)
+    output("Downloading manga from Seiga user {0}...\n".format(user_id), logging.INFO)
+
+    page_counter = 1
+    manga_ids = []
+
+    # Dumb loop, process pages until we reach a page with no images
+    while True:
+        user_manga_page = session.get(SEIGA_USER_MANGA_URL.format(user_id, page_counter))
+        user_manga_page.raise_for_status()
+
+        user_manga_document = BeautifulSoup(user_manga_page.text, "html.parser")
+        manga_links = user_manga_document.select("#comic_list .mg_item .title a")
+
+        if len(manga_links) == 0:
+            break
+
+        for link in manga_links:
+            unstripped_id = link["href"]
+            manga_id = SEIGA_MANGA_ID_RE.match(unstripped_id).group(1)
+            manga_ids.append(manga_id)
+
+        page_counter += 1
+
+    total_ids = len(manga_ids)
+    if total_ids == 0:
+        raise ParameterExtractionException("Failed to collect user images. Please verify that the user's manga page is public")
+
+    if cmdl_opts.playlist_start:
+        start_index = cmdl_opts.playlist_start
+        if start_index >= len(manga_ids):
+            raise ArgumentException("Starting index exceeds length of the user's available manga")
+        else:
+            manga_ids = manga_ids[start_index:]
+            output("Beginning at index {}.\n".format(start_index), logging.INFO)
+
+    for index, manga_id in enumerate(manga_ids):
+        try:
+            output("{0}/{1}\n".format(index + 1, len(manga_ids), logging.INFO))
+            download_manga(session, manga_id)
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
 
 
 ## Channel methods
@@ -1576,9 +1620,13 @@ def process_url_mo(session, url_mo):
             download_manga_chapter(session, url_id)
         elif url_mo.group(3) == "comic":
             download_manga(session, url_id)
-        elif url_mo.group(3) == "user/illust":
+        elif url_mo.group(3) == "user/illust" or url_mo.group(3) == "illust":
+            if url_mo.group(8):
+                url_id = url_mo.group(8)
             request_seiga_user(session, url_id)
-        elif url_mo.group(3) == "user/manga":
+        elif url_mo.group(3) == "user/manga" or url_mo.group(3) == "manga":
+            if url_mo.group(8):
+                url_id = url_mo.group(8)
             request_seiga_user_manga(session, url_id)
         elif url_mo.group(3) == "seiga":
             download_image(session, url_id)
