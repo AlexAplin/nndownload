@@ -10,7 +10,6 @@ nndownload allows you to download videos, images, manga, and process other links
 - Running multiple download sessions on the same connection may lead to temporary blocks or throttling.
 - These functions are not currently supported:
   - Downloading Niconama timeshifts
-  - Downloading a user's manga
   - Downloading Seiga thumbnails and comments
   - Downloading channel blog comments
 
@@ -19,7 +18,7 @@ nndownload allows you to download videos, images, manga, and process other links
  - Download Seiga images and manga with metadata
  - Download channel videos or blogs with metadata
  - Download mylists
- - Download a user's videos, mylists, or illustrations
+ - Download a user's videos, mylists, illustrations, or manga
  - Generate stream URLs for Niconama broadcasts
  - Download videos faster using multiple threads
  - Process lists of URLs from text files
