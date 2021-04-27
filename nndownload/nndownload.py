@@ -7,7 +7,7 @@ from aiohttp_socks import ProxyType, ProxyConnector, ChainProxyConnector
 from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util import Retry
 import requests
 
 from itertools import tee
@@ -736,7 +736,7 @@ def request_seiga_user(session, user_id):
 
     for index, illust_id in enumerate(illust_ids):
         try:
-            output("{0}/{1}\n".format(index + 1, len(illust_ids), logging.INFO))
+            output("{0}/{1}\n".format(index + 1, len(illust_ids)), logging.INFO)
             download_image(session, illust_id)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
@@ -785,7 +785,7 @@ def request_seiga_user_manga(session, user_id):
 
     for index, manga_id in enumerate(manga_ids):
         try:
-            output("{0}/{1}\n".format(index + 1, len(manga_ids), logging.INFO))
+            output("{0}/{1}\n".format(index + 1, len(manga_ids)), logging.INFO)
             download_manga(session, manga_id)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
@@ -871,7 +871,7 @@ def request_channel(session, channel_slug):
             raise ArgumentException("Starting index exceeds length of the channel's video playlist")
         else:
             video_ids = video_ids[start_index:]
-            output("Beginning at index {}.\n".format(start_index, logging.INFO))
+            output("Beginning at index {}.\n".format(start_index), logging.INFO)
 
     for index, video_id in enumerate(video_ids):
         try:
@@ -976,11 +976,11 @@ def request_user(session, user_id):
             raise ArgumentException("Starting index exceeds length of the user's video playlist")
         else:
             video_ids = video_ids[start_index:]
-            output("Beginning at index {}.\n".format(start_index, logging.INFO))
+            output("Beginning at index {}.\n".format(start_index), logging.INFO)
 
     for index, video_id in enumerate(video_ids):
         try:
-            output("{0}/{1}\n".format(index + 1, len(video_ids), logging.INFO))
+            output("{0}/{1}\n".format(index + 1, len(video_ids)), logging.INFO)
             request_video(session, video_id)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
@@ -1004,7 +1004,7 @@ def request_mylist(session, mylist_id):
             raise ArgumentException("Starting index exceeds length of the mylist")
         else:
             items = items[start_index:]
-            output("Beginning at index {}.\n".format(start_index, logging.INFO))
+            output("Beginning at index {}.\n".format(start_index), logging.INFO)
 
     for index, item in enumerate(items):
         try:
