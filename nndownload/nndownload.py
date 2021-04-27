@@ -1487,7 +1487,7 @@ def download_thumbnail(session, filename, template_params):
     filename = replace_extension(filename, "jpg")
 
     # Try to retrieve the large thumbnail
-    get_thumb = session.get(template_params["thumbnail_url"] + ".L")
+    get_thumb = session.get(template_params["thumbnail_url"])
     if get_thumb.status_code == 404:
         get_thumb = session.get(template_params["thumbnail_url"])
         get_thumb.raise_for_status()
