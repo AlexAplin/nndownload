@@ -1416,7 +1416,7 @@ def collect_video_parameters(session, template_params, params):
         template_params["uploader_id"] = int(params["owner"]["id"]) if params.get("owner") else None
         template_params["description"] = params["video"]["description"]
 
-        template_params["thumbnail_url"] = ( # choose highest available thumbnail from 720p to 240p
+        template_params["thumbnail_url"] = ( # Use highest quality thumbnail available
             params["video"]["thumbnail"]["ogp"]
             or params["video"]["thumbnail"]["player"]
             or params["video"]["thumbnail"]["largeUrl"]
