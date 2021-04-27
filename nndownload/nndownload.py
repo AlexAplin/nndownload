@@ -1416,8 +1416,12 @@ def collect_video_parameters(session, template_params, params):
         template_params["uploader_id"] = int(params["owner"]["id"]) if params.get("owner") else None
         template_params["description"] = params["video"]["description"]
 
-        template_params["thumbnail_url"] = params["video"]["thumbnail"]["url"]
-        # params["video"]["thumbnail"]["largeUrl"] if available
+        template_params["thumbnail_url"] = ( # choose highest available thumbnail from 720p to 240p
+            params["video"]["thumbnail"]["ogp"]
+            or params["video"]["thumbnail"]["player"]
+            or params["video"]["thumbnail"]["largeUrl"]
+            or params["video"]["thumbnail"]["middleUrl"]
+            or params["video"]["thumbnail"]["url"])
 
         template_params["thread_id"] = int(params["comment"]["threads"][0]["id"])
         template_params["published"] = params["video"]["registeredAt"]
