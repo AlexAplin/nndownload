@@ -369,10 +369,11 @@ async def download_stream_clips(session, stream_url):
     # TODO: Determine end condition, stitch downloads together, end task on completion
 
     while True:
-        stream_text = session.get(stream_url).text
-        stream_length = re.search(r"(?:#STREAM-DURATION:)(.*)", stream_text)[1]
+        stream_request = session.get(stream_url)
+        stream_request.raise_for_status()
+        stream_length = re.search(r"(?:#STREAM-DURATION:)(.*)", stream_request.text)[1]
 
-        clip_matches = re.compile(r"(?:#EXTINF):.*\n(.*)").findall(stream_text)
+        clip_matches = re.compile(r"(?:#EXTINF):.*\n(.*)").findall(stream_request.text)
         if not clip_matches:
             raise FormatNotAvailableException("Could not retrieve stream clips from playlist")
 
@@ -952,7 +953,8 @@ def request_user(session, user_id):
 
     video_ids = []
 
-    session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
+    video_api_request = session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
+    video_api_request.raise_on_status()
     videos_page = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
     videos_page.raise_for_status()
     user_videos_json = json.loads(videos_page.text)
@@ -993,8 +995,10 @@ def request_mylist(session, mylist_id):
     """Request videos associated with a mylist."""
 
     output("Requesting mylist {0}...\n".format(mylist_id), logging.INFO)
-    session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS)
+    mylist_api_request = session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS)
+    mylist_api_request.raise_on_status()
     mylist_request = session.get(MYLIST_API.format(mylist_id), headers=API_HEADERS)
+    mylist_request.raise_for_status()
     mylist_json = json.loads(mylist_request.text)
     items = mylist_json["data"]["mylist"]["items"]
 
@@ -1582,6 +1586,7 @@ def login(username, password, session_cookie):
             session.cookies = requests.utils.add_dict_to_cookiejar(cookie_jar, session_dict)
 
             response = session.get(MY_URL)
+            response.raise_for_status()
             if response.history:
                 raise AuthenticationException("Failed to login. Please verify your session cookie")
 
