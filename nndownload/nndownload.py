@@ -812,7 +812,7 @@ def download_channel_article(session, article_id):
     if article_document.select_one(".profileArea span.name a"):
         template_params["uploader_id"] = int(article_document.select_one(".profileArea span.name a")["href"].rsplit("/")[-1])
     template_params["comment_count"] = int(article_document.select_one("header.content .comment_count").text if article_document.select_one("header.content .comment_count") else 0)
-    template_params["title"] = article_document.select_one("#article_blog_title").text
+    template_params["title"] = article_text = article_document.select_one("#article_blog_title").text
     template_params["published"] = article_document.select_one(".article_blog_data_first span").text
     template_params["article"] = article_text = article_document.select_one(".main_blog_txt").decode_contents()
     template_params["document_url"] = article_request.url
