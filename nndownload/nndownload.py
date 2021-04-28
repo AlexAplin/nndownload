@@ -605,7 +605,7 @@ def download_manga_chapter(session, chapter_id):
     chapter_request = session.get(SEIGA_CHAPTER_URL.format(chapter_id))
     chapter_request.raise_for_status()
 
-    chapter_document = BeautifulSoup(managa_request.text, "html.parser")
+    chapter_document = BeautifulSoup(chapter_request.text, "html.parser")
 
     template_params = {}
     template_params = collect_seiga_manga_parameters(session, chapter_document, template_params)
@@ -812,7 +812,7 @@ def download_channel_article(session, article_id):
     if article_document.select_one(".profileArea span.name a"):
         template_params["uploader_id"] = int(article_document.select_one(".profileArea span.name a")["href"].rsplit("/")[-1])
     template_params["comment_count"] = int(article_document.select_one("header.content .comment_count").text if article_document.select_one("header.content .comment_count") else 0)
-    template_params["title"] = article_title = article_document.select_one("#article_blog_title").text
+    template_params["title"] = article_document.select_one("#article_blog_title").text
     template_params["published"] = article_document.select_one(".article_blog_data_first span").text
     template_params["article"] = article_text = article_document.select_one(".main_blog_txt").decode_contents()
     template_params["document_url"] = article_request.url
@@ -828,7 +828,7 @@ def download_channel_article(session, article_id):
         output("Downloading {0} to \"{1}\"...\n".format(article_id, filename), logging.INFO)
 
         with open(filename, "w", encoding="utf-8") as article_file:
-            pretty_article_text = template_params["article"].replace("<br/>", "\n").replace("<br>", "\n").replace("</br>", "").replace("<p>", "\n").replace("</p>", "\n").replace("<hr/>", "---\n").replace("<strong>", "**").replace("</strong>", "**").replace("<h2>", "\n## ").replace("</h2>", "\n").replace("<h3>", "\n### ").replace("</h3>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<li>", "- ").replace("</li>", "\n").strip()
+            pretty_article_text = article_text.replace("<br/>", "\n").replace("<br>", "\n").replace("</br>", "").replace("<p>", "\n").replace("</p>", "\n").replace("<hr/>", "---\n").replace("<strong>", "**").replace("</strong>", "**").replace("<h2>", "\n## ").replace("</h2>", "\n").replace("<h3>", "\n### ").replace("</h3>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<li>", "- ").replace("</li>", "\n").strip()
             article_file.write(pretty_article_text)
     if cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
@@ -954,7 +954,6 @@ def request_user(session, user_id):
     video_ids = []
 
     video_api_request = session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
-    video_api_request.raise_on_status()
     videos_request = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
     videos_request.raise_for_status()
     user_videos_json = json.loads(videos_request.text)
@@ -997,7 +996,6 @@ def request_mylist(session, mylist_id):
 
     output("Requesting mylist {0}...\n".format(mylist_id), logging.INFO)
     mylist_api_request = session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS)
-    mylist_api_request.raise_on_status()
     mylist_request = session.get(MYLIST_API.format(mylist_id), headers=API_HEADERS)
     mylist_request.raise_for_status()
     mylist_json = json.loads(mylist_request.text)
@@ -1151,7 +1149,7 @@ def download_video(session, filename, template_params):
                         return
                     else:
                         raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
-                except MP4StreamInfoError as error: # Thrown if not a valid MP4 (FLV, SWF)
+                except MP4StreamInfoError: # Thrown if not a valid MP4 (FLV, SWF)
                     raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
 
             # current_byte_pos == video_len
@@ -1173,7 +1171,7 @@ def download_video(session, filename, template_params):
         new_data_len = len(new_data)
 
         existing_byte_pos = os.path.getsize(filename)
-        if current_byte_pos - new_data_len <= 0:
+        if existing_byte_pos - new_data_len <= 0:
             output("Byte comparison block exceeds the length of the existing file. Deleting existing file and redownloading...\n", logging.WARNING)
             os.remove(filename)
             download_video(session, filename, template_params)
