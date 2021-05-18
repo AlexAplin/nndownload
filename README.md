@@ -51,8 +51,8 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -u USERNAME, --username USERNAME
-                        account username
+  -u MAIL/TEL, --username MAIL/TEL
+                        account mail address or telephone number
   -p PASSWORD, --password PASSWORD
                         account password
   --session-cookie COOKIE
