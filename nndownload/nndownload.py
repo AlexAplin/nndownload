@@ -1571,7 +1571,7 @@ def login(username, password, session_cookie):
             login_request.raise_for_status()
             if not session.cookies.get_dict().get("user_session", None):
                 output("Failed to login.\n", logging.INFO)
-                raise AuthenticationException("Failed to login. Please verify your username and password")
+                raise AuthenticationException("Failed to login. Please verify your mail/tel and password")
 
             output("Logged in.\n", logging.INFO)
         else:
@@ -1678,7 +1678,7 @@ def main():
                 raise netrc.NetrcParseError("No authenticator available for {0}".format(HOST))
         elif not cmdl_opts.no_login:
             while not account_username and not account_password and not session_cookie:
-                account_username = input("Username: ")
+                account_username = input("Mail/TEL: ")
                 if account_username and not account_password:
                     account_password = getpass.getpass("Password: ")
                 else:
