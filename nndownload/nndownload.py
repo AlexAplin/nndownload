@@ -148,7 +148,7 @@ cmdl_usage = "%(prog)s [options] input"
 cmdl_version = __version__
 cmdl_parser = argparse.ArgumentParser(usage=cmdl_usage, conflict_handler="resolve")
 
-cmdl_parser.add_argument("-u", "--username", dest="username", metavar="USERNAME", help="account username")
+cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL", help="account email address or telephone number")
 cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
 cmdl_parser.add_argument("--session-cookie", dest="session_cookie", metavar="COOKIE", help="session cookie")
 cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
@@ -1571,7 +1571,7 @@ def login(username, password, session_cookie):
             login_request.raise_for_status()
             if not session.cookies.get_dict().get("user_session", None):
                 output("Failed to login.\n", logging.INFO)
-                raise AuthenticationException("Failed to login. Please verify your mail/tel and password")
+                raise AuthenticationException("Failed to login. Please verify your account email/telephone and password")
 
             output("Logged in.\n", logging.INFO)
         else:
@@ -1678,7 +1678,7 @@ def main():
                 raise netrc.NetrcParseError("No authenticator available for {0}".format(HOST))
         elif not cmdl_opts.no_login:
             while not account_username and not account_password and not session_cookie:
-                account_username = input("Mail/TEL: ")
+                account_username = input("Email/telephone: ")
                 if account_username and not account_password:
                     account_password = getpass.getpass("Password: ")
                 else:
