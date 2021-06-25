@@ -3,3 +3,5 @@ aiohttp-socks
 beautifulsoup4
 requests
 mutagen
+setuptools
+urllib3
