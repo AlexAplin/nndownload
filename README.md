@@ -33,6 +33,8 @@ nndownload allows you to download videos, images, manga, and process other links
 - beautifulsoup4
 - requests
 - mutagen
+- setuptools
+- urllib3
 
 # Installation
 ```bash
