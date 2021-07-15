@@ -1,16 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Download videos and process other links from Niconico (nicovideo.jp)."""
-
-import aiohttp
-from aiohttp_socks import ProxyType, ProxyConnector, ChainProxyConnector
-from bs4 import BeautifulSoup
-from mutagen.mp4 import MP4, MP4StreamInfoError
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
-import requests
-
-from itertools import tee
 import argparse
 import asyncio
 import collections
@@ -26,17 +16,27 @@ import sys
 import threading
 import time
 import traceback
-import urllib.parse
 import xml.dom.minidom
+from typing import AnyStr, List
+
+import aiohttp
+import requests
+from aiohttp_socks import ProxyConnector
+from bs4 import BeautifulSoup
+from mutagen.mp4 import MP4, MP4StreamInfoError
+from requests.adapters import HTTPAdapter
+from requests.utils import add_dict_to_cookiejar
+from urllib3.util import Retry
 
 __version__ = "1.11"
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2021 Alex Aplin"
 __license__ = "MIT"
 
+MODULE_NAME = "nndownload"
 HOST = "nicovideo.jp"
 
-MY_URL =" https://www.nicovideo.jp/my"
+MY_URL = "https://www.nicovideo.jp/my"
 LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
@@ -45,7 +45,7 @@ CHANNEL_LIVES_URL = "https://ch.nicovideo.jp/{0}/live?page={1}"
 CHANNEL_BLOMAGA_URL = "https://ch.nicovideo.jp/{0}/blomaga?page={1}"
 CHANNEL_ARTICLE_URL = "https://ch.nicovideo.jp/article/{0}"
 SEIGA_USER_ILLUST_URL = "https://seiga.nicovideo.jp/user/illust/{0}?page={1}"
-SEIGA_USER_MANGA_URL = "https://seiga.nicovideo.jp/manga/list?user_id={0}&page={1}" # Not all manga are not listed with /user/manga/{0}
+SEIGA_USER_MANGA_URL = "https://seiga.nicovideo.jp/manga/list?user_id={0}&page={1}"  # Not all manga are not listed with /user/manga/{0}
 SEIGA_IMAGE_URL = "https://seiga.nicovideo.jp/seiga/{0}"
 SEIGA_MANGA_URL = "https://seiga.nicovideo.jp/comic/{0}"
 SEIGA_CHAPTER_URL = "https://seiga.nicovideo.jp/watch/{0}"
@@ -54,7 +54,11 @@ SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
-VALID_URL_RE = re.compile(r"(?:https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?(?:(?:nicovideo\.jp\/(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust)?)(?(3)\/|))|(nico\.ms)\/))(?:((?:(?:[a-z]{2})?[0-9]+)|[a-zA-z-0-9]+?)\/?)(?:\/(video|mylist|live|blomaga|list))?(?(6)\/((?:[a-z]{2})?[0-9]+))?(?:\?(?:user_id=(.*)|.*)?)?$")
+CONTENT_TYPE = r"(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust)"
+VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?"
+                          rf"(?:(?:nicovideo\.jp/{CONTENT_TYPE}?)(?(3)/|))|(nico\.ms)/)"
+                          r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list))?"
+                          r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
@@ -148,7 +152,8 @@ cmdl_usage = "%(prog)s [options] input"
 cmdl_version = __version__
 cmdl_parser = argparse.ArgumentParser(usage=cmdl_usage, conflict_handler="resolve")
 
-cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL", help="account email address or telephone number")
+cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL",
+                         help="account email address or telephone number")
 cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
 cmdl_parser.add_argument("--session-cookie", dest="session_cookie", metavar="COOKIE", help="session cookie")
 cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
@@ -159,19 +164,33 @@ cmdl_parser.add_argument("input", action="store", nargs="*", help="URLs or files
 
 dl_group = cmdl_parser.add_argument_group("download options")
 dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
-dl_group.add_argument("-o", "--output-path", dest="output_path", metavar="TEMPLATE", help="custom output path (see template options)")
-dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", type=int, help="download videos using a specified number of threads")
-dl_group.add_argument("-g", "--no-login", action="store_true", dest="no_login", help="create a download session without logging in")
-dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality", help="only download if the high quality video source is available")
-dl_group.add_argument("-a", "--add-metadata", action="store_true", dest="add_metadata", help="add metadata to video file (MP4 only)")
+dl_group.add_argument("-o", "--output-path", dest="output_path", metavar="TEMPLATE",
+                      help="custom output path (see template options)")
+dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", type=int,
+                      help="download videos using a specified number of threads")
+dl_group.add_argument("-g", "--no-login", action="store_true", dest="no_login",
+                      help="create a download session without logging in")
+dl_group.add_argument("-f", "--force-high-quality", action="store_true", dest="force_high_quality",
+                      help="only download if the high quality video source is available")
+dl_group.add_argument("-a", "--add-metadata", action="store_true", dest="add_metadata",
+                      help="add metadata to video file (MP4 only)")
 dl_group.add_argument("-m", "--dump-metadata", action="store_true", dest="dump_metadata", help="dump metadata to file")
-dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail", help="download video thumbnail")
-dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments", help="download video comments")
-dl_group.add_argument("-e", "--english", action="store_true", dest="download_english", help="request video on english site")
+dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="download_thumbnail",
+                      help="download video thumbnail")
+dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments",
+                      help="download video comments")
+dl_group.add_argument("-e", "--english", action="store_true", dest="download_english",
+                      help="request video on english site")
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality")
 dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
-dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", type=int, default=0, help="specify the index to start a playlist from (begins at 0)")
+dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", type=int, default=0,
+                      help="specify the index to start a playlist from (begins at 0)")
+
+
+# globals
+_start_time = _progress = 0
+_cmdl_opts = None
 
 
 class AuthenticationException(Exception):
@@ -204,29 +223,29 @@ class ParameterExtractionException(Exception):
 def configure_logger():
     """Initialize logger."""
 
-    if cmdl_opts.log:
+    if _cmdl_opts.log:
         logger.setLevel(logging.INFO)
-        log_handler = logging.FileHandler("[{0}] {1}.log".format("nndownload", time.strftime("%Y-%m-%d")), encoding="utf-8")
+        log_handler = logging.FileHandler(f"[{MODULE_NAME}] {time.strftime('%Y-%m-%d')}.log", encoding="utf-8")
         formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
         log_handler.setFormatter(formatter)
         logger.addHandler(log_handler)
 
 
-def log_exception(error):
+def log_exception(error: Exception):
     """Process exception for logger."""
 
-    if cmdl_opts.log:
+    if _cmdl_opts.log:
         logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
 
 
-def output(string, level=logging.INFO, force=False):
+def output(string: AnyStr, level=logging.INFO, force: bool = False):
     """Print status to console unless quiet flag is set."""
 
-    global cmdl_opts
-    if cmdl_opts.log:
+    global _cmdl_opts
+    if _cmdl_opts.log:
         logger.log(level, string.strip("\n"))
 
-    if not cmdl_opts.quiet or force:
+    if not _cmdl_opts.quiet or force:
         sys.stdout.write(string)
         sys.stdout.flush()
 
@@ -248,32 +267,32 @@ def format_bytes(number_bytes):
         raise IndexError("Could not format number of bytes")
 
 
-def calculate_speed(start, now, bytes):
+def calculate_speed(start, now, prog_bytes):
     """Calculate speed based on difference between start and current block call."""
 
     dif = now - start
-    if bytes == 0 or dif < EPSILON:
+    if prog_bytes == 0 or dif < EPSILON:
         return "N/A B"
-    return format_bytes(bytes / dif)
+    return format_bytes(prog_bytes / dif)
 
 
-def replace_extension(filename, new_extension):
+def replace_extension(filename: AnyStr, new_extension: AnyStr):
     """Replace the extension in a file path."""
 
     base_path, _ = os.path.splitext(filename)
     return "{0}.{1}".format(base_path, new_extension)
 
 
-def sanitize_for_path(value, replace=' '):
+def sanitize_for_path(value: AnyStr, replace: AnyStr = ' '):
     """Remove potentially illegal characters from a path."""
 
-    return re.sub(r'[<>\"\?\\\/\*:|]', replace, value)
+    return re.sub(r'[<>\"\?\\/\*:|]', replace, value)
 
 
-def create_filename(template_params, is_comic=False):
+def create_filename(template_params: dict, is_comic: bool = False):
     """Create filename from document parameters."""
 
-    filename_template = cmdl_opts.output_path
+    filename_template = _cmdl_opts.output_path
 
     if filename_template:
         template_dict = dict(template_params)
@@ -283,13 +302,16 @@ def create_filename(template_params, is_comic=False):
         filename = filename_template.format_map(template_dict).strip()
         if is_comic:
             os.makedirs(filename, exist_ok=True)
-        elif (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(os.path.dirname(filename)):
+        elif (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(
+                os.path.dirname(filename)):
             os.makedirs(os.path.dirname(filename), exist_ok=True)
 
         return filename
 
     elif is_comic:
-        directory = os.path.join("{0} - {1}".format(template_params["manga_id"], sanitize_for_path(template_params["manga_title"])), "{0} - {1}".format(template_params["id"], sanitize_for_path(template_params["title"]))).strip()
+        directory = os.path.join(
+            "{0} - {1}".format(template_params["manga_id"], sanitize_for_path(template_params["manga_title"])),
+            "{0} - {1}".format(template_params["id"], sanitize_for_path(template_params["title"]))).strip()
         os.makedirs(directory, exist_ok=True)
         return directory
 
@@ -298,7 +320,7 @@ def create_filename(template_params, is_comic=False):
         return sanitize_for_path(filename)
 
 
-def read_file(session, file):
+def read_file(session: requests.Session, file: AnyStr):
     """Read file and process each line as a URL."""
 
     with open(file) as file:
@@ -308,11 +330,10 @@ def read_file(session, file):
     for index, line in enumerate(content):
         try:
             output("{0}/{1}\n".format(index + 1, total_lines), logging.INFO)
-            url_mo = valid_url(line)
-            if url_mo:
-                process_url_mo(session, url_mo)
-            else:
+            url_mo = VALID_URL_RE.match(line)
+            if url_mo is None:
                 raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
+            process_url_mo(session, url_mo)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
@@ -320,7 +341,7 @@ def read_file(session, file):
             continue
 
 
-def get_playlist_from_m3u8(m3u8_text):
+def get_playlist_from_m3u8(m3u8_text: AnyStr) -> AnyStr:
     """Return last playlist from a master.m3u8 file."""
 
     best_bandwidth, best_stream = -1, None
@@ -339,7 +360,7 @@ def get_playlist_from_m3u8(m3u8_text):
     return best_stream
 
 
-def find_extension(mimetype):
+def find_extension(mimetype: AnyStr) -> AnyStr:
     """Determine the file extension from the mimetype."""
 
     return MIMETYPES.get(mimetype) or mimetypes.guess_extension(mimetype, strict=True)
@@ -347,8 +368,8 @@ def find_extension(mimetype):
 
 ## Nama methods
 
-def generate_stream(session, master_url):
-    """Output the highest quality stream URL for a live Nicoanama broadcast."""
+def generate_stream(session: requests.Session, master_url: AnyStr) -> AnyStr:
+    """Output the highest quality stream URL for a live Niconama broadcast."""
 
     output("Retrieving master playlist...\n", logging.INFO)
 
@@ -363,30 +384,30 @@ def generate_stream(session, master_url):
     return stream_url
 
 
-async def download_stream_clips(session, stream_url):
-    """Download the clips assocaited with a stream playlist and stitch them into a file."""
+async def download_stream_clips(session: requests.Session, stream_url: AnyStr):
+    """Download the clips associated with a stream playlist and stitch them into a file."""
 
     # TODO: Determine end condition, stitch downloads together, end task on completion
 
     while True:
         stream_request = session.get(stream_url)
         stream_request.raise_for_status()
-        stream_length = re.search(r"(?:#STREAM-DURATION:)(.*)", stream_request.text)[1]
+        # stream_length = re.search(r"(?:#STREAM-DURATION:)(.*)", stream_request.text)[1]
 
         clip_matches = re.compile(r"(?:#EXTINF):.*\n(.*)").findall(stream_request.text)
         if not clip_matches:
             raise FormatNotAvailableException("Could not retrieve stream clips from playlist")
 
-        else:
-            for match in clip_matches:
-                # output("{0}\n".format(match), logging.DEBUG)
-                clip_slug = match
-                clip_url = stream_url.rsplit("/", maxsplit=1)[0] + "/" + clip_slug
+        # else:
+        # for match in clip_matches:
+        # output("{0}\n".format(match), logging.DEBUG)
+        # clip_slug = match
+        # clip_url = stream_url.rsplit("/", maxsplit=1)[0] + "/" + clip_slug
 
         await asyncio.sleep(NAMA_PLAYLIST_INTERVAL_S)
 
 
-async def perform_nama_heartbeat(websocket, watching_frame):
+async def perform_nama_heartbeat(websocket: aiohttp.ClientWebSocketResponse, watching_frame: dict):
     """Send a watching frame periodically to keep the stream alive."""
 
     while True:
@@ -395,10 +416,13 @@ async def perform_nama_heartbeat(websocket, watching_frame):
         await asyncio.sleep(NAMA_HEARTBEAT_INTERVAL_S)
 
 
-async def open_nama_websocket(session, uri, event_loop, is_timeshift=False):
+async def open_nama_websocket(
+        session: requests.Session,
+        uri: AnyStr, event_loop: asyncio.AbstractEventLoop,
+        is_timeshift: bool = False
+):
     """Open a WebSocket connection to receive and generate the stream playlist URL."""
-
-    proxy = session.proxies.get("http://") # Same mount as https://
+    proxy = session.proxies.get("http://")  # Same mount as https://
     connector = ProxyConnector.from_url(proxy) if proxy else None
     async with aiohttp.ClientSession(connector=connector) as websocket_session:
         async with websocket_session.ws_connect(uri) as websocket:
@@ -408,47 +432,51 @@ async def open_nama_websocket(session, uri, event_loop, is_timeshift=False):
             try:
                 while True:
                     message = await websocket.receive()
-                    if message.type == aiohttp.WSMsgType.TEXT:
-                        frame = json.loads(message.data)
-                        frame_type = frame["type"]
-
-                        # output("SERVER: {0}\n".format(frame), logging.DEBUG)
-
-                        if frame_type == "stream":
-                            master_url = frame["data"]["uri"]
-                            stream_url = generate_stream(session, master_url)
-
-                            if is_timeshift:
-                                output("Downloading timeshifts is not currently supported.\n", logging.WARNING)
-                                break
-                                # event_loop.create_task(download_stream_clips(session, stream_url)
-                            else:
-                                output("Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n", logging.INFO)
-                                output("For more instructions on playing this stream, please consult the README.\n", logging.INFO)
-                                output("{0}\n".format(stream_url), logging.INFO, force=True)
-
-                        elif frame_type == "disconnect":
-                            command_param = frame["body"]["params"][1]
-                            output("Disconnect command sent by the server with parameter \"{0}\". Exiting...".format(command_param), logging.INFO)
-                            break
-
-                        elif frame_type == "ping":
-                            # output("Responding to ping frame.\n", logging.DEBUG)
-                            await websocket.send_str(json.dumps(PONG_FRAME))
-
-                    elif message.type == aiohttp.WSMsgType.CLOSED:
+                    if message.type == aiohttp.WSMsgType.CLOSED:
                         output("Connection closed by the server. Exiting...\n", logging.INFO)
                         break
 
-                    elif message.type == aiohttp.WSMsgType.ERROR:
+                    if message.type == aiohttp.WSMsgType.ERROR:
                         raise FormatNotAvailableException("Nama connection closed by server with error")
+
+                    if message.type != aiohttp.WSMsgType.TEXT:
+                        continue
+
+                    frame = json.loads(message.data)
+                    frame_type = frame["type"]
+
+                    # output("SERVER: {0}\n".format(frame), logging.DEBUG)
+
+                    if frame_type == "stream":
+                        master_url = frame["data"]["uri"]
+                        stream_url = generate_stream(session, master_url)
+
+                        if is_timeshift:
+                            output("Downloading timeshifts is not currently supported.\n", logging.WARNING)
+                            break
+                            # event_loop.create_task(download_stream_clips(session, stream_url)
+                        output(
+                            "Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n",
+                            logging.INFO)
+                        output("For more instructions on playing this stream, please consult the README.\n",
+                               logging.INFO)
+                        output("{0}\n".format(stream_url), logging.INFO, force=True)
+
+                    elif frame_type == "disconnect":
+                        command_param = frame["body"]["params"][1]
+                        output(f"Disconnect command sent by the server with parameter \"{command_param}\". Exiting...", logging.INFO)
+                        break
+
+                    elif frame_type == "ping":
+                        # output("Responding to ping frame.\n", logging.DEBUG)
+                        await websocket.send_str(json.dumps(PONG_FRAME))
 
             finally:
                 heartbeat.cancel()
                 return
 
 
-def reserve_timeshift(session, nama_id):
+def reserve_timeshift(session: requests.Session, nama_id: AnyStr) -> AnyStr:
     """Attempt to reserve a timeshift and generate a WebSocket URL."""
 
     timeshift_data = {"vid": nama_id.lstrip("lv")}
@@ -457,7 +485,8 @@ def reserve_timeshift(session, nama_id):
     if timeshift_use_request.status_code == 403:
         timeshift_data["overwrite"] = "0"
 
-        timeshift_reservation_request = session.post(TIMESHIFT_RESERVE_URL, headers=NAMA_ORIGIN_HEADER, data=timeshift_data)
+        timeshift_reservation_request = session.post(TIMESHIFT_RESERVE_URL, headers=NAMA_ORIGIN_HEADER,
+                                                     data=timeshift_data)
         timeshift_reservation_request.raise_for_status()
 
     nama_request = session.get(NAMA_URL.format(nama_id))
@@ -472,7 +501,7 @@ def reserve_timeshift(session, nama_id):
     return websocket_url
 
 
-def request_nama(session, nama_id):
+def request_nama(session: requests.Session, nama_id: AnyStr):
     """Generate a stream URL for a live Niconama broadcast."""
 
     nama_request = session.get(NAMA_URL.format(nama_id))
@@ -485,7 +514,7 @@ def request_nama(session, nama_id):
 
         rejection_errors = params["userProgramWatch"]["rejectedReasons"]
         if rejection_errors:
-            raise ParameterExtractionException("Stream not available to user with the following errors given: " + str(rejection_errors))
+            raise ParameterExtractionException(f"Stream not available to user with the following errors given: {rejection_errors}")
 
         websocket_url = params["site"]["relive"]["webSocketUrl"]
         event_loop = asyncio.get_event_loop()
@@ -534,10 +563,10 @@ def determine_seiga_file_type(dec_bytes):
     elif 71 == dec_bytes[0] and 73 == dec_bytes[1] and 70 == dec_bytes[2] and 6 == dec_bytes[3]:
         return "gif"
     else:
-        raise FormatNotSupportedException("Could not succesffully determine image file type")
+        raise FormatNotSupportedException("Could not determine image file type")
 
 
-def collect_seiga_image_parameters(session, document, template_params):
+def collect_seiga_image_parameters(session: requests.Session, document: BeautifulSoup, template_params: dict) -> dict:
     """Extract template parameters from a Seiga image page."""
 
     template_params["id"] = document.select("#ko_cpp")[0]["data-target_id"]
@@ -570,7 +599,7 @@ def collect_seiga_image_parameters(session, document, template_params):
 def collect_seiga_manga_parameters(session, document, template_params):
     """Extract template parameters from a Seiga manga chapter page."""
 
-    bare_chapter_id =  document.select("#full_watch_head_bar")[0]["data-theme-id"]
+    bare_chapter_id = document.select("#full_watch_head_bar")[0]["data-theme-id"]
     template_params["manga_id"] = int(document.select("#full_watch_head_bar")[0]["data-content-id"])
     template_params["manga_title"] = document.select("div.manga_title a")[0].text
     template_params["id"] = "mg" + bare_chapter_id
@@ -611,7 +640,7 @@ def download_manga_chapter(session, chapter_id):
     template_params = collect_seiga_manga_parameters(session, chapter_document, template_params)
     chapter_directory = create_filename(template_params, is_comic=True)
 
-    if not cmdl_opts.skip_media:
+    if not _cmdl_opts.skip_media:
         output("Downloading {0} to \"{1}\"...\n".format(chapter_id, chapter_directory), logging.INFO)
 
         images = chapter_document.select("img.lazyload")
@@ -641,12 +670,12 @@ def download_manga_chapter(session, chapter_id):
         output("\n", logging.DEBUG)
         output("Finished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
 
-    if cmdl_opts.dump_metadata:
+    if _cmdl_opts.dump_metadata:
         metadata_path = os.path.join(chapter_directory, "metadata.json")
         dump_metadata(metadata_path, template_params)
-    if cmdl_opts.download_thumbnail:
+    if _cmdl_opts.download_thumbnail:
         output("Downloading thumbnails for Seiga comics is not currently supported.\n", logging.WARNING)
-    if cmdl_opts.download_comments:
+    if _cmdl_opts.download_comments:
         output("Downloading comments for Seiga comics is not currently supported.\n", logging.WARNING)
 
 
@@ -678,7 +707,7 @@ def download_image(session, image_id):
 
     filename = create_filename(template_params)
 
-    if not cmdl_opts.skip_media:
+    if not _cmdl_opts.skip_media:
         output("Downloading {0} to \"{1}\"...\n".format(image_id, filename), logging.INFO)
 
         source_image_request = session.get(template_params["url"], stream=True)
@@ -690,11 +719,11 @@ def download_image(session, image_id):
 
         output("Finished donwloading {0} to \"{1}\".\n".format(image_id, filename), logging.INFO)
 
-    if cmdl_opts.dump_metadata:
+    if _cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
-    if cmdl_opts.download_thumbnail:
+    if _cmdl_opts.download_thumbnail:
         output("Downloading thumbnails for Seiga images is not currently supported.\n", logging.WARNING)
-    if cmdl_opts.download_comments:
+    if _cmdl_opts.download_comments:
         output("Downloading comments for Seiga images is not currently supported.\n", logging.WARNING)
 
 
@@ -727,8 +756,8 @@ def request_seiga_user(session, user_id):
     if total_ids == 0:
         raise ParameterExtractionException("Failed to collect user images. Please verify that the user's images page is public")
 
-    if cmdl_opts.playlist_start:
-        start_index = cmdl_opts.playlist_start
+    if _cmdl_opts.playlist_start:
+        start_index = _cmdl_opts.playlist_start
         if start_index >= len(illust_ids):
             raise ArgumentException("Starting index exceeds length of the user's available images")
         else:
@@ -776,8 +805,8 @@ def request_seiga_user_manga(session, user_id):
     if total_ids == 0:
         raise ParameterExtractionException("Failed to collect user images. Please verify that the user's manga page is public")
 
-    if cmdl_opts.playlist_start:
-        start_index = cmdl_opts.playlist_start
+    if _cmdl_opts.playlist_start:
+        start_index = _cmdl_opts.playlist_start
         if start_index >= len(manga_ids):
             raise ArgumentException("Starting index exceeds length of the user's available manga")
         else:
@@ -797,21 +826,27 @@ def request_seiga_user_manga(session, user_id):
 
 ## Channel methods
 
-def download_channel_article(session, article_id):
+def download_channel_article(session: requests.Session, article_id: AnyStr):
     """Download a blog article."""
 
     article_request = session.get(CHANNEL_ARTICLE_URL.format(article_id))
     article_request.raise_for_status()
     article_document = BeautifulSoup(article_request.text, "html.parser")
 
-    template_params = {}
-    template_params["id"] = article_id
-    template_params["ext"] = "txt"
-    template_params["blog_title"] = article_document.select_one(".blomaga_name").text
-    template_params["uploader"] = article_document.select_one(".profileArea span.name").text
+    template_params = {
+        "ext": "txt",
+        "id": article_id,
+        "blog_title": article_document.select_one(".blomaga_name").text,
+        "uploader": article_document.select_one(".profileArea span.name").text
+    }
+
     if article_document.select_one(".profileArea span.name a"):
         template_params["uploader_id"] = int(article_document.select_one(".profileArea span.name a")["href"].rsplit("/")[-1])
-    template_params["comment_count"] = int(article_document.select_one("header.content .comment_count").text if article_document.select_one("header.content .comment_count") else 0)
+
+    template_params["comment_count"] = 0
+    if article_document.select_one("header.content .comment_count"):
+        template_params["comment_count"] = int(article_document.select_one("header.content .comment_count").text)
+
     template_params["title"] = article_text = article_document.select_one("#article_blog_title").text
     template_params["published"] = article_document.select_one(".article_blog_data_first span").text
     template_params["article"] = article_text = article_document.select_one(".main_blog_txt").decode_contents()
@@ -824,21 +859,24 @@ def download_channel_article(session, article_id):
 
     filename = create_filename(template_params)
 
-    if not cmdl_opts.skip_media:
+    if not _cmdl_opts.skip_media:
         output("Downloading {0} to \"{1}\"...\n".format(article_id, filename), logging.INFO)
 
         with open(filename, "w", encoding="utf-8") as article_file:
-            pretty_article_text = article_text.replace("<br/>", "\n").replace("<br>", "\n").replace("</br>", "").replace("<p>", "\n").replace("</p>", "\n").replace("<hr/>", "---\n").replace("<strong>", "**").replace("</strong>", "**").replace("<h2>", "\n## ").replace("</h2>", "\n").replace("<h3>", "\n### ").replace("</h3>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<li>", "- ").replace("</li>", "\n").strip()
+            pretty_article_text = article_text.replace("<br/>", "\n").replace("<br>", "\n").replace("</br>", "").replace("<p>", "\n").replace(
+                "</p>", "\n").replace("<hr/>", "---\n").replace("<strong>", "**").replace("</strong>", "**").replace( "<h2>", "\n## ").replace(
+                "</h2>", "\n").replace("<h3>", "\n### ").replace("</h3>", "\n").replace("<ul>", "").replace( "</ul>", "").replace(
+                "<li>", "- ").replace("</li>", "\n").strip()
             article_file.write(pretty_article_text)
-    if cmdl_opts.dump_metadata:
+    if _cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
-    if cmdl_opts.download_comments:
+    if _cmdl_opts.download_comments:
         output("Downloading article comments is not currently supported.\n", logging.WARNING)
 
     output("Finished downloading {0} to \"{1}\".\n".format(article_id, filename), logging.INFO)
 
 
-def request_channel(session, channel_slug):
+def request_channel(session: requests.Session, channel_slug: AnyStr):
     """Request videos associated with a channel."""
 
     output("Requesting videos from channel {0}...\n".format(channel_slug), logging.INFO)
@@ -866,8 +904,8 @@ def request_channel(session, channel_slug):
         raise ParameterExtractionException("Failed to collect channel videos. Please verify that the channel's videos page is public")
     output("{} videos returned.\n".format(total_ids), logging.INFO)
 
-    if cmdl_opts.playlist_start:
-        start_index = cmdl_opts.playlist_start
+    if _cmdl_opts.playlist_start:
+        start_index = _cmdl_opts.playlist_start
         if start_index >= len(video_ids):
             raise ArgumentException("Starting index exceeds length of the channel's video playlist")
         else:
@@ -885,7 +923,7 @@ def request_channel(session, channel_slug):
             continue
 
 
-def request_channel_blog(session, channel_slug):
+def request_channel_blog(session: requests.Session, channel_slug: AnyStr):
     """Request articles associated with a channel blog."""
 
     blog_request = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, 1))
@@ -894,15 +932,16 @@ def request_channel_blog(session, channel_slug):
     total_pages = int(blog_document.select_one("span.page_all").text)
 
     for page in range(1, total_pages + 1):
-            output("Page {0}/{1}\n".format(page, total_pages), logging.INFO)
-            blog_request = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, page))
-            blog_request.raise_for_status()
-            blog_document = BeautifulSoup(blog_request.text, "html.parser")
-            articles = blog_document.select("h3:first-child a")
-            for article in articles:
-                download_channel_article(session, article["href"].rsplit("/")[-1])
+        output("Page {0}/{1}\n".format(page, total_pages), logging.INFO)
+        blog_request = session.get(CHANNEL_BLOMAGA_URL.format(channel_slug, page))
+        blog_request.raise_for_status()
+        blog_document = BeautifulSoup(blog_request.text, "html.parser")
+        articles = blog_document.select("h3:first-child a")
+        for article in articles:
+            download_channel_article(session, article["href"].rsplit("/")[-1])
 
-def request_channel_lives(session, channel_id):
+
+def request_channel_lives(session: requests.Session, channel_id: AnyStr):
     """Request lives associated with a channel."""
 
     output("Downloading channel lives is not currently supported.\n", logging.WARNING)
@@ -910,7 +949,7 @@ def request_channel_lives(session, channel_id):
 
 ## Video methods
 
-def request_video(session, video_id):
+def request_video(session: requests.Session, video_id: AnyStr):
     """Request the video page and initiate download of the video URL."""
 
     # Retrieve video info to check for availability
@@ -923,7 +962,7 @@ def request_video(session, video_id):
         raise FormatNotAvailableException("Could not retrieve video info. This video may have been deleted")
 
     concat_cookies = {}
-    if cmdl_opts.download_english:
+    if _cmdl_opts.download_english:
         concat_cookies = {**concat_cookies, **EN_COOKIE}
 
     video_request = session.get(VIDEO_URL.format(video_id), cookies=concat_cookies)
@@ -934,26 +973,26 @@ def request_video(session, video_id):
 
     filename = create_filename(template_params)
 
-    if not cmdl_opts.skip_media:
+    if not _cmdl_opts.skip_media:
         download_video(session, filename, template_params)
-        if cmdl_opts.add_metadata:
+        if _cmdl_opts.add_metadata:
             add_metadata_to_video(filename, template_params)
-    if cmdl_opts.dump_metadata:
+    if _cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
-    if cmdl_opts.download_thumbnail:
+    if _cmdl_opts.download_thumbnail:
         download_thumbnail(session, filename, template_params)
-    if cmdl_opts.download_comments:
+    if _cmdl_opts.download_comments:
         download_comments(session, filename, template_params)
 
 
-def request_user(session, user_id):
+def request_user(session: requests.Session, user_id: AnyStr):
     """Request videos associated with a user."""
 
     output("Requesting videos from user {0}...\n".format(user_id), logging.INFO)
 
     video_ids = []
 
-    video_api_request = session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
+    session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS) # OPTIONS
     videos_request = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
     videos_request.raise_for_status()
     user_videos_json = json.loads(videos_request.text)
@@ -972,8 +1011,8 @@ def request_user(session, user_id):
         for video in user_videos_json["data"]["items"]:
             video_ids.append(video["id"])
 
-    if cmdl_opts.playlist_start:
-        start_index = cmdl_opts.playlist_start
+    if _cmdl_opts.playlist_start:
+        start_index = _cmdl_opts.playlist_start
         if start_index >= len(video_ids):
             raise ArgumentException("Starting index exceeds length of the user's video playlist")
         else:
@@ -991,18 +1030,18 @@ def request_user(session, user_id):
             continue
 
 
-def request_mylist(session, mylist_id):
+def request_mylist(session: requests.Session, mylist_id: AnyStr):
     """Request videos associated with a mylist."""
 
     output("Requesting mylist {0}...\n".format(mylist_id), logging.INFO)
-    mylist_api_request = session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS)
+    session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS) # OPTIONS
     mylist_request = session.get(MYLIST_API.format(mylist_id), headers=API_HEADERS)
     mylist_request.raise_for_status()
     mylist_json = json.loads(mylist_request.text)
     items = mylist_json["data"]["mylist"]["items"]
 
-    if cmdl_opts.playlist_start:
-        start_index = cmdl_opts.playlist_start
+    if _cmdl_opts.playlist_start:
+        start_index = _cmdl_opts.playlist_start
         if start_index >= len(items):
             raise ArgumentException("Starting index exceeds length of the mylist")
         else:
@@ -1020,7 +1059,7 @@ def request_mylist(session, mylist_id):
             continue
 
 
-def request_user_mylists(session, user_id):
+def request_user_mylists(session: requests.Session, user_id: AnyStr):
     """Request mylists associated with a user."""
 
     output("Requesting mylists from user {0}...\n".format(user_id), logging.INFO)
@@ -1043,14 +1082,14 @@ def request_user_mylists(session, user_id):
 def show_multithread_progress(video_len):
     """Track overall download progress across threads."""
 
-    global progress, start_time
+    global _progress, _start_time
     finished = False
     while not finished:
-        if progress >= video_len:
+        if _progress >= video_len:
             finished = True
-        done = int(25 * progress / video_len)
-        percent = int(100 * progress / video_len)
-        speed_str = calculate_speed(start_time, time.time(), progress)
+        done = int(25 * _progress / video_len)
+        percent = int(100 * _progress / video_len)
+        speed_str = calculate_speed(_start_time, time.time(), _progress)
         output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
 
 
@@ -1060,13 +1099,13 @@ def update_multithread_progress(bytes_len):
     lock = threading.Lock()
     lock.acquire()
     try:
-        global progress
-        progress += bytes_len
+        global _progress
+        _progress += bytes_len
     finally:
         lock.release()
 
 
-def download_video_part(start, end, filename, session, url):
+def download_video_part(session: requests.Session, start, end, filename: AnyStr, url: AnyStr):
     """Download a video part using specified start and end byte boundaries."""
 
     resume_header = {"Range": "bytes={0}-{1}".format(start, end - 1)}
@@ -1075,7 +1114,7 @@ def download_video_part(start, end, filename, session, url):
     dl_stream.raise_for_status()
     stream_iterator = dl_stream.iter_content(BLOCK_SIZE)
 
-    part_length = end - start
+    # part_length = end - start
     current_pos = start
 
     with open(filename, "r+b") as file:
@@ -1086,7 +1125,7 @@ def download_video_part(start, end, filename, session, url):
             update_multithread_progress(len(block))
 
 
-def download_video(session, filename, template_params):
+def download_video(session: requests.Session, filename: AnyStr, template_params: dict):
     """Download video from response URL and display progress."""
 
     output("Downloading {0} to \"{1}\"...\n".format(template_params["id"], filename), logging.INFO)
@@ -1095,16 +1134,16 @@ def download_video(session, filename, template_params):
     dl_stream.raise_for_status()
     video_len = int(dl_stream.headers["content-length"])
 
-    if cmdl_opts.threads:
+    if _cmdl_opts.threads:
         output("Multithreading is experimental and will overwrite any existing files.\n", logging.WARNING)
 
-        threads = int(cmdl_opts.threads)
+        threads = int(_cmdl_opts.threads)
         if threads <= 0:
             raise ArgumentException("Thread number must be a positive integer")
 
         # Track total bytes downloaded across threads
-        global progress
-        progress = 0
+        global _progress
+        _progress = 0
 
         # Pad out file to full length
         file = open(filename, "wb")
@@ -1114,27 +1153,30 @@ def download_video(session, filename, template_params):
         # Calculate ranges for threads and dispatch
         part = math.ceil(video_len / threads)
 
-        global start_time
-        start_time = time.time()
+        global _start_time
+        _start_time = time.time()
 
         for i in range(threads):
             start = part * i
             end = video_len if i == threads - 1 else start + part
 
-            part_thread = threading.Thread(target=download_video_part, kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"]})
+            part_thread = threading.Thread(
+                target=download_video_part,
+                kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"]}
+            )
             part_thread.setDaemon(True)
             part_thread.start()
 
         progress_thread = threading.Thread(target=show_multithread_progress, kwargs={"video_len": video_len})
         progress_thread.start()
-        progress_thread.join() # Wait for progress thread to terminate
+        progress_thread.join()  # Wait for progress thread to terminate
         output("\n", logging.DEBUG)
 
         output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
         return
 
     if os.path.isfile(filename):
-        with open(filename, "rb") as file:
+        with open(filename, "rb"):
             current_byte_pos = os.path.getsize(filename)
             if current_byte_pos < video_len:
                 file_condition = "ab"
@@ -1144,13 +1186,19 @@ def download_video(session, filename, template_params):
 
             elif current_byte_pos > video_len:
                 try:
-                    if MP4(filename).tags: # Video metadata is only written after a complete download
+                    if MP4(filename).tags:  # Video metadata is only written after a complete download
                         output("Existing file container has metadata written and should be complete.\n", logging.INFO)
                         return
                     else:
-                        raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
-                except MP4StreamInfoError: # Thrown if not a valid MP4 (FLV, SWF)
-                    raise FormatNotAvailableException("Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and use --force-high-quality to resume this download when the high quality source is available.\n")
+                        raise FormatNotAvailableException(
+                            "Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and "
+                            "use --force-high-quality to resume this download when the high quality source is available.\n"
+                        )
+                except MP4StreamInfoError:  # Thrown if not a valid MP4 (FLV, SWF)
+                    raise FormatNotAvailableException(
+                        "Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and use "
+                        "--force-high-quality to resume this download when the high quality source is available.\n"
+                    )
 
             # current_byte_pos == video_len
             else:
@@ -1194,13 +1242,13 @@ def download_video(session, filename, template_params):
 
     with open(filename, file_condition) as file:
         file.seek(dl)
-        start_time = time.time()
+        _start_time = time.time()
         for block in stream_iterator:
             dl += len(block)
             file.write(block)
             done = int(25 * dl / video_len)
             percent = int(100 * dl / video_len)
-            speed_str = calculate_speed(start_time, time.time(), dl)
+            speed_str = calculate_speed(_start_time, time.time(), dl)
             output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
         output("\n", logging.DEBUG)
 
@@ -1208,21 +1256,21 @@ def download_video(session, filename, template_params):
     return
 
 
-def perform_heartbeat(session, heartbeat_url, heartbeat_request):
+def perform_heartbeat(session: requests.Session, heartbeat_url: AnyStr, api_request_el: xml.dom.minidom.Node):
     """Perform a response heartbeat to keep the video download connection alive."""
-
-    heartbeat_request = session.post(heartbeat_url, data=heartbeat_request.toxml())
-    heartbeat_request.raise_for_status()
-    heartbeat_request = xml.dom.minidom.parseString(heartbeat_request.text).getElementsByTagName("session")[0]
-    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (session, heartbeat_url, heartbeat_request))
+    heartbeat_response = session.post(heartbeat_url, data=api_request_el.toxml())
+    heartbeat_response.raise_for_status()
+    heartbeat_response_el = xml.dom.minidom.parseString(heartbeat_response.text).getElementsByTagName("session")[0]
+    heartbeat_timer = threading.Timer(DMC_HEARTBEAT_INTERVAL_S, perform_heartbeat, (session, heartbeat_url, heartbeat_response_el)
+    )
     heartbeat_timer.daemon = True
     heartbeat_timer.start()
 
 
-def select_dmc_quality(template_params, template_key, sources, quality=""):
+def select_dmc_quality(template_params: dict, template_key: AnyStr, sources: list, quality="") -> List[AnyStr]:
     """Select the specified quality from a sources list on DMC videos."""
 
-    if quality and cmdl_opts.force_high_quality:
+    if quality and _cmdl_opts.force_high_quality:
         output("-f/--force-high-quality active. Ignoring quality...\n", logging.WARNING)
 
     # Assumes qualities are in descending order
@@ -1232,9 +1280,9 @@ def select_dmc_quality(template_params, template_key, sources, quality=""):
     lq_available = lowest_quality["isAvailable"]
 
     # quality = "highest"
-    if not hq_available and (cmdl_opts.force_high_quality or (quality and quality.lower() == "highest")):
+    if not hq_available and (_cmdl_opts.force_high_quality or (quality and quality.lower() == "highest")):
         raise FormatNotAvailableException("Highest quality is not currently available")
-    elif cmdl_opts.force_high_quality or (quality and quality.lower() == "highest"):
+    elif _cmdl_opts.force_high_quality or (quality and quality.lower() == "highest"):
         template_params[template_key] = highest_quality["id"]
         return [template_params[template_key]]
 
@@ -1242,7 +1290,7 @@ def select_dmc_quality(template_params, template_key, sources, quality=""):
     if (quality and quality.lower() == "lowest") and lq_available:
         template_params[template_key] = lowest_quality["id"]
         return [template_params[template_key]]
-    elif (quality and quality.lower() == "lowest"):
+    elif quality and quality.lower() == "lowest":
         raise FormatNotAvailableException("Lowest quality not available. Please verify that the video is able to be viewed")
 
     # Other specified quality
@@ -1258,12 +1306,12 @@ def select_dmc_quality(template_params, template_key, sources, quality=""):
 
     # Default (return all qualities)
     else:
-        defaulty_quality = bare_sources[0]
-        template_params[template_key] = defaulty_quality
-        return [defaulty_quality]
+        default_quality = bare_sources[0]
+        template_params[template_key] = default_quality
+        return [default_quality]
 
 
-def perform_api_request(session, document):
+def perform_api_request(session: requests.Session, document: BeautifulSoup) -> dict:
     """Collect parameters from video document and build API request for video URL."""
 
     template_params = {}
@@ -1280,15 +1328,26 @@ def perform_api_request(session, document):
 
         # Perform request to Dwango Media Cluster (DMC)
         if params["media"]["delivery"]["movie"].get("session"):
-            api_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"] + "?suppress_response_codes=true&_format=xml"
+            api_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"]
+            api_url += "?suppress_response_codes=true&_format=xml"
             recipe_id = params["media"]["delivery"]["movie"]["session"]["recipeId"]
             content_id = params["media"]["delivery"]["movie"]["session"]["contentId"]
             protocol = params["media"]["delivery"]["movie"]["session"]["protocols"][0]
             file_extension = template_params["ext"]
             priority = params["media"]["delivery"]["movie"]["session"]["priority"]
 
-            video_sources = select_dmc_quality(template_params, "video_quality", params["media"]["delivery"]["movie"]["videos"], cmdl_opts.video_quality)
-            audio_sources = select_dmc_quality(template_params, "audio_quality", params["media"]["delivery"]["movie"]["audios"], cmdl_opts.audio_quality)
+            video_sources = select_dmc_quality(
+                template_params,
+                "video_quality",
+                params["media"]["delivery"]["movie"]["videos"],
+                _cmdl_opts.video_quality
+            )
+            audio_sources = select_dmc_quality(
+                template_params,
+                "audio_quality",
+                params["media"]["delivery"]["movie"]["audios"],
+                _cmdl_opts.audio_quality
+            )
 
             heartbeat_lifetime = params["media"]["delivery"]["movie"]["session"]["heartbeatLifetime"]
             token = params["media"]["delivery"]["movie"]["session"]["token"]
@@ -1381,17 +1440,18 @@ def perform_api_request(session, document):
 
             output("Performing initial API request...\n", logging.INFO)
             headers = {"Content-Type": "application/xml"}
-            api_request = session.post(api_url, headers=headers, data=root.toxml())
-            api_request.raise_for_status()
-            api_request = xml.dom.minidom.parseString(api_request.text)
+            api_response = session.post(api_url, headers=headers, data=root.toxml())
+            api_response.raise_for_status()
+            api_request = xml.dom.minidom.parseString(api_response.text)
             template_params["url"] = api_request.getElementsByTagName("content_uri")[0].firstChild.nodeValue
             output("Performed initial API request.\n", logging.INFO)
 
             # Collect response for heartbeat
             session_id = api_request.getElementsByTagName("id")[0].firstChild.nodeValue
-            api_request = api_request.getElementsByTagName("session")[0]
-            heartbeat_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"] + "/" + session_id + "?_format=xml&_method=PUT"
-            perform_heartbeat(session, heartbeat_url, api_request)
+            session_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"]
+            heartbeat_url = f"{session_url}/{session_id}?_format=xml&_method=PUT"
+            api_request_el = api_request.getElementsByTagName("session")[0]
+            perform_heartbeat(session, heartbeat_url, api_request_el)
 
         else:
             raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
@@ -1409,7 +1469,7 @@ def perform_api_request(session, document):
 
 ## Metadata extraction
 
-def collect_video_parameters(session, template_params, params):
+def collect_video_parameters(session: requests.Session, template_params: dict, params: dict) -> dict:
     """Collect video parameters to make them available for an output filename template."""
 
     if params.get("video"):
@@ -1419,12 +1479,12 @@ def collect_video_parameters(session, template_params, params):
         template_params["uploader_id"] = int(params["owner"]["id"]) if params.get("owner") else None
         template_params["description"] = params["video"]["description"]
 
-        template_params["thumbnail_url"] = ( # Use highest quality thumbnail available
-            params["video"]["thumbnail"]["ogp"]
-            or params["video"]["thumbnail"]["player"]
-            or params["video"]["thumbnail"]["largeUrl"]
-            or params["video"]["thumbnail"]["middleUrl"]
-            or params["video"]["thumbnail"]["url"])
+        template_params["thumbnail_url"] = (  # Use highest quality thumbnail available
+                params["video"]["thumbnail"]["ogp"]
+                or params["video"]["thumbnail"]["player"]
+                or params["video"]["thumbnail"]["largeUrl"]
+                or params["video"]["thumbnail"]["middleUrl"]
+                or params["video"]["thumbnail"]["url"])
 
         template_params["thread_id"] = int(params["comment"]["threads"][0]["id"])
         template_params["published"] = params["video"]["registeredAt"]
@@ -1449,7 +1509,7 @@ def collect_video_parameters(session, template_params, params):
     # As of 2021, all videos are served on the HTML5 player as .mp4
     # This is maintained as a sanity check
     template_params["ext"] = thumb_info_document.getElementsByTagName("movie_type")[0].firstChild.nodeValue
-    if (template_params["ext"] == "swf" or template_params["ext"] == "flv"):
+    if template_params["ext"] == "swf" or template_params["ext"] == "flv":
         template_params["ext"] = "mp4"
 
     template_params["size_high"] = int(thumb_info_document.getElementsByTagName("size_high")[0].firstChild.nodeValue)
@@ -1459,17 +1519,19 @@ def collect_video_parameters(session, template_params, params):
     if not template_params["uploader_id"]:
         channel_id = thumb_info_document.getElementsByTagName("ch_id")
         user_id = thumb_info_document.getElementsByTagName("user_id")
-        template_params["uploader_id"] = int(channel_id[0].firstChild.nodeValue) if channel_id else int(user_id[0].firstChild.nodeValue) if user_id else None
+        template_params["uploader_id"] = int(channel_id[0].firstChild.nodeValue) if channel_id else int(
+            user_id[0].firstChild.nodeValue) if user_id else None
 
     if not template_params["uploader"]:
         channel_name = thumb_info_document.getElementsByTagName("ch_name")
         user_nickname = thumb_info_document.getElementsByTagName("user_nickname")
-        template_params["uploader"] = channel_name[0].firstChild.nodeValue if channel_name else user_nickname[0].firstChild.nodeValue if user_nickname else None
+        template_params["uploader"] = channel_name[0].firstChild.nodeValue if channel_name else user_nickname[
+            0].firstChild.nodeValue if user_nickname else None
 
     return template_params
 
 
-def dump_metadata(filename, template_params):
+def dump_metadata(filename: AnyStr, template_params: dict):
     """Dump the collected video metadata to a file."""
 
     output("Downloading metadata for {0}...\n".format(template_params["id"]), logging.INFO)
@@ -1482,7 +1544,7 @@ def dump_metadata(filename, template_params):
     output("Finished downloading metadata for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
-def download_thumbnail(session, filename, template_params):
+def download_thumbnail(session: requests.Session, filename: AnyStr, template_params: dict):
     """Download the video thumbnail."""
 
     output("Downloading thumbnail for {0}...\n".format(template_params["id"]), logging.INFO)
@@ -1499,14 +1561,14 @@ def download_thumbnail(session, filename, template_params):
     output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
-def download_comments(session, filename, template_params):
+def download_comments(session: requests.Session, filename: AnyStr, template_params: dict):
     """Download the video comments."""
 
     output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "xml")
 
-    post_packet = COMMENTS_POST_EN if cmdl_opts.download_english else COMMENTS_POST_JP
+    post_packet = COMMENTS_POST_EN if _cmdl_opts.download_english else COMMENTS_POST_JP
     get_comments_request = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
     get_comments_request.raise_for_status()
     with open(filename, "wb") as file:
@@ -1515,7 +1577,7 @@ def download_comments(session, filename, template_params):
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
-def add_metadata_to_video(filename, template_params):
+def add_metadata_to_video(filename: AnyStr, template_params: dict):
     """Add metadata to MP4 container."""
 
     if template_params["ext"] == "mp4":
@@ -1523,17 +1585,17 @@ def add_metadata_to_video(filename, template_params):
         video_file = MP4(filename)
         if not video_file.tags:
             video_file.add_tags()
-        video_file["\251nam"] = template_params["title"] # Title
-        video_file["\251ART"] = template_params["uploader"] # Uploader
-        video_file["desc"] = template_params["description"] # Description
+        video_file["\251nam"] = template_params["title"]  # Title
+        video_file["\251ART"] = template_params["uploader"]  # Uploader
+        video_file["desc"] = template_params["description"]  # Description
         video_file.save(filename)
     else:
         output("Container metadata is only supported for MP4s. Skipping...\n", logging.INFO)
 
 
-## Main entry
+# Main entry
 
-def login(username, password, session_cookie):
+def login(username: str, password: str, session_cookie: str) -> requests.Session:
     """Login to Nico and create a session."""
 
     session = requests.session()
@@ -1549,16 +1611,16 @@ def login(username, password, session_cookie):
     session.mount('http://', adapter)
     session.mount('https://', adapter)
 
-    session.headers.update({"User-Agent": "nndownload/{0}".format(__version__)})
+    session.headers.update({"User-Agent": f"{MODULE_NAME}/{__version__}"})
 
-    if cmdl_opts.proxy:
+    if _cmdl_opts.proxy:
         proxies = {
-            "http": cmdl_opts.proxy,
-            "https": cmdl_opts.proxy
+            "http": _cmdl_opts.proxy,
+            "https": _cmdl_opts.proxy
         }
         session.proxies.update(proxies)
 
-    if not cmdl_opts.no_login:
+    if not _cmdl_opts.no_login:
         if not session_cookie:
             output("Logging in...\n", logging.INFO)
 
@@ -1582,7 +1644,7 @@ def login(username, password, session_cookie):
             }
 
             cookie_jar = session.cookies
-            session.cookies = requests.utils.add_dict_to_cookiejar(cookie_jar, session_dict)
+            session.cookies = add_dict_to_cookiejar(cookie_jar, session_dict)
 
             my_request = session.get(MY_URL)
             my_request.raise_for_status()
@@ -1592,15 +1654,8 @@ def login(username, password, session_cookie):
     return session
 
 
-def valid_url(url):
-    """Check if the URL is valid and can be processed."""
-
-    url_mo = VALID_URL_RE.match(url)
-    return url_mo if not None else False
-
-
-def process_url_mo(session, url_mo):
-    """Determine which function should process this URL object."""
+def process_url_mo(session, url_mo: re.Match[AnyStr]):
+    """Dispatches URL to the appropriate function."""
 
     url_id = url_mo.group(5)
     if url_mo.group(8):
@@ -1662,13 +1717,13 @@ def main():
     try:
         configure_logger()
 
-        account_username = cmdl_opts.username
-        account_password = cmdl_opts.password
-        session_cookie = cmdl_opts.session_cookie
+        account_username = _cmdl_opts.username
+        account_password = _cmdl_opts.password
+        session_cookie = _cmdl_opts.session_cookie
 
-        if cmdl_opts.netrc:
-            if cmdl_opts.username or cmdl_opts.password or cmdl_opts.session_cookie:
-                output("Ignorning input credentials in favor of .netrc.\n", logging.WARNING)
+        if _cmdl_opts.netrc:
+            if _cmdl_opts.username or _cmdl_opts.password or _cmdl_opts.session_cookie:
+                output("Ignoring input credentials in favor of .netrc.\n", logging.WARNING)
 
             account_credentials = netrc.netrc().authenticators(HOST)
             if account_credentials:
@@ -1676,7 +1731,7 @@ def main():
                 account_password = account_credentials[2]
             else:
                 raise netrc.NetrcParseError("No authenticator available for {0}".format(HOST))
-        elif not cmdl_opts.no_login:
+        elif not _cmdl_opts.no_login:
             while not account_username and not account_password and not session_cookie:
                 account_username = input("Email/telephone: ")
                 if account_username and not account_password:
@@ -1684,20 +1739,26 @@ def main():
                 else:
                     session_cookie = input("Session cookie: ")
         else:
-            output("Proceeding with no login. Some videos may not be available for download or may only be available in a lower quality. For access to all videos, please provide a login with --username/--password or --netrc.\n", logging.WARNING)
+            output("Proceeding with no login. Some videos may not be available for download or may only be available "
+                   "in a lower quality. For access to all videos, please provide a login with --username/--password "
+                   "or --netrc.\n", logging.WARNING)
 
         session = login(account_username, account_password, session_cookie)
 
-        for arg_item in cmdl_opts.input:
+        for arg_item in _cmdl_opts.input:
             try:
                 # Test if input is a valid URL or file
-                url_mo = valid_url(arg_item)
+                url_mo = VALID_URL_RE.match(arg_item)
 
-                if url_mo:
-                    process_url_mo(session, url_mo)
-                else:
-                    output("Argument not recognized as a valid Nico URL. Attemtping to read argument as file path...\n", logging.INFO)
+                if url_mo is None:
+                    output(
+                        "Argument not recognized as a valid Nico URL. Attempting to read argument as file path...\n",
+                        logging.INFO
+                    )
                     read_file(session, arg_item)
+                    continue
+
+                process_url_mo(session, url_mo)
 
             except Exception as error:
                 log_exception(error)
@@ -1712,7 +1773,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        cmdl_opts = cmdl_parser.parse_args()
+        _cmdl_opts = cmdl_parser.parse_args()
         main()
     except KeyboardInterrupt:
         sys.exit(1)
