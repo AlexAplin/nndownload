@@ -992,7 +992,7 @@ def request_user(session: requests.Session, user_id: AnyStr):
 
     video_ids = []
 
-    # video_api_request = session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
+    session.options(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS) # OPTIONS
     videos_request = session.get(USER_VIDEOS_API.format(user_id, USER_VIDEOS_API_N, 1), headers=API_HEADERS)
     videos_request.raise_for_status()
     user_videos_json = json.loads(videos_request.text)
@@ -1034,7 +1034,7 @@ def request_mylist(session: requests.Session, mylist_id: AnyStr):
     """Request videos associated with a mylist."""
 
     output("Requesting mylist {0}...\n".format(mylist_id), logging.INFO)
-    # mylist_api_request = session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS)
+    session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS) # OPTIONS
     mylist_request = session.get(MYLIST_API.format(mylist_id), headers=API_HEADERS)
     mylist_request.raise_for_status()
     mylist_json = json.loads(mylist_request.text)
