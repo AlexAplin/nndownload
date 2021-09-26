@@ -1327,6 +1327,16 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
         if params["video"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
+        if not params["media"]["delivery"]:
+            if params["payment"]["video"]["isPpv"]:
+                raise FormatNotAvailableException("Video requires payment")
+            elif params["payment"]["video"]["isAdmission"]:
+                raise FormatNotAvailableException("Video requires channel membership")
+            elif params["payment"]["video"]["isPremium"]:
+                raise FormatNotAvailableException("Video requires premium")
+            else:
+                raise FormatNotAvailableException("Video media could not be retrieved")
+
         template_params = collect_video_parameters(session, template_params, params)
 
         # Perform request to Dwango Media Cluster (DMC)
