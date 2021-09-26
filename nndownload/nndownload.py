@@ -73,7 +73,6 @@ COMMENTS_API = "http://nmsg.nicovideo.jp/api"
 COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
 COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
 REGION_LOCK_ERROR = "お住まいの地域・国からは視聴することができません。"
-GONE_ERROR = "この動画は存在しないか、削除された可能性があります。"
 
 USER_VIDEOS_API_N = 25
 NAMA_HEARTBEAT_INTERVAL_S = 30
@@ -959,7 +958,11 @@ def request_video(session: requests.Session, video_id: AnyStr):
     video_info = xml.dom.minidom.parseString(thumb_info_request.text)
 
     if video_info.firstChild.getAttribute("status") != "ok":
-        raise FormatNotAvailableException("Could not retrieve video info. This video may have been deleted")
+        video_error_code = video_info.getElementsByTagName("error")[0].getElementsByTagName("code")[0].firstChild.nodeValue
+        if video_error_code == "DELETED":
+            raise FormatNotAvailableException("Video was deleted")
+        else:
+            raise FormatNotAvailableException("Could not retrieve video info from thumbnail API")
 
     concat_cookies = {}
     if _cmdl_opts.download_english:
@@ -1460,7 +1463,6 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
         potential_region_error = document.select_one("p.font12")
         if potential_region_error and potential_region_error.text == REGION_LOCK_ERROR:
             raise ParameterExtractionException("This video is not available in your region")
-
         else:
             raise ParameterExtractionException("Failed to collect video paramters")
 
@@ -1512,6 +1514,7 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
     if template_params["ext"] == "swf" or template_params["ext"] == "flv":
         template_params["ext"] = "mp4"
 
+    # No longer really relevant for new videos, but the API continues to report for pre-DMC viodeos
     template_params["size_high"] = int(thumb_info_document.getElementsByTagName("size_high")[0].firstChild.nodeValue)
     template_params["size_low"] = int(thumb_info_document.getElementsByTagName("size_low")[0].firstChild.nodeValue)
 
