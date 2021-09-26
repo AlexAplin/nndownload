@@ -961,6 +961,8 @@ def request_video(session: requests.Session, video_id: AnyStr):
         video_error_code = video_info.getElementsByTagName("error")[0].getElementsByTagName("code")[0].firstChild.nodeValue
         if video_error_code == "DELETED":
             raise FormatNotAvailableException("Video was deleted")
+        elif video_error_code == "NOT_FOUND":
+            raise FormatNotAvailableException("Video does not exist")
         else:
             raise FormatNotAvailableException("Could not retrieve video info from thumbnail API")
 
@@ -1327,20 +1329,13 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
         if params["video"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
-        if not params["media"]["delivery"]:
-            if params["payment"]["video"]["isPpv"]:
-                raise FormatNotAvailableException("Video requires payment")
-            elif params["payment"]["video"]["isAdmission"]:
-                raise FormatNotAvailableException("Video requires channel membership")
-            elif params["payment"]["video"]["isPremium"]:
-                raise FormatNotAvailableException("Video requires premium")
-            else:
-                raise FormatNotAvailableException("Video media could not be retrieved")
-
         template_params = collect_video_parameters(session, template_params, params)
 
+        if _cmdl_opts.skip_media:
+            return template_params
+        
         # Perform request to Dwango Media Cluster (DMC)
-        if params["media"]["delivery"]["movie"].get("session"):
+        elif params["media"]["delivery"]:
             api_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"]
             api_url += "?suppress_response_codes=true&_format=xml"
             recipe_id = params["media"]["delivery"]["movie"]["session"]["recipeId"]
@@ -1467,7 +1462,10 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             perform_heartbeat(session, heartbeat_url, api_request_el)
 
         else:
-            raise ParameterExtractionException("Failed to find video URL. Nico may have updated their player")
+            if params["payment"]["video"]["isPremium"] or params["payment"]["video"]["isAdmission"] or params["payment"]["video"]["isPpv"]:
+                raise FormatNotAvailableException("Video requires payment or membership to download")
+            else:
+                raise FormatNotAvailableException("Video media not available for download")
 
     else:
         potential_region_error = document.select_one("p.font12")
