@@ -285,7 +285,7 @@ def replace_extension(filename: AnyStr, new_extension: AnyStr):
 def sanitize_for_path(value: AnyStr, replace: AnyStr = ' '):
     """Remove potentially illegal characters from a path."""
 
-    return re.sub(r'[<>\"\?\\/\*:|]', replace, value)
+    return re.sub(r'[<>\"\?\\/\*:|]', replace, value).strip()
 
 
 def create_filename(template_params: dict, is_comic: bool = False):
@@ -1333,7 +1333,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
 
         if _cmdl_opts.skip_media:
             return template_params
-        
+
         # Perform request to Dwango Media Cluster (DMC)
         elif params["media"]["delivery"]:
             api_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"]
