@@ -17,7 +17,7 @@ import threading
 import time
 import traceback
 import xml.dom.minidom
-from typing import AnyStr, List
+from typing import AnyStr, List, Match
 
 import aiohttp
 import requests
@@ -1665,7 +1665,7 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
     return session
 
 
-def process_url_mo(session, url_mo: re.Match[AnyStr]):
+def process_url_mo(session, url_mo: Match):
     """Dispatches URL to the appropriate function."""
 
     url_id = url_mo.group(5)
