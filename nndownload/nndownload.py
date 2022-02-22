@@ -28,7 +28,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
 
-__version__ = "1.11.2"
+__version__ = "1.11.3"
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2021 Alex Aplin"
 __license__ = "MIT"
