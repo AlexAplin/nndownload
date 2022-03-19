@@ -41,6 +41,7 @@ MY_URL = "https://www.nicovideo.jp/my"
 LOGIN_URL = "https://account.nicovideo.jp/login/redirector?show_button_twitter=1&site=niconico&show_button_facebook=1&sec=header_pc&next_url=/"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
+SERIES_URL = "https://www.nicovideo.jp/series/{0}"
 CHANNEL_VIDEOS_URL = "https://ch.nicovideo.jp/{0}/video?page={1}"
 CHANNEL_LIVES_URL = "https://ch.nicovideo.jp/{0}/live?page={1}"
 CHANNEL_BLOMAGA_URL = "https://ch.nicovideo.jp/{0}/blomaga?page={1}"
@@ -55,7 +56,7 @@ SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
-CONTENT_TYPE = r"(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust)"
+CONTENT_TYPE = r"(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust|series)"
 VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?"
                           rf"(?:(?:nicovideo\.jp/{CONTENT_TYPE}?)(?(3)/|))|(nico\.ms)/)"
                           r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list))?"
@@ -1085,6 +1086,36 @@ def request_user_mylists(session: requests.Session, user_id: AnyStr):
             continue
 
 
+def request_series(session: requests.Session, series_id: AnyStr):
+    "Request videos associated with a series."
+
+    output("Requesting series {0}...\n".format(series_id), logging.INFO)
+    series_request = session.get(SERIES_URL.format(series_id))
+    series_request.raise_for_status()
+    series_page = BeautifulSoup(series_request.text, "html.parser")
+
+    series_videos = series_page.select("div.SeriesVideoListContainer div.NC-MediaObject-main a")
+
+    if len(series_videos) == 0:
+        output("No videos identified for series.\n", logging.INFO)
+        return
+
+    video_ids = []
+    for link in series_videos:
+        unstripped_id = link["href"]
+        video_ids.append(re.sub(r"^https://www.nicovideo.jp/watch/", "", unstripped_id))
+
+    for index, video_id in enumerate(video_ids):
+        try:
+            output("{0}/{1}\n".format(index + 1, len(video_ids)), logging.INFO)
+            request_video(session, video_id)
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            traceback.print_exc()
+            continue
+
+
 def show_multithread_progress(video_len):
     """Track overall download progress across threads."""
 
@@ -1746,6 +1777,8 @@ def process_url_mo(session, url_mo: Match):
             raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(3) == "watch" or url_mo.group(4) == "nico.ms":
         request_video(session, url_id)
+    elif url_mo.group(3) == "series":
+        request_series(session, url_id)
     else:
         raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
 
