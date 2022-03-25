@@ -1199,9 +1199,9 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
 
             part_thread = threading.Thread(
                 target=download_video_part,
-                kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"]}
+                kwargs={"start": start, "end": end, "filename": filename, "session": session, "url": template_params["url"]},
+                daemon=True
             )
-            part_thread.setDaemon(True)
             part_thread.start()
 
         progress_thread = threading.Thread(target=show_multithread_progress, kwargs={"video_len": video_len})
