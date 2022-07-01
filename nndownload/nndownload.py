@@ -1827,13 +1827,16 @@ def main():
                     )
                     read_file(session, arg_item)
                     continue
-
                 process_url_mo(session, url_mo)
 
             except Exception as error:
-                log_exception(error)
-                traceback.print_exc()
-                continue
+                if len(_cmdl_opts.input) == 1:
+                    raise
+                else:
+                    log_exception(error)
+                    traceback.print_exc()
+                    continue
+
 
     except Exception as error:
         log_exception(error)
