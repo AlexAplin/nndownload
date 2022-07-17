@@ -125,6 +125,8 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - size_high (videos)
 - size_low (videos)
 - thread_id (videos)
+- thread_key (videos)
+- thread_params (videos)
 - thumbnail_url (videos)
 
 ### Using Stream Links

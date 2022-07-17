@@ -71,9 +71,9 @@ MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}?pageSize=500"  # 500 vid
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
-COMMENTS_API = "http://nmsg.nicovideo.jp/api"
-COMMENTS_POST_JP = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" scores=\"1\"/></packet>"
-COMMENTS_POST_EN = "<packet><thread thread=\"{0}\" version=\"20061206\" res_from=\"-1000\" language=\"1\" scores=\"1\"/></packet>"
+COMMENTS_API = "https://nvcomment.nicovideo.jp/v1/threads"
+COMMENTS_API_POST_DATA = "{{\'params\':{0},\'threadKey\':\'{1}\',\'additionals\':{{}}}}"
+
 REGION_LOCK_ERROR = "お住まいの地域・国からは視聴することができません。"
 
 USER_VIDEOS_API_N = 25
@@ -1529,6 +1529,8 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
                 or params["video"]["thumbnail"]["url"])
 
         template_params["thread_id"] = int(params["comment"]["threads"][0]["id"])
+        template_params["thread_key"] = params["comment"]["nvComment"]["threadKey"]
+        template_params["thread_params"] = params["comment"]["nvComment"]["params"]
         template_params["published"] = params["video"]["registeredAt"]
         template_params["duration"] = params["video"]["duration"]
         template_params["view_count"] = int(params["video"]["count"]["view"])
@@ -1611,8 +1613,9 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
 
     filename = replace_extension(filename, "xml")
 
-    post_packet = COMMENTS_POST_EN if _cmdl_opts.download_english else COMMENTS_POST_JP
-    get_comments_request = session.post(COMMENTS_API, post_packet.format(template_params["thread_id"]))
+    comments_post = COMMENTS_API_POST_DATA.format(template_params["thread_params"], template_params["thread_key"]).replace("\'", "\"").replace(": ", ":").replace(", ", ",")
+    session.options(COMMENTS_API, headers=API_HEADERS)
+    get_comments_request = session.post(COMMENTS_API, data=comments_post, headers=API_HEADERS)
     get_comments_request.raise_for_status()
     with open(filename, "wb") as file:
         file.write(get_comments_request.content)
