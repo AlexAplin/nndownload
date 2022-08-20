@@ -2,6 +2,10 @@
 
 ![PyPI](https://img.shields.io/pypi/v/nndownload.svg)
 
+<p align='center'>
+    EN | <a href='./README_JA.md'>JA</a>
+</p>
+
 nndownload allows you to download videos, images, manga, and process other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. Unlike other existing downloaders, this program communicates wth DMC (Dwango Media Cluster) servers to ensure access to high quality videos.
 
 ## Disclaimers
