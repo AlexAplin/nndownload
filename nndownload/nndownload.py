@@ -1611,7 +1611,7 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
 
     output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
-    filename = replace_extension(filename, "xml")
+    filename = replace_extension(filename, "json")
 
     comments_post = COMMENTS_API_POST_DATA.format(template_params["thread_params"], template_params["thread_key"]).replace("\'", "\"").replace(": ", ":").replace(", ", ",")
     session.options(COMMENTS_API, headers=API_HEADERS)
