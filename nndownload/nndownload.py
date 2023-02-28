@@ -1617,8 +1617,18 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
     session.options(COMMENTS_API, headers=API_HEADERS)
     get_comments_request = session.post(COMMENTS_API, data=comments_post, headers=API_HEADERS)
     get_comments_request.raise_for_status()
-    with open(filename, "wb") as file:
-        file.write(get_comments_request.content)
+
+    # Convert bytes data to json format for adding indent.
+    try:
+        print(get_comments_request.content)
+        comments_json = json.loads(get_comments_request.content.decode("utf-8", errors="ignore"))
+    except json.decoder.JSONDecodeError as error:
+        comments_json = json.loads({})
+        log_exception(error)
+        traceback.print_exc()
+    
+    with open(filename, "w") as file:
+        json.dump(comments_json, file, indent=4, ensure_ascii=False)
 
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
