@@ -1621,14 +1621,14 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
     # Convert bytes data to json format for adding indent.
     try:
         comments_json = json.loads(get_comments_request.content.decode("utf-8", errors="ignore"))
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(comments_json, file, indent=4, ensure_ascii=False)
     except json.decoder.JSONDecodeError as error:
-        comments_json = {}
         log_exception(error)
         traceback.print_exc()
-    
-    with open(filename, "w") as file:
-        json.dump(comments_json, file, indent=4, ensure_ascii=False)
-
+        output("Failed to parse comment file. Output raw file.\n")
+        with open(filename, "wb") as file:
+            file.write(get_comments_request.content)
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
