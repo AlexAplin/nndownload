@@ -1620,10 +1620,9 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
 
     # Convert bytes data to json format for adding indent.
     try:
-        print(get_comments_request.content)
         comments_json = json.loads(get_comments_request.content.decode("utf-8", errors="ignore"))
     except json.decoder.JSONDecodeError as error:
-        comments_json = json.loads("{}")
+        comments_json = {}
         log_exception(error)
         traceback.print_exc()
     
