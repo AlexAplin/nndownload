@@ -620,7 +620,7 @@ def collect_seiga_manga_parameters(session, document, template_params):
     if tags_json.get("tag_list"):
         for tag in tags_json["tag_list"]:
             tags.append(tag["name"])
-    template_params["tags"] = str(tags)
+    template_params["tags"] = tags
 
     # No uploader ID for official manga uploads
     if document.select("dd.user_name a"):
@@ -856,7 +856,7 @@ def download_channel_article(session: requests.Session, article_id: AnyStr):
     tags = []
     for tag in article_document.select(".tag_list li"):
         tags.append(tag.text)
-    template_params["tags"] = str(tags)
+    template_params["tags"] = tags
 
     filename = create_filename(template_params)
 
@@ -1541,7 +1541,7 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
         tags = []
         for tag in params["tag"]["items"]:
             tags.append(tag["name"])
-        template_params["tags"] = str(tags)
+        template_params["tags"] = tags
 
     template_params["document_url"] = VIDEO_URL.format(template_params["id"])
 
