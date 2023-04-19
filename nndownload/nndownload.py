@@ -1821,7 +1821,7 @@ def main():
                     session_cookie = input("Session cookie: ")
         else:
             output("Proceeding with no login. Some content may not be available for download or may only be "
-                   "available in a lower quality. For access to all videos, please provide a login with "
+                   "available in a lower quality. For access to all content, please provide a login with "
                    "--username/--password, --session-cookie, or --netrc.\n", logging.WARNING)
 
         session = login(account_username, account_password, session_cookie)
