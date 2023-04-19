@@ -56,14 +56,14 @@ usage: nndownload.py [options] input
 positional arguments:
   input                 URLs or files
 
-optional arguments:
+options:
   -h, --help            ヘルプメッセージを表示
   -u EMAIL/TEL, --username EMAIL/TEL
                         アカウントのメールアドレスor電話番号
   -p PASSWORD, --password PASSWORD
                         アカウントのパスワード
   --session-cookie COOKIE
-                        session cookie
+                        user_session クッキー値 (文字列またはファイルパス)
   -n, --netrc           .netrcを認証に利用
   -q, --quiet           コンソールに出力しない
   -l, --log             ファイルにログ出力

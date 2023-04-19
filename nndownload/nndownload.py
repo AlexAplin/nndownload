@@ -156,7 +156,7 @@ cmdl_parser = argparse.ArgumentParser(usage=cmdl_usage, conflict_handler="resolv
 cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL",
                          help="account email address or telephone number")
 cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
-cmdl_parser.add_argument("--session-cookie", dest="session_cookie", metavar="COOKIE", help="session cookie")
+cmdl_parser.add_argument("--session-cookie", dest="session_cookie", metavar="COOKIE", help="user_session cookie value (string or filepath)")
 cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
 cmdl_parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
 cmdl_parser.add_argument("-l", "--log", action="store_true", dest="log", help="log output to file")
@@ -1710,6 +1710,14 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
         else:
             output("Using provided session cookie.\n", logging.INFO)
 
+            try:
+                session_cookie_path = session_cookie
+                with open(session_cookie_path, "r") as session_cookie_file:
+                    session_cookie = session_cookie_file.read()
+                output("Session cookie read from file.\n", logging.INFO)
+            except FileNotFoundError:
+                output("Session cookie read as string.\n", logging.INFO)
+
             session_dict = {
                 "user_session": session_cookie
             }
@@ -1812,9 +1820,9 @@ def main():
                 else:
                     session_cookie = input("Session cookie: ")
         else:
-            output("Proceeding with no login. Some videos may not be available for download or may only be available "
-                   "in a lower quality. For access to all videos, please provide a login with --username/--password "
-                   "or --netrc.\n", logging.WARNING)
+            output("Proceeding with no login. Some content may not be available for download or may only be "
+                   "available in a lower quality. For access to all videos, please provide a login with "
+                   "--username/--password, --session-cookie, or --netrc.\n", logging.WARNING)
 
         session = login(account_username, account_password, session_cookie)
 

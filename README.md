@@ -55,14 +55,14 @@ usage: nndownload.py [options] input
 positional arguments:
   input                 URLs or files
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   -u EMAIL/TEL, --username EMAIL/TEL
                         account email address or telephone number
   -p PASSWORD, --password PASSWORD
                         account password
   --session-cookie COOKIE
-                        session cookie
+                        user_session cookie value (string or filepath)
   -n, --netrc           use .netrc authentication
   -q, --quiet           suppress output to console
   -l, --log             log output to file
