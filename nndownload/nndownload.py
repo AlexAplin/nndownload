@@ -570,7 +570,7 @@ def determine_seiga_file_type(dec_bytes):
 def collect_seiga_image_parameters(session: requests.Session, document: BeautifulSoup, template_params: dict) -> dict:
     """Extract template parameters from a Seiga image page."""
 
-    template_params["id"] = document.select("#ko_cpp")[0]["data-target_id"]
+    template_params["id"] = document.select("#clip_group_list")[0]["data-target_id"]
     template_params["title"] = document.select("h1.title")[0].text
     template_params["description"] = document.select("p.discription")[0].text
     template_params["published"] = document.select("span.created")[0].text
