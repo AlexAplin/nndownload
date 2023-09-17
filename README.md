@@ -88,6 +88,7 @@ download options:
                         specify audio quality
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         specify video quality
+  -Q, --list-qualities  list video and audio qualities with availability status
   -s, --skip-media      skip downloading media
   --break-on-existing   break after encountering an existing download
   --playlist-start N    specify the index to start a list of items from (begins at 0)

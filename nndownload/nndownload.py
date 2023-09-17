@@ -81,6 +81,7 @@ NAMA_HEARTBEAT_INTERVAL_S = 30
 NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
 KILOBYTE = 1024
+KILOBIT = 1000
 BLOCK_SIZE = 1024
 EPSILON = 0.0001
 RETRY_ATTEMPTS = 5
@@ -184,6 +185,7 @@ dl_group.add_argument("-e", "--english", action="store_true", dest="download_eng
                       help="request video on english site")
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality")
+dl_group.add_argument("-Q", "--list-qualities", action="store_true", dest="list_qualities", help="list video and audio qualities with availability status")
 dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
 dl_group.add_argument("--break-on-existing", action="store_true", dest="break_on_existing", help="break after encountering an existing download")
 dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", type=int, default=0,
@@ -219,8 +221,12 @@ class ParameterExtractionException(Exception):
     """Raised when parameters could not be successfully extracted."""
     pass
 
-class ExistingDownloadEncountered(Exception):
+class ExistingDownloadEncounteredQuit(Exception):
     """Raised when an existing and complete download is encountered."""
+    pass
+
+class ListQualitiesQuit(Exception):
+    """Raised when listing available qualities for a video."""
     pass
 
 
@@ -260,18 +266,21 @@ def output(string: AnyStr, level=logging.INFO, force: bool = False):
         sys.stdout.flush()
 
 
-def format_bytes(number_bytes):
+def format_value(value: int, custom_type: str = "B", use_bits: bool = False):
     """Attach suffix (e.g. 10 T) to number of bytes."""
 
+    base = KILOBIT if use_bits else KILOBYTE
+
     try:
-        exponent = int(math.log(number_bytes, KILOBYTE))
+        exponent = int(math.log(value, base))
         suffix = "\0KMGTPE"[exponent]
+        suffix = suffix.lower() if use_bits else suffix
 
         if exponent == 0:
-            return "{0}{1}".format(number_bytes, suffix)
+            return "{0}{1}".format(value, suffix)
 
-        converted = float(number_bytes / KILOBYTE ** exponent)
-        return "{0:.2f}{1}B".format(converted, suffix)
+        converted = float(value / base ** exponent)
+        return "{0:.2f}{1}{2}".format(converted, suffix, custom_type) if not use_bits else "{0}{1}{2}".format(converted, suffix, custom_type)
 
     except IndexError:
         raise IndexError("Could not format number of bytes")
@@ -283,7 +292,7 @@ def calculate_speed(start, now, prog_bytes):
     dif = now - start
     if prog_bytes == 0 or dif < EPSILON:
         return "N/A B"
-    return format_bytes(prog_bytes / dif)
+    return format_value(prog_bytes / dif)
 
 
 def replace_extension(filename: AnyStr, new_extension: AnyStr):
@@ -1306,6 +1315,21 @@ def perform_heartbeat(session: requests.Session, heartbeat_url: AnyStr, api_requ
     heartbeat_timer.start()
 
 
+def list_qualities(sources_type: str, sources: list):
+    """Pretty print the list of available qualities from a provided sources list."""
+
+    output(f"{sources_type.capitalize()}:\n")
+    output(f"{'ID':<24} | {'Available':<10} | {'Info':<46}\n", logging.INFO, force=True)
+    for source in sources:
+        if sources_type == "video":
+            quality_aggregate = "{0}x{1}({2})@{3}ps".format(source["metadata"]["resolution"]["width"], source["metadata"]["resolution"]["height"], source["metadata"]["label"], format_value(source["metadata"]["bitrate"], use_bits=True, custom_type="b"))
+        elif sources_type == "audio":
+            quality_aggregate = "{0}@{1}ps".format(format_value(source["metadata"]["samplingRate"], use_bits=True, custom_type="Hz"), format_value(source["metadata"]["bitrate"], use_bits=True, custom_type="b"))
+        else:
+            quality_aggregate = "-"
+
+        output("{:<24} | {:<10} | {:<46}\n".format(source["id"], str(source["isAvailable"]), quality_aggregate), logging.INFO, force=True)
+
 def select_dmc_quality(template_params: dict, template_key: AnyStr, sources: list, quality="") -> List[AnyStr]:
     """Select the specified quality from a sources list on DMC videos."""
 
@@ -1377,6 +1401,11 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             protocol = params["media"]["delivery"]["movie"]["session"]["protocols"][0]
             file_extension = template_params["ext"]
             priority = params["media"]["delivery"]["movie"]["session"]["priority"]
+
+            if _cmdl_opts.list_qualities:
+                list_qualities("video", params["media"]["delivery"]["movie"]["videos"])
+                list_qualities("audio", params["media"]["delivery"]["movie"]["audios"])
+                raise ListQualitiesQuit("Exiting after listing available qualities")
 
             video_sources = select_dmc_quality(
                 template_params,
@@ -1849,8 +1878,8 @@ def main():
                     log_exception(error)
                     continue
 
-    except ExistingDownloadEncountered as existing_exception:
-        output(f"{existing_exception}\n", logging.INFO)
+    except (ExistingDownloadEncounteredQuit, ListQualitiesQuit) as inert_exception:
+        output(f"{inert_exception}\n", logging.INFO)
     except Exception as error:
         log_exception(error)
 

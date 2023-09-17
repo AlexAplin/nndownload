@@ -89,6 +89,7 @@ download options:
                         音質を指定
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         画質を指定
+  -Q, --list-qualities  リストの画質と音質
   -s, --skip-media      メディアのダウンロードをスキップ
   --break-on-existing   既存のダウンロードが見つかったら抜ける
   --playlist-start N    リストの開始番号を指定 (最小値：0)
