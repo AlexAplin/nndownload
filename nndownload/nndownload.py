@@ -185,11 +185,12 @@ dl_group.add_argument("-e", "--english", action="store_true", dest="download_eng
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality")
 dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
+dl_group.add_argument("--break-on-existing", action="store_true", dest="break_on_existing", help="break after encountering an existing download")
 dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", type=int, default=0,
-                      help="specify the index to start a playlist from (begins at 0)")
+                      help="specify the index to start a list of items from (begins at 0)")
 
 
-# globals
+# Globals
 _start_time = _progress = 0
 _cmdl_opts = None
 
@@ -218,6 +219,10 @@ class ParameterExtractionException(Exception):
     """Raised when parameters could not be successfully extracted."""
     pass
 
+class ExistingDownloadEncountered(Exception):
+    """Raised when an existing and complete download is encountered."""
+    pass
+
 
 ## Utility methods
 
@@ -236,7 +241,11 @@ def log_exception(error: Exception):
     """Process exception for logger."""
 
     if _cmdl_opts.log:
-        logger.exception("{0}: {1}\n".format(type(error).__name__, str(error)))
+        sys.stdout.write("{0}: {1}\n".format(type(error).__name__, str(error)))
+        sys.stdout.flush()
+        logger.exception("An exception was encountered:\n".format(type(error).__name__, str(error)))
+    else:
+        output("{0}: {1}\n".format(type(error).__name__, str(error)), logging.ERROR, force=True)
 
 
 def output(string: AnyStr, level=logging.INFO, force: bool = False):
@@ -338,7 +347,6 @@ def read_file(session: requests.Session, file: AnyStr):
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
-            traceback.print_exc()
             continue
 
 
@@ -772,7 +780,6 @@ def request_seiga_user(session, user_id):
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
-            traceback.print_exc()
             continue
 
 
@@ -821,7 +828,6 @@ def request_seiga_user_manga(session, user_id):
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
-            traceback.print_exc()
             continue
 
 
@@ -920,7 +926,6 @@ def request_channel(session: requests.Session, channel_slug: AnyStr):
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
-            traceback.print_exc()
             continue
 
 
@@ -981,7 +986,9 @@ def request_video(session: requests.Session, video_id: AnyStr):
     filename = create_filename(template_params)
 
     if not _cmdl_opts.skip_media:
-        download_video(session, filename, template_params)
+        continue_code = download_video(session, filename, template_params)
+        if _cmdl_opts.break_on_existing and not continue_code:
+            raise ExistingDownloadEncountered("Exiting as an existing video was encountered")
         if _cmdl_opts.add_metadata:
             add_metadata_to_video(filename, template_params)
     if _cmdl_opts.dump_metadata:
@@ -1033,7 +1040,6 @@ def request_user(session: requests.Session, user_id: AnyStr):
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
-            traceback.print_exc()
             continue
 
 
@@ -1062,7 +1068,6 @@ def request_mylist(session: requests.Session, mylist_id: AnyStr):
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
-            traceback.print_exc()
             continue
 
 
@@ -1082,7 +1087,6 @@ def request_user_mylists(session: requests.Session, user_id: AnyStr):
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
-            traceback.print_exc()
             continue
 
 
@@ -1112,7 +1116,6 @@ def request_series(session: requests.Session, series_id: AnyStr):
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
-            traceback.print_exc()
             continue
 
 
@@ -1172,7 +1175,7 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
     video_len = int(dl_stream.headers["content-length"])
 
     if _cmdl_opts.threads:
-        output("Multithreading is experimental and will overwrite any existing files.\n", logging.WARNING)
+        output("Multithreading is experimental and will overwrite any existing files. --break-on-existing will be ignored.\n", logging.WARNING)
 
         threads = int(_cmdl_opts.threads)
         if threads <= 0:
@@ -1210,7 +1213,7 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
         output("\n", logging.DEBUG)
 
         output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
-        return
+        return True
 
     if os.path.isfile(filename):
         with open(filename, "rb"):
@@ -1225,7 +1228,7 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
                 try:
                     if MP4(filename).tags:  # Video metadata is only written after a complete download
                         output("Existing file container has metadata written and should be complete.\n", logging.INFO)
-                        return
+                        return False
                     else:
                         raise FormatNotAvailableException(
                             "Current byte position exceeds the length of the video to be downloaded. Check the integrity of the existing file and "
@@ -1240,7 +1243,7 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
             # current_byte_pos == video_len
             else:
                 output("File exists and matches current download length.\n", logging.INFO)
-                return
+                return False
 
     else:
         file_condition = "wb"
@@ -1260,7 +1263,7 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
             output("Byte comparison block exceeds the length of the existing file. Deleting existing file and redownloading...\n", logging.WARNING)
             os.remove(filename)
             download_video(session, filename, template_params)
-            return
+            return True
 
         file = open(filename, "rb")
         file.seek(current_byte_pos - BLOCK_SIZE)
@@ -1268,14 +1271,13 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
         if new_data == existing_data:
             dl += new_data_len
             output("Resuming at byte position {0}.\n".format(dl))
+            file.close()
         else:
             output("Byte comparison block does not match. Deleting existing file and redownloading...\n", logging.WARNING)
             file.close()
             os.remove(filename)
             download_video(session, filename, template_params)
-            return
-
-        file.close()
+            return True
 
     with open(filename, file_condition) as file:
         file.seek(dl)
@@ -1290,7 +1292,7 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
         output("\n", logging.DEBUG)
 
     output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
-    return
+    return True
 
 
 def perform_heartbeat(session: requests.Session, heartbeat_url: AnyStr, api_request_el: xml.dom.minidom.Node):
@@ -1753,7 +1755,7 @@ def process_url_mo(session, url_mo: Match):
         elif not url_mo.group(6) or url_mo.group(6) == "video":
             request_user(session, url_id)
         else:
-            raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
+            raise ArgumentException("User URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(1) == "seiga":
         if url_mo.group(3) == "watch":
             download_manga_chapter(session, url_id)
@@ -1770,7 +1772,7 @@ def process_url_mo(session, url_mo: Match):
         elif url_mo.group(3) == "seiga":
             download_image(session, url_id)
         else:
-            raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
+            raise ArgumentException("Seiga URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(1) == "ch":
         if url_mo.group(3) == "article":
             download_channel_article(session, url_id)
@@ -1785,7 +1787,7 @@ def process_url_mo(session, url_mo: Match):
         elif not url_mo.group(6) or url_mo.group(6) == "video":
             request_channel(session, url_id)
         else:
-            raise ArgumentException("URL argument is not of a known or accepted type of Nico URL")
+            raise ArgumentException("Channel URL argument is not of a known or accepted type of Nico URL")
     elif url_mo.group(3) == "watch" or url_mo.group(4) == "nico.ms":
         request_video(session, url_id)
     elif url_mo.group(3) == "series":
@@ -1845,14 +1847,12 @@ def main():
                     raise
                 else:
                     log_exception(error)
-                    traceback.print_exc()
                     continue
 
-
+    except ExistingDownloadEncountered as existing_exception:
+        output(f"{existing_exception}\n", logging.INFO)
     except Exception as error:
         log_exception(error)
-        traceback.print_exc()
-        raise
 
 
 if __name__ == "__main__":
@@ -1860,4 +1860,5 @@ if __name__ == "__main__":
         _cmdl_opts = cmdl_parser.parse_args()
         main()
     except KeyboardInterrupt:
+        output(f"Keyboard interrupt received. Exiting...\n", logging.INFO)
         sys.exit(1)

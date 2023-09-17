@@ -90,7 +90,8 @@ download options:
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         画質を指定
   -s, --skip-media      メディアのダウンロードをスキップ
-  --playlist-start N    プレイリストの開始番号を指定 (最小値：0)
+  --break-on-existing   既存のダウンロードが見つかったら抜ける
+  --playlist-start N    リストの開始番号を指定 (最小値：0)
 ```
 
 ### Module

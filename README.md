@@ -89,7 +89,8 @@ download options:
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         specify video quality
   -s, --skip-media      skip downloading media
-  --playlist-start N    specify the index to start a playlist from (begins at 0)
+  --break-on-existing   break after encountering an existing download
+  --playlist-start N    specify the index to start a list of items from (begins at 0)
 ```
 
 ### Module
