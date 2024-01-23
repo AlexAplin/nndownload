@@ -84,6 +84,7 @@ download options:
   -c, --download-comments
                         download video comments
   -e, --english         request video on english site
+  --chinese             request video on traditional chinese (taiwan) site
   -aq AUDIO_QUALITY, --audio-quality AUDIO_QUALITY
                         specify audio quality
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY

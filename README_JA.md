@@ -85,6 +85,7 @@ download options:
   -c, --download-comments
                         動画のコメントをダウンロード
   -e, --english         英語版サイトにリクエストする
+  -chinese              中文版サイトにリクエストする
   -aq AUDIO_QUALITY, --audio-quality AUDIO_QUALITY
                         音質を指定
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY

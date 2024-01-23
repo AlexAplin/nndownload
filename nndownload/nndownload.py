@@ -105,6 +105,10 @@ EN_COOKIE = {
     "lang": "en-us"
 }
 
+TW_COOKIE = {
+    "lang": "zh-tw"
+}
+
 API_HEADERS = {
     "X-Frontend-Id": "6",
     "X-Frontend-Version": "0",
@@ -183,6 +187,8 @@ dl_group.add_argument("-c", "--download-comments", action="store_true", dest="do
                       help="download video comments")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english",
                       help="request video on english site")
+dl_group.add_argument("--chinese", action="store_true", dest="download_chinese",
+                      help="request video on traditional chinese (taiwan) site")
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality")
 dl_group.add_argument("-Q", "--list-qualities", action="store_true", dest="list_qualities", help="list video and audio qualities with availability status")
@@ -985,6 +991,11 @@ def request_video(session: requests.Session, video_id: AnyStr):
     concat_cookies = {}
     if _cmdl_opts.download_english:
         concat_cookies = {**concat_cookies, **EN_COOKIE}
+    elif _cmdl_opts.download_chinese:
+        concat_cookies = {**concat_cookies, **TW_COOKIE}
+
+    if _cmdl_opts.download_english and _cmdl_opts.download_chinese:
+        output("Multiple language flags were specified. --english will be used as the fallback.\n", logging.INFO)
 
     video_request = session.get(VIDEO_URL.format(video_id), cookies=concat_cookies)
     video_request.raise_for_status()
