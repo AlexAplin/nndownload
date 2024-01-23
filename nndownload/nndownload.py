@@ -1400,7 +1400,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
 
         template_params = collect_video_parameters(session, template_params, params)
 
-        if _cmdl_opts.skip_media:
+        if _cmdl_opts.skip_media and not _cmdl_opts.list_qualities:
             return template_params
 
         # Perform request to Dwango Media Cluster (DMC)
