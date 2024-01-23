@@ -71,7 +71,7 @@ MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}?pageSize=500"  # 500 vid
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
-COMMENTS_API = "https://nvcomment.nicovideo.jp/v1/threads"
+COMMENTS_API = "https://nv-comment.nicovideo.jp/v1/threads"
 COMMENTS_API_POST_DATA = "{{\'params\':{0},\'threadKey\':\'{1}\',\'additionals\':{{}}}}"
 
 REGION_LOCK_ERROR = "お住まいの地域・国からは視聴することができません。"
