@@ -28,6 +28,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
 
+
 __version__ = "1.14"
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2023 Alex Aplin"
@@ -62,12 +63,14 @@ VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]
                           r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list))?"
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
+M3U8_MEDIA_RE = re.compile(r"(?:#EXT-X-MEDIA:TYPE=)(?:(\w+))(?:.*),URI=\"(.*)\"")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}?pageSize=500"  # 500 video limit for premium mylists
+VIDEO_DMS_WATCH_API = "https://nvapi.nicovideo.jp/v1/watch/{0}/access-rights/hls?actionTrackId={1}"
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
@@ -365,14 +368,27 @@ def read_file(session: requests.Session, file: AnyStr):
             continue
 
 
-def get_playlist_from_m3u8(m3u8_text: AnyStr) -> AnyStr:
-    """Return last playlist from a master.m3u8 file."""
+def get_media_from_manifest(manifest_text: AnyStr, media_type: AnyStr) -> AnyStr:
+    """Return the first seen media match for a given type from a .m3u8 manifest."""
+
+    media_type = media_type.capitalize()
+    match = M3U8_MEDIA_RE.search(manifest_text)
+
+    if not match:
+        raise FormatNotAvailableException("Could not retrieve media playlist from manifest")
+
+    media_url = match[2]
+    return media_url
+
+
+def get_stream_from_manifest(manifest_text: AnyStr) -> AnyStr:
+    """Return the highest quality stream from a .m3u8 manifest."""
 
     best_bandwidth, best_stream = -1, None
-    matches = M3U8_STREAM_RE.findall(m3u8_text)
+    matches = M3U8_STREAM_RE.findall(manifest_text)
 
     if not matches:
-        raise FormatNotAvailableException("Could not retrieve stream playlist from master playlist")
+        raise FormatNotAvailableException("Could not retrieve stream playlist from manifest")
 
     else:
         for match in matches:
@@ -402,7 +418,7 @@ def generate_stream(session: requests.Session, master_url: AnyStr) -> AnyStr:
 
     output("Retrieved master playlist.\n", logging.INFO)
 
-    playlist_slug = get_playlist_from_m3u8(m3u8_request.text)
+    playlist_slug = get_stream_from_manifest(m3u8_request.text)
     stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_slug
 
     return stream_url
@@ -1006,7 +1022,7 @@ def request_video(session: requests.Session, video_id: AnyStr):
     filename = create_filename(template_params)
 
     if not _cmdl_opts.skip_media:
-        continue_code = download_video(session, filename, template_params)
+        continue_code = download_video_media(session, filename, template_params)
         if _cmdl_opts.break_on_existing and not continue_code:
             raise ExistingDownloadEncountered("Exiting as an existing video was encountered")
         if _cmdl_opts.add_metadata:
@@ -1185,10 +1201,17 @@ def download_video_part(session: requests.Session, start, end, filename: AnyStr,
             update_multithread_progress(len(block))
 
 
-def download_video(session: requests.Session, filename: AnyStr, template_params: dict):
+def download_video_media(session: requests.Session, filename: AnyStr, template_params: dict):
     """Download video from response URL and display progress."""
 
     output("Downloading {0} to \"{1}\"...\n".format(template_params["id"], filename), logging.INFO)
+
+    # Dwango Media Server (DMS)
+    if template_params.get("video_uri") or template_params.get("video_uri"):
+        output("Downloading videos delivered with Dwango Media Server (DMS) is not currently supported.\n", logging.WARNING)
+        return
+
+    # Dwango Media Cluster (DMC)
 
     dl_stream = session.head(template_params["url"])
     dl_stream.raise_for_status()
@@ -1282,7 +1305,7 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
         if existing_byte_pos - new_data_len <= 0:
             output("Byte comparison block exceeds the length of the existing file. Deleting existing file and redownloading...\n", logging.WARNING)
             os.remove(filename)
-            download_video(session, filename, template_params)
+            download_video_media(session, filename, template_params)
             return True
 
         file = open(filename, "rb")
@@ -1296,7 +1319,7 @@ def download_video(session: requests.Session, filename: AnyStr, template_params:
             output("Byte comparison block does not match. Deleting existing file and redownloading...\n", logging.WARNING)
             file.close()
             os.remove(filename)
-            download_video(session, filename, template_params)
+            download_video_media(session, filename, template_params)
             return True
 
     with open(filename, file_condition) as file:
@@ -1326,20 +1349,29 @@ def perform_heartbeat(session: requests.Session, heartbeat_url: AnyStr, api_requ
     heartbeat_timer.start()
 
 
-def list_qualities(sources_type: str, sources: list):
+def list_qualities(sources_type: str, sources: list, is_dms: bool):
     """Pretty print the list of available qualities from a provided sources list."""
 
     output(f"{sources_type.capitalize()}:\n")
     output(f"{'ID':<24} | {'Available':<10} | {'Info':<46}\n", logging.INFO, force=True)
     for source in sources:
+        source_id = source["id"]
+        is_available = source["isAvailable"]
+        bit_rate = source["bitRate"] if is_dms else source["metadata"]["bitrate"]
+
         if sources_type == "video":
-            quality_aggregate = "{0}x{1}({2})@{3}ps".format(source["metadata"]["resolution"]["width"], source["metadata"]["resolution"]["height"], source["metadata"]["label"], format_value(source["metadata"]["bitrate"], use_bits=True, custom_type="b"))
+            width = source["width"] if is_dms else source["metadata"]["resolution"]["width"]
+            height = source["height"] if is_dms else source["metadata"]["resolution"]["height"]
+            label = source["label"] if is_dms else source["metadata"]["label"]
+            quality_aggregate = "{0}x{1}({2})@{3}ps".format(width, height, label, format_value(bit_rate, use_bits=True, custom_type="b"))
         elif sources_type == "audio":
-            quality_aggregate = "{0}@{1}ps".format(format_value(source["metadata"]["samplingRate"], use_bits=True, custom_type="Hz"), format_value(source["metadata"]["bitrate"], use_bits=True, custom_type="b"))
+            sampling_rate = source["samplingRate"] if is_dms else source["metadata"]["samplingRate"]
+            quality_aggregate = "{0}@{1}ps".format(format_value(sampling_rate, use_bits=True, custom_type="Hz"), format_value(bit_rate, use_bits=True, custom_type="b"))
         else:
             quality_aggregate = "-"
 
-        output("{:<24} | {:<10} | {:<46}\n".format(source["id"], str(source["isAvailable"]), quality_aggregate), logging.INFO, force=True)
+        output("{:<24} | {:<10} | {:<46}\n".format(source_id, str(is_available), quality_aggregate), logging.INFO, force=True)
+
 
 def select_dmc_quality(template_params: dict, template_key: AnyStr, sources: list, quality="") -> List[AnyStr]:
     """Select the specified quality from a sources list on DMC videos."""
@@ -1403,8 +1435,50 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
         if _cmdl_opts.skip_media and not _cmdl_opts.list_qualities:
             return template_params
 
+        # Perform request to Dwango Media Service (DMS)
+        # Began rollout starting 2023-11-01 for select videos and users (https://blog.nicovideo.jp/niconews/205042.html)
+        # Videos longer than 30 minutes in HD (>720p) quality appear to be served this way exclusively 
+        # elif params["media"]["domand"]:
+        #     if _cmdl_opts.list_qualities:
+        #         list_qualities("video", params["media"]["domand"]["videos"], True)
+        #         list_qualities("audio", params["media"]["domand"]["audios"], True)
+        #         raise ListQualitiesQuit("Exiting after listing available qualities")
+
+        #     video_id = params["video"]["id"]
+        #     access_right_key = params["media"]["domand"]["accessRightKey"]
+        #     watch_track_id = params["client"]["watchTrackId"]
+
+        #     # Limited to one video and audio source
+        #     payload = json.dumps({"outputs":[["video-h264-720p","audio-aac-128kbps",]]})
+
+        #     output("Retrieving video manifest ...\n", logging.INFO)
+        #     headers = {
+        #         "X-Access-Right-Key": access_right_key,
+        #         "X-Request-With": "https://www.nicovideo.jp", # Only provided on this endpoint
+        #     }
+        #     session.options(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id)) # OPTIONS
+        #     get_manifest_request = session.post(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id), headers={**API_HEADERS, **headers}, data=payload)
+        #     get_manifest_request.raise_for_status()
+        #     manifest_url = get_manifest_request.json()["data"]["contentUrl"]
+        #     manifest_request = session.get(manifest_url)
+        #     manifest_request.raise_for_status()
+        #     manifest_text = manifest_request.text
+        #     output("Retrieved video manifest.\n", logging.INFO)
+
+        #     output("Collecting video media URIs...\n")
+        #     template_params["video_uri"] = get_stream_from_manifest(manifest_text)
+        #     template_params["audio_uri"] = audio_playlist = get_media_from_manifest(manifest_text, "audio")
+        #     output("Collected video media URIs.\n", logging.INFO)
+
         # Perform request to Dwango Media Cluster (DMC)
         elif params["media"]["delivery"]:
+            output("Higher available qualities may not be available to download for certain videos uploaded after 2023-11-01. Follow this issue for more detail: https://github.com/AlexAplin/nndownload/issues/139\n", logging.INFO)
+
+            if _cmdl_opts.list_qualities:
+                list_qualities("video", params["media"]["delivery"]["movie"]["videos"], False)
+                list_qualities("audio", params["media"]["delivery"]["movie"]["audios"], False)
+                raise ListQualitiesQuit("Exiting after listing available qualities")
+
             api_url = params["media"]["delivery"]["movie"]["session"]["urls"][0]["url"]
             api_url += "?suppress_response_codes=true&_format=xml"
             recipe_id = params["media"]["delivery"]["movie"]["session"]["recipeId"]
@@ -1412,11 +1486,6 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             protocol = params["media"]["delivery"]["movie"]["session"]["protocols"][0]
             file_extension = template_params["ext"]
             priority = params["media"]["delivery"]["movie"]["session"]["priority"]
-
-            if _cmdl_opts.list_qualities:
-                list_qualities("video", params["media"]["delivery"]["movie"]["videos"])
-                list_qualities("audio", params["media"]["delivery"]["movie"]["audios"])
-                raise ListQualitiesQuit("Exiting after listing available qualities")
 
             video_sources = select_dmc_quality(
                 template_params,
@@ -1656,7 +1725,7 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
     filename = replace_extension(filename, "comments.json")
 
     comments_post = COMMENTS_API_POST_DATA.format(template_params["thread_params"], template_params["thread_key"]).replace("\'", "\"").replace(": ", ":").replace(", ", ",")
-    session.options(COMMENTS_API, headers=API_HEADERS)
+    session.options(COMMENTS_API, headers=API_HEADERS) # OPTIONS
     get_comments_request = session.post(COMMENTS_API, data=comments_post, headers=API_HEADERS)
     get_comments_request.raise_for_status()
     with open(filename, "wb") as file:
