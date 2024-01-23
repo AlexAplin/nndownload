@@ -1206,9 +1206,9 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
     output("Downloading {0} to \"{1}\"...\n".format(template_params["id"], filename), logging.INFO)
 
-    # Dwango Media Server (DMS)
+    # Dwango Media Service (DMS)
     if template_params.get("video_uri") or template_params.get("video_uri"):
-        output("Downloading videos delivered with Dwango Media Server (DMS) is not currently supported.\n", logging.WARNING)
+        output("Downloading videos delivered with Dwango Media Service (DMS) is not currently supported.\n", logging.WARNING)
         return
 
     # Dwango Media Cluster (DMC)
