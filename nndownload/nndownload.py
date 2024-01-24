@@ -77,7 +77,9 @@ SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
 COMMENTS_API = "https://nv-comment.nicovideo.jp/v1/threads"
 COMMENTS_API_POST_DATA = "{{\'params\':{0},\'threadKey\':\'{1}\',\'additionals\':{{}}}}"
 
-REGION_LOCK_ERROR = "お住まいの地域・国からは視聴することができません。"
+REGION_LOCK_ERRORS = {  "お住まいの地域・国からは視聴することができません。",
+                        "この動画は投稿( アップロード )された地域と同じ地域からのみ視聴できます。"
+                     }
 
 USER_VIDEOS_API_N = 25
 NAMA_HEARTBEAT_INTERVAL_S = 30
@@ -1611,8 +1613,8 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
                 raise FormatNotAvailableException("Video media not available for download")
 
     else:
-        potential_region_error = document.select_one("p.font12")
-        if potential_region_error and potential_region_error.text == REGION_LOCK_ERROR:
+        potential_region_error = document.select_one("p.fail-message") or document.select_one("p.font12")
+        if potential_region_error and potential_region_error.text in REGION_LOCK_ERRORS:
             raise ParameterExtractionException("This video is not available in your region")
         else:
             raise ParameterExtractionException("Failed to collect video paramters")
