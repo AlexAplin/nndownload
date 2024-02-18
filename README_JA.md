@@ -46,8 +46,6 @@ nndownloadでは、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)か
 pip install nndownload
 ```
 
-Windows用のバイナリファイルは[リリースページ](https://github.com/AlexAplin/nndownload/releases)より利用できます。
-
 ## Usage
 ### CLI
 ```

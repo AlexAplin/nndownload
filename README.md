@@ -45,8 +45,6 @@ nndownload allows you to download videos, images, manga, and process other links
 pip install nndownload
 ```
 
-Binaries for Windows are available on the [releases page](https://github.com/AlexAplin/nndownload/releases).
-
 ## Usage
 ### CLI
 ```
