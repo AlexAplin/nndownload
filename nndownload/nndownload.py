@@ -29,9 +29,9 @@ from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
 
 
-__version__ = "1.14"
+__version__ = "1.15"
 __author__ = "Alex Aplin"
-__copyright__ = "Copyright 2023 Alex Aplin"
+__copyright__ = "Copyright 2024 Alex Aplin"
 __license__ = "MIT"
 
 MODULE_NAME = "nndownload"
