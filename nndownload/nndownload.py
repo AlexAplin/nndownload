@@ -422,6 +422,17 @@ def generic_dl_request(session: requests.Session, uri: AnyStr, filename: AnyStr,
     return request_body
 
 
+def rewrite_file(filename: AnyStr, old_str: AnyStr, new_str: AnyStr):
+    """Replace a string in a text file."""
+
+    with open(filename, "r+") as file:
+        raw = file.read()
+        new = raw.replace(old_str, new_str)
+        file.seek(0)
+        file.write(new)
+        file.truncate()
+
+
 ## Nama methods
 
 def generate_stream(session: requests.Session, master_url: AnyStr) -> AnyStr:
@@ -1231,16 +1242,6 @@ def perform_ffmpeg_dl(filename: AnyStr, streams: List):
     output = ffmpeg.output(*inputs, filename, vcodec="copy", acodec="copy")
     output.run()
 
-
-def rewrite_file(filename: AnyStr, old_str: AnyStr, new_str: AnyStr):
-    """Replace a string in a text file."""
-
-    with open(filename, "r+") as file:
-        raw = file.read()
-        new = raw.replace(old_str, new_str)
-        file.seek(0)
-        file.write(new)
-        file.truncate()
 
 def download_video_media(session: requests.Session, filename: AnyStr, template_params: dict):
     """Download video from response URL and display progress."""
