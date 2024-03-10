@@ -1315,18 +1315,13 @@ def perform_ffmpeg_dl(filename: AnyStr, duration: float, streams: List):
                 input = ffmpeg.input(stream, protocol_whitelist="https,http,tls,tcp,file,crypto", allowed_extensions="ALL")
                 inputs.append(input)
             output = ffmpeg.output(*inputs, filename, vcodec="copy", acodec="copy")
-            output = output.global_args("-progress", "unix://{}".format(socket_filename), "-n" if _cmdl_opts.break_on_existing else "-y")
+            output = output.global_args("-progress", "unix://{}".format(socket_filename), "-y")
             output.run(capture_stdout=True, capture_stderr=True)
             return True
     except ffmpeg.Error as error:
         stderr = error.stderr.decode("utf8")
         actual_error = stderr.splitlines()[-1]
-
-        # Make sure we pass the right continue code for --break-on-existing
-        if f"File '{filename}' already exists. Exiting." in actual_error:
-            return False
-        else:
-            raise FormatNotAvailableException(f"ffmpeg exited with an error: {actual_error}")
+        raise FormatNotAvailableException(f"ffmpeg exited with an error: {actual_error}")
     except Exception:
         raise FormatNotAvailableException("Failed to download video or audio stream")
 
@@ -1347,7 +1342,9 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
     # Dwango Media Service (DMS)
     if template_params.get("video_uri") or template_params.get("audio_uri"):
 
-        output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
+        # .part file
+        if os.path.exists(filename):
+            output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
         if _cmdl_opts.threads:
             output("Multithreading is only supported for DMC delivery. Video will be downloaded using one thread.\n", logging.WARNING)
 
