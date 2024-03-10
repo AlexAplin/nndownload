@@ -1075,7 +1075,7 @@ def request_video(session: requests.Session, video_id: AnyStr):
         if _cmdl_opts.break_on_existing and not continue_code:
             raise ExistingDownloadEncounteredQuit("Exiting as an existing video was encountered")
         if _cmdl_opts.add_metadata:
-            add_metadata_to_video(filename, template_params)
+            add_metadata_to_container(filename, template_params)
     if _cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
     if _cmdl_opts.download_thumbnail:
@@ -1924,8 +1924,8 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
-def add_metadata_to_video(filename: AnyStr, template_params: dict):
-    """Add metadata to MP4 container."""
+def add_metadata_to_container(filename: AnyStr, template_params: dict):
+    """Add metadata to any MP4 container."""
 
     if template_params["ext"] in ["mp4", "m4a", "m4v"]:
         output("Adding metadata to {}...\n".format(filename), logging.INFO)
@@ -1937,7 +1937,7 @@ def add_metadata_to_video(filename: AnyStr, template_params: dict):
         container_file["desc"] = template_params["description"]  # Description
         container_file.save(filename)
     else:
-        output("Container metadata is only supported for MP4s. Skipping...\n", logging.INFO)
+        output("Container metadata is not supported for this file extension. Skipping...\n", logging.INFO)
 
 
 # Main entry
