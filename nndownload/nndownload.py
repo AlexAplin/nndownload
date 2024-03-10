@@ -1338,7 +1338,8 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
     # If extension was rewritten, presume the download is complete
     if os.path.exists(filename):
-        raise ExistingDownloadEncounteredQuit("Exiting as an existing video was encountered")
+        output("Video exists and appears to have been completed.\n", logging.INFO)
+        return False
 
     complete_filename = filename
     filename = replace_extension(filename, f"part.{template_params['ext']}")
