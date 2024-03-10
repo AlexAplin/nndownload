@@ -206,6 +206,8 @@ dl_group.add_argument("--chinese", action="store_true", dest="download_chinese",
                       help="request video on traditional chinese (taiwan) site")
 dl_group.add_argument("-aq", "--audio-quality", dest="audio_quality", help="specify audio quality")
 dl_group.add_argument("-vq", "--video-quality", dest="video_quality", help="specify video quality")
+dl_group.add_argument("-an", "--no-audio", action="store_true", dest="no_audio", help="don't download audio")
+dl_group.add_argument("-vn", "--no-video", action="store_true", dest="no_video", help="don't download video")
 dl_group.add_argument("-Q", "--list-qualities", action="store_true", dest="list_qualities", help="list video and audio qualities with availability status")
 dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_media", help="skip downloading media")
 dl_group.add_argument("--break-on-existing", action="store_true", dest="break_on_existing", help="break after encountering an existing download")
@@ -1340,7 +1342,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
     filename = replace_extension(filename, f"part.{template_params['ext']}")
 
     # Dwango Media Service (DMS)
-    if template_params.get("video_uri") or template_params.get("audio_uri"):
+    if template_params.get("dms_video_uri") or template_params.get("dms_audio_uri"):
 
         # .part file
         if os.path.exists(filename):
@@ -1350,7 +1352,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
         m3u8_streams = []
         with get_temp_dir() as temp_dir:
-            for stream_type in ["video_uri", "audio_uri"]:
+            for stream_type in ["dms_video_uri", "dms_audio_uri"]:
                 if template_params.get(stream_type):
                     m3u8_path = os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.m3u8")
                     m3u8 = generic_dl_request(session, template_params[stream_type], m3u8_path)
@@ -1427,7 +1429,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
             elif current_byte_pos > video_len:
                 try:
-                    if MP4(filename).tags:  # Video metadata is only written after a complete download
+                    if MP4(filename).tags:  # Container metadata is only written after a complete download
                         output("Existing file container has metadata written and should be complete.\n", logging.INFO)
                         return False
                     else:
@@ -1592,6 +1594,9 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
 
         template_params = collect_video_parameters(session, template_params, params)
 
+        if (_cmdl_opts.no_audio and _cmdl_opts.no_video):
+            output("--no-audio and --no-video were both specified. Treating this download as if --skip-media was set.\n", logging.WARNING)
+            _cmdl_opts.skip_media = True
         if _cmdl_opts.skip_media and not _cmdl_opts.list_qualities:
             return template_params
 
@@ -1624,7 +1629,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             # Limited to one video and audio source
             video_source = video_sources[0]
             audio_source = audio_sources[0]
-            payload = json.dumps({"outputs":[[video_source,audio_source,]]})
+            payload = json.dumps({"outputs":[[video_source, audio_source]]})
 
             output("Retrieving video manifest...\n", logging.INFO)
             headers = {
@@ -1641,8 +1646,17 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             output("Retrieved video manifest.\n", logging.INFO)
 
             output("Collecting video media URIs...\n")
-            template_params["video_uri"] = get_stream_from_manifest(manifest_text)
-            template_params["audio_uri"] = get_media_from_manifest(manifest_text, "audio")
+            if not _cmdl_opts.no_video:
+                template_params["dms_video_uri"] = get_stream_from_manifest(manifest_text)
+            if not _cmdl_opts.no_audio:
+                template_params["dms_audio_uri"] = get_media_from_manifest(manifest_text, "audio")
+
+            # Modify container when only one stream is specified
+            if not template_params.get("dms_video_uri"):
+                template_params["ext"] = "m4a"
+            elif not template_params.get("dms_audio_uri"):
+                template_params["ext"] = "m4v"
+
             output("Collected video media URIs.\n", logging.INFO)
 
         # Perform request to Dwango Media Cluster (DMC)
@@ -1835,12 +1849,13 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
     thumb_info_request.raise_for_status()
     thumb_info_document = xml.dom.minidom.parseString(thumb_info_request.text)
 
-    # DMC videos do not expose the file type in the video page parameters when not logged in
+    # DMC and DMS videos do not expose the file type in the video page parameters when not logged in
     # As of 2021, all videos are served on the HTML5 player as .mp4
     # This is maintained as a sanity check
-    template_params["ext"] = thumb_info_document.getElementsByTagName("movie_type")[0].firstChild.nodeValue
-    if template_params["ext"] == "swf" or template_params["ext"] == "flv":
-        template_params["ext"] = "mp4"
+    if not template_params.get("ext"):
+        template_params["ext"] = thumb_info_document.getElementsByTagName("movie_type")[0].firstChild.nodeValue
+        if template_params["ext"] == "swf" or template_params["ext"] == "flv":
+            template_params["ext"] = "mp4"
 
     # No longer really relevant for new videos, but the API continues to report for pre-DMC viodeos
     template_params["size_high"] = int(thumb_info_document.getElementsByTagName("size_high")[0].firstChild.nodeValue)
@@ -1912,15 +1927,15 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
 def add_metadata_to_video(filename: AnyStr, template_params: dict):
     """Add metadata to MP4 container."""
 
-    if template_params["ext"] == "mp4":
+    if template_params["ext"] in ["mp4", "m4a", "m4v"]:
         output("Adding metadata to {}...\n".format(filename), logging.INFO)
-        video_file = MP4(filename)
-        if not video_file.tags:
-            video_file.add_tags()
-        video_file["\251nam"] = template_params["title"]  # Title
-        video_file["\251ART"] = template_params["uploader"]  # Uploader
-        video_file["desc"] = template_params["description"]  # Description
-        video_file.save(filename)
+        container_file = MP4(filename)
+        if not container_file.tags:
+            container_file.add_tags()
+        container_file["\251nam"] = template_params["title"]  # Title
+        container_file["\251ART"] = template_params["uploader"]  # Uploader
+        container_file["desc"] = template_params["description"]  # Description
+        container_file.save(filename)
     else:
         output("Container metadata is only supported for MP4s. Skipping...\n", logging.INFO)
 

@@ -90,6 +90,8 @@ download options:
                         specify audio quality
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         specify video quality
+  -an, --no-audio       don't download audio
+  -vn, --no-video       don't download video
   -Q, --list-qualities  list video and audio qualities with availability status
   -s, --skip-media      skip downloading media
   --break-on-existing   break after encountering an existing download
@@ -125,6 +127,8 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - article (articles)
 - blog_title (articles)
 - clip_count (images)
+- dms_video_uri (videos)
+- dms_audio_uri (videos)
 - duration (videos)
 - manga_id (manga)
 - manga_title (manga)

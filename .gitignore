@@ -103,6 +103,10 @@ ENV/
 # Videos
 *.mp4
 *.temp.mp4
+*.m4a
+*.temp.m4a
+*.m4v
+*.temp.m4v
 *.flv
 *.swf
 *.ts

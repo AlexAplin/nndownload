@@ -17,7 +17,6 @@ nndownloadでは、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)か
   - ニコニコ静画のサムネイルとコメントのダウンロード
   - チャンネルやブログ、コメントのダウンロード
 
-
 ## Features
  - コメント、サムネイル、メタデータを含む動画のダウンロード
  - メタデータを含むニコニコ静画の画像やマンガのダウンロード
@@ -91,6 +90,8 @@ download options:
                         音質を指定
   -vq VIDEO_QUALITY, --video-quality VIDEO_QUALITY
                         画質を指定
+  -an, --no-audio       音声をダウンロードしない
+  -vn, --no-video       動画をダウンロードしない
   -Q, --list-qualities  リストの画質と音質
   -s, --skip-media      メディアのダウンロードをスキップ
   --break-on-existing   既存のダウンロードが見つかったら抜ける
@@ -128,6 +129,8 @@ nndownload.execute("-g", "-o", output_path, url)
 - article (articles)
 - blog_title (articles)
 - clip_count (images)
+- dms_video_uri (videos)
+- dms_audio_uri (videos)
 - duration (videos)
 - manga_id (manga)
 - manga_title (manga)
