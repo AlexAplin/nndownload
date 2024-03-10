@@ -1308,17 +1308,23 @@ def show_ffmpeg_progress(duration: float):
 def perform_ffmpeg_dl(filename: AnyStr, duration: float, streams: List):
     """Send video and/or audio stream to ffmpeg for download."""
 
-    # TODO: Overwrite detection
     inputs = []
     try:
         with show_ffmpeg_progress(duration) as socket_filename:
             for stream in streams:
                 input = ffmpeg.input(stream, protocol_whitelist="https,http,tls,tcp,file,crypto", allowed_extensions="ALL")
                 inputs.append(input)
-            output = ffmpeg.output(*inputs, filename, vcodec="copy", acodec="copy").overwrite_output()
-            output = output.global_args("-progress", "unix://{}".format(socket_filename))
+            output = ffmpeg.output(*inputs, filename, vcodec="copy", acodec="copy")
+            output = output.global_args("-progress", "unix://{}".format(socket_filename), "-n" if _cmdl_opts.break_on_existing else "-y")
             output.run(capture_stdout=True, capture_stderr=True)
-    except Exception as error:
+            return True
+    except ffmpeg.Error as error:
+        stderr = error.stderr.decode("utf8")
+        if f"File '{filename}' already exists. Exiting." in stderr:
+            return False
+        else:
+            raise error
+    except Exception:
         raise FormatNotAvailableException("Failed to download video or audio stream with ffmpeg")
 
 
