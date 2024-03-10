@@ -1330,7 +1330,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
     # Dwango Media Service (DMS)
     if template_params.get("video_uri") or template_params.get("audio_uri"):
         if _cmdl_opts.threads:
-            output("Multithreading is only supported for DMC delivery. Video will be downloaded on one thread.")
+            output("Multithreading is only supported for DMC delivery. Video will be downloaded on one thread.\n", logging.WARNING)
 
         m3u8_streams = []
         # TODO: Fix clumsy parameters check
