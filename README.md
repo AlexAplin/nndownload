@@ -35,9 +35,12 @@ nndownload allows you to download videos, images, manga, and process other links
 - aiohttp
 - aiohttp-socks
 - beautifulsoup4
-- requests
+- ffmpeg-python
+- gevent
 - mutagen
+- requests
 - setuptools
+- tqdm
 - urllib3
 
 # Installation

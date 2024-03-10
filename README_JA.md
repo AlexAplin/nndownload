@@ -36,9 +36,12 @@ nndownloadでは、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)か
 - aiohttp
 - aiohttp-socks
 - beautifulsoup4
-- requests
+- ffmpeg-python
+- gevent
 - mutagen
+- requests
 - setuptools
+- tqdm
 - urllib3
 
 # Installation

@@ -1,7 +1,10 @@
 aiohttp
 aiohttp-socks
 beautifulsoup4
-requests
+ffmpeg-python
+gevent
 mutagen
+requests
 setuptools
+tqdm
 urllib3
