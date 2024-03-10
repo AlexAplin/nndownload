@@ -1320,12 +1320,15 @@ def perform_ffmpeg_dl(filename: AnyStr, duration: float, streams: List):
             return True
     except ffmpeg.Error as error:
         stderr = error.stderr.decode("utf8")
-        if f"File '{filename}' already exists. Exiting." in stderr:
+        actual_error = stderr.splitlines()[-1]
+
+        # Make sure we pass the right continue code for --break-on-existing
+        if f"File '{filename}' already exists. Exiting." in actual_error:
             return False
         else:
-            raise error
+            raise FormatNotAvailableException(f"ffmpeg exited with an error: {actual_error}")
     except Exception:
-        raise FormatNotAvailableException("Failed to download video or audio stream with ffmpeg")
+        raise FormatNotAvailableException("Failed to download video or audio stream")
 
 
 def download_video_media(session: requests.Session, filename: AnyStr, template_params: dict):
@@ -1333,10 +1336,19 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
     output("Downloading {0} to \"{1}\"...\n".format(template_params["id"], filename), logging.INFO)
 
+    # If extension was rewritten, presume the download is complete
+    if os.path.exists(filename):
+        raise ExistingDownloadEncounteredQuit("Exiting as an existing video was encountered")
+
+    complete_filename = filename
+    filename = replace_extension(filename, f"part.{template_params['ext']}")
+
     # Dwango Media Service (DMS)
     if template_params.get("video_uri") or template_params.get("audio_uri"):
+
+        output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
         if _cmdl_opts.threads:
-            output("Multithreading is only supported for DMC delivery. Video will be downloaded on one thread.\n", logging.WARNING)
+            output("Multithreading is only supported for DMC delivery. Video will be downloaded using one thread.\n", logging.WARNING)
 
         m3u8_streams = []
         with get_temp_dir() as temp_dir:
@@ -1354,7 +1366,9 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
                     generic_dl_request(session, key_url, key_path, binary=True)
                     rewrite_file(m3u8_path, key_url, key_path)
                     m3u8_streams.append(m3u8_path)
-            return perform_ffmpeg_dl(filename, float(template_params["duration"]), m3u8_streams)
+            continue_code = perform_ffmpeg_dl(filename, float(template_params["duration"]), m3u8_streams)
+            os.rename(filename, complete_filename)
+            return continue_code
 
     # Dwango Media Cluster (DMC)
     dl_stream = session.head(template_params["url"])
@@ -1400,8 +1414,10 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         output("\n", logging.DEBUG)
 
         output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
+        os.rename(filename, complete_filename)
         return True
 
+    # .part file
     if os.path.isfile(filename):
         with open(filename, "rb"):
             current_byte_pos = os.path.getsize(filename)
@@ -1430,7 +1446,8 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
             # current_byte_pos == video_len
             else:
                 output("File exists and matches current download length.\n", logging.INFO)
-                return False
+                os.rename(filename, complete_filename)
+                return True # Video was actually complete, but extension wasn't updated
 
     else:
         file_condition = "wb"
@@ -1479,6 +1496,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         output("\n", logging.DEBUG)
 
     output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
+    os.rename(filename, complete_filename)
     return True
 
 
