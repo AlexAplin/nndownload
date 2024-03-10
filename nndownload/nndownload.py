@@ -4,6 +4,7 @@
 import argparse
 import asyncio
 import collections
+import contextlib
 import getpass
 import json
 import logging
@@ -12,21 +13,28 @@ import mimetypes
 import netrc
 import os
 import re
+import shutil
+import socket
 import sys
+import tempfile
 import threading
 import time
+import warnings
 import xml.dom.minidom
 from typing import AnyStr, List, Match
 
 import aiohttp
 import requests
 import ffmpeg
+import gevent.monkey
+gevent.monkey.patch_all(ssl=False,thread=False)
 from aiohttp_socks import ProxyConnector
 from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
+from tqdm import tqdm, TqdmWarning
 
 
 __version__ = "1.15"
@@ -206,6 +214,7 @@ dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", ty
 
 
 # Globals
+
 _start_time = _progress = 0
 _cmdl_opts = None
 
@@ -433,6 +442,17 @@ def rewrite_file(filename: AnyStr, old_str: AnyStr, new_str: AnyStr):
         file.truncate()
 
 
+@contextlib.contextmanager
+def get_temp_dir():
+    """Get a temporary working directory."""
+
+    tmpdir = tempfile.mkdtemp()
+    try:
+        yield tmpdir
+    finally:
+        shutil.rmtree(tmpdir)
+
+
 ## Nama methods
 
 def generate_stream(session: requests.Session, master_url: AnyStr) -> AnyStr:
@@ -455,7 +475,6 @@ async def download_stream_clips(session: requests.Session, stream_url: AnyStr):
     """Download the clips associated with a stream playlist and stitch them into a file."""
 
     # TODO: Determine end condition, stitch downloads together, end task on completion
-
     while True:
         stream_request = session.get(stream_url)
         stream_request.raise_for_status()
@@ -1229,18 +1248,78 @@ def download_video_part(session: requests.Session, start, end, filename: AnyStr,
             update_multithread_progress(len(block))
 
 
-def perform_ffmpeg_dl(filename: AnyStr, streams: List):
+def capture_ffmpeg_progress(filename, sock, handler):
+    """Capture and send ffmpeg events to the provided handler."""
+
+    connection, client_address = sock.accept()
+    data = b""
+    try:
+        while True:
+            more_data = connection.recv(16)
+            if not more_data:
+                break
+            data += more_data
+            lines = data.split(b"\n")
+            for line in lines[:-1]:
+                line = line.decode()
+                parts = line.split("=")
+                key = parts[0] if len(parts) > 0 else None
+                value = parts[1] if len(parts) > 1 else None
+                handler(key, value)
+            data = lines[-1]
+    finally:
+        connection.close()
+
+
+@contextlib.contextmanager
+def watch_ffmpeg_progress(handler):
+    """Spawn a socket to capture ffmpeg events."""
+
+    with get_temp_dir() as temp_dir:
+        socket_filename = os.path.join(temp_dir, "sock")
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        with contextlib.closing(sock):
+            sock.bind(socket_filename)
+            sock.listen(1)
+            child = gevent.spawn(capture_ffmpeg_progress, socket_filename, sock, handler)
+            try:
+                yield socket_filename
+            except:
+                gevent.kill(child)
+                raise
+
+
+@contextlib.contextmanager
+def show_ffmpeg_progress(duration: float):
+    """Render a tqdm progress bar relative to a specified stream duration."""
+
+    warnings.filterwarnings("ignore", category=TqdmWarning)
+    with tqdm(total=round(duration, 2)) as progress_bar:
+        def handler(key, value):
+            if key == "out_time_ms":
+                time = round(float(value) / 1000000., 2)
+                progress_bar.update(time - progress_bar.n)
+            elif key == "progress" and value == "end":
+                progress_bar.update(progress_bar.total - progress_bar.n)
+        with watch_ffmpeg_progress(handler) as socket_filename:
+            yield socket_filename
+
+
+def perform_ffmpeg_dl(filename: AnyStr, duration: float, streams: List):
     """Send video and/or audio stream to ffmpeg for download."""
 
-    # TODO: Better progress reporting
     # TODO: Overwrite detection
-    # TODO: Catch failures
     inputs = []
-    for stream in streams:
-        input = ffmpeg.input(stream, protocol_whitelist="https,http,tls,tcp,file,crypto", allowed_extensions="ALL")
-        inputs.append(input)
-    output = ffmpeg.output(*inputs, filename, vcodec="copy", acodec="copy")
-    output.run()
+    try:
+        with show_ffmpeg_progress(duration) as socket_filename:
+            for stream in streams:
+                input = ffmpeg.input(stream, protocol_whitelist="https,http,tls,tcp,file,crypto", allowed_extensions="ALL")
+                inputs.append(input)
+            output = ffmpeg.output(*inputs, filename, vcodec="copy", acodec="copy").overwrite_output()
+            output = output.global_args("-progress", "unix://{}".format(socket_filename))
+            output.run(capture_stdout=True, capture_stderr=True)
+    except Exception as error:
+        raise FormatNotAvailableException("Failed to download video or audio stream with ffmpeg")
 
 
 def download_video_media(session: requests.Session, filename: AnyStr, template_params: dict):
@@ -1250,28 +1329,24 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
     # Dwango Media Service (DMS)
     if template_params.get("video_uri") or template_params.get("audio_uri"):
-        cwd = os.path.dirname(os.path.realpath(filename))
         m3u8_streams = []
         # TODO: Fix clumsy parameters check
-        for stream_type in ["video_uri", "audio_uri"]:
-            if template_params.get(stream_type):
-                # TODO: Consider other extensions
-                # TODO: Perform cleanup of temp files
-                m3u8_path = os.path.join(cwd, f"{template_params['id']}_{stream_type}.m3u8.temp")
-                m3u8 = generic_dl_request(session, template_params[stream_type], m3u8_path)
-
-                # It's minimally viable to only rewrite the key file locally for now
-                # Might be wise to eventually do this with the map and all individual segments
-                key_match = M3U8_KEY_RE.search(m3u8)
-                if not key_match:
-                    raise FormatNotAvailableException("Could not retrieve key file from manifest")
-                key_url = key_match[2]
-                key_path =  os.path.join(cwd, f"{template_params['id']}_{stream_type}.key.temp")
-                generic_dl_request(session, key_url, key_path, binary=True)
-                rewrite_file(m3u8_path, key_url, key_path)
-                m3u8_streams.append(m3u8_path)
-        perform_ffmpeg_dl(filename, m3u8_streams)
-        return True
+        with get_temp_dir() as temp_dir:
+            for stream_type in ["video_uri", "audio_uri"]:
+                if template_params.get(stream_type):
+                    m3u8_path = os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.m3u8")
+                    m3u8 = generic_dl_request(session, template_params[stream_type], m3u8_path)
+                    # It's minimally viable to only rewrite the key file locally for now
+                    # Might be wise to eventually do this with the map and all individual segments
+                    key_match = M3U8_KEY_RE.search(m3u8)
+                    if not key_match:
+                        raise FormatNotAvailableException("Could not retrieve key file from manifest")
+                    key_url = key_match[2]
+                    key_path =  os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.key")
+                    generic_dl_request(session, key_url, key_path, binary=True)
+                    rewrite_file(m3u8_path, key_url, key_path)
+                    m3u8_streams.append(m3u8_path)
+            return perform_ffmpeg_dl(filename, float(template_params["duration"]), m3u8_streams)
 
     # Dwango Media Cluster (DMC)
     dl_stream = session.head(template_params["url"])
@@ -1527,7 +1602,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             audio_source = audio_sources[0]
             payload = json.dumps({"outputs":[[video_source,audio_source,]]})
 
-            output("Retrieving video manifest ...\n", logging.INFO)
+            output("Retrieving video manifest...\n", logging.INFO)
             headers = {
                 "X-Access-Right-Key": access_right_key,
                 "X-Request-With": "https://www.nicovideo.jp", # Only provided on this endpoint
@@ -1719,7 +1794,7 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
         template_params["thread_key"] = params["comment"]["nvComment"]["threadKey"]
         template_params["thread_params"] = params["comment"]["nvComment"]["params"]
         template_params["published"] = params["video"]["registeredAt"]
-        template_params["duration"] = params["video"]["duration"]
+        template_params["duration"] = params["video"]["duration"] # Seconds
         template_params["view_count"] = int(params["video"]["count"]["view"])
         template_params["mylist_count"] = int(params["video"]["count"]["mylist"])
         template_params["comment_count"] = int(params["video"]["count"]["comment"])
@@ -1841,8 +1916,8 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
         status_forcelist=(500, 502, 503, 504),
     )
     adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
 
     session.headers.update({"User-Agent": f"{MODULE_NAME}/{__version__}"})
 
