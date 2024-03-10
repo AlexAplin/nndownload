@@ -2090,9 +2090,6 @@ def main():
         account_password = _cmdl_opts.password
         session_cookie = _cmdl_opts.session_cookie
 
-        if _cmdl_opts.threads:
-            output("Multithread downloading (-r/--threads) will be deprecated in a future release as it is not supported for DMS delivery.\n", logging.WARNING)
-
         if _cmdl_opts.netrc:
             if _cmdl_opts.username or _cmdl_opts.password or _cmdl_opts.session_cookie:
                 output("Ignoring input credentials in favor of .netrc.\n", logging.WARNING)
