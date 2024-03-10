@@ -6,7 +6,7 @@
     <a href='./README.md'>EN</a> | JA
 </p>
 
-nndownloadでは、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)から動画、画像、マンガをダウンロードしたり、その他のリンクを処理したりできます。従来のダウンローダーとは異なり、nndownloadではDMC (Dwango Media Cluster) サーバーと通信して、高品質の動画へのアクセスを確保します。
+nndownloadでは、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)から動画、画像、マンガをダウンロードしたり、その他のリンクを処理したりできます。従来のダウンローダーとは異なり、nndownloadではDMC(Dwango Media Cluster)とDMS(Dwango Media Services)サーバーと通信して、高品質の動画へのアクセスを確保します。
 
 ## Disclaimers
 - [プレミアムアカウント](https://secure.nicovideo.jp/secure/premium_detail/)を持っていない場合、エコノミーモードの時間帯  (通常は日本時間の午後12時～午前2 時) または混雑する時間帯では低品質の動画となります。
