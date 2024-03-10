@@ -4,6 +4,7 @@
 import argparse
 import asyncio
 import collections
+import contextlib
 import getpass
 import json
 import logging
@@ -12,21 +13,28 @@ import mimetypes
 import netrc
 import os
 import re
+import shutil
+import socket
 import sys
+import tempfile
 import threading
 import time
-import traceback
+import warnings
 import xml.dom.minidom
 from typing import AnyStr, List, Match
 
 import aiohttp
 import requests
+import ffmpeg
+import gevent.monkey
+gevent.monkey.patch_all(ssl=False,thread=False)
 from aiohttp_socks import ProxyConnector
 from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
+from tqdm import tqdm, TqdmWarning
 
 
 __version__ = "1.15"
@@ -64,6 +72,8 @@ VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 M3U8_MEDIA_RE = re.compile(r"(?:#EXT-X-MEDIA:TYPE=)(?:(\w+))(?:.*),URI=\"(.*)\"")
+M3U8_KEY_RE = re.compile(r"((?:#EXT-X-KEY)(?:.*),?URI=\")(.*)\"(.*)")
+M3U8_MAP_RE = re.compile(r"((?:#EXT-X-MAP)(?:.*),?URI=\")(.*)\"(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
@@ -204,6 +214,7 @@ dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", ty
 
 
 # Globals
+
 _start_time = _progress = 0
 _cmdl_opts = None
 
@@ -408,6 +419,40 @@ def find_extension(mimetype: AnyStr) -> AnyStr:
     return MIMETYPES.get(mimetype) or mimetypes.guess_extension(mimetype, strict=True)
 
 
+def generic_dl_request(session: requests.Session, uri: AnyStr, filename: AnyStr, binary: bool=False):
+    """Generic request to download and write to file."""
+
+    request = session.get(uri)
+    request.raise_for_status()
+    request_body = request.content if binary else request.text
+    mode = "wb" if binary else "w"
+    with open(filename, mode) as file:
+        file.write(request_body)
+    return request_body
+
+
+def rewrite_file(filename: AnyStr, old_str: AnyStr, new_str: AnyStr):
+    """Replace a string in a text file."""
+
+    with open(filename, "r+") as file:
+        raw = file.read()
+        new = raw.replace(old_str, new_str)
+        file.seek(0)
+        file.write(new)
+        file.truncate()
+
+
+@contextlib.contextmanager
+def get_temp_dir():
+    """Get a temporary working directory."""
+
+    tmpdir = tempfile.mkdtemp()
+    try:
+        yield tmpdir
+    finally:
+        shutil.rmtree(tmpdir)
+
+
 ## Nama methods
 
 def generate_stream(session: requests.Session, master_url: AnyStr) -> AnyStr:
@@ -430,7 +475,6 @@ async def download_stream_clips(session: requests.Session, stream_url: AnyStr):
     """Download the clips associated with a stream playlist and stitch them into a file."""
 
     # TODO: Determine end condition, stitch downloads together, end task on completion
-
     while True:
         stream_request = session.get(stream_url)
         stream_request.raise_for_status()
@@ -464,6 +508,7 @@ async def open_nama_websocket(
         is_timeshift: bool = False
 ):
     """Open a WebSocket connection to receive and generate the stream playlist URL."""
+
     proxy = session.proxies.get("http://")  # Same mount as https://
     connector = ProxyConnector.from_url(proxy) if proxy else None
     async with aiohttp.ClientSession(connector=connector) as websocket_session:
@@ -1026,7 +1071,7 @@ def request_video(session: requests.Session, video_id: AnyStr):
     if not _cmdl_opts.skip_media:
         continue_code = download_video_media(session, filename, template_params)
         if _cmdl_opts.break_on_existing and not continue_code:
-            raise ExistingDownloadEncountered("Exiting as an existing video was encountered")
+            raise ExistingDownloadEncounteredQuit("Exiting as an existing video was encountered")
         if _cmdl_opts.add_metadata:
             add_metadata_to_video(filename, template_params)
     if _cmdl_opts.dump_metadata:
@@ -1203,18 +1248,127 @@ def download_video_part(session: requests.Session, start, end, filename: AnyStr,
             update_multithread_progress(len(block))
 
 
+def capture_ffmpeg_progress(filename, sock, handler):
+    """Capture and send ffmpeg events to the provided handler."""
+
+    connection, client_address = sock.accept()
+    data = b""
+    try:
+        while True:
+            more_data = connection.recv(16)
+            if not more_data:
+                break
+            data += more_data
+            lines = data.split(b"\n")
+            for line in lines[:-1]:
+                line = line.decode()
+                parts = line.split("=")
+                key = parts[0] if len(parts) > 0 else None
+                value = parts[1] if len(parts) > 1 else None
+                handler(key, value)
+            data = lines[-1]
+    finally:
+        connection.close()
+
+
+@contextlib.contextmanager
+def watch_ffmpeg_progress(handler):
+    """Spawn a socket to capture ffmpeg events."""
+
+    with get_temp_dir() as temp_dir:
+        socket_filename = os.path.join(temp_dir, "sock")
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        with contextlib.closing(sock):
+            sock.bind(socket_filename)
+            sock.listen(1)
+            child = gevent.spawn(capture_ffmpeg_progress, socket_filename, sock, handler)
+            try:
+                yield socket_filename
+            except:
+                gevent.kill(child)
+                raise
+
+
+@contextlib.contextmanager
+def show_ffmpeg_progress(duration: float):
+    """Render a tqdm progress bar relative to a specified stream duration."""
+
+    warnings.filterwarnings("ignore", category=TqdmWarning)
+    with tqdm(total=round(duration, 2)) as progress_bar:
+        def handler(key, value):
+            if key == "out_time_ms":
+                time = round(float(value) / 1000000., 2)
+                progress_bar.update(time - progress_bar.n)
+            elif key == "progress" and value == "end":
+                progress_bar.update(progress_bar.total - progress_bar.n)
+        with watch_ffmpeg_progress(handler) as socket_filename:
+            yield socket_filename
+
+
+def perform_ffmpeg_dl(filename: AnyStr, duration: float, streams: List):
+    """Send video and/or audio stream to ffmpeg for download."""
+
+    inputs = []
+    try:
+        with show_ffmpeg_progress(duration) as socket_filename:
+            for stream in streams:
+                input = ffmpeg.input(stream, protocol_whitelist="https,http,tls,tcp,file,crypto", allowed_extensions="ALL")
+                inputs.append(input)
+            output = ffmpeg.output(*inputs, filename, vcodec="copy", acodec="copy")
+            output = output.global_args("-progress", "unix://{}".format(socket_filename), "-y")
+            output.run(capture_stdout=True, capture_stderr=True)
+            return True
+    except ffmpeg.Error as error:
+        stderr = error.stderr.decode("utf8")
+        actual_error = stderr.splitlines()[-1]
+        raise FormatNotAvailableException(f"ffmpeg exited with an error: {actual_error}")
+    except Exception:
+        raise FormatNotAvailableException("Failed to download video or audio stream")
+
+
 def download_video_media(session: requests.Session, filename: AnyStr, template_params: dict):
     """Download video from response URL and display progress."""
 
     output("Downloading {0} to \"{1}\"...\n".format(template_params["id"], filename), logging.INFO)
 
+    # If extension was rewritten, presume the download is complete
+    if os.path.exists(filename):
+        output("Video exists and appears to have been completed.\n", logging.INFO)
+        return False
+
+    complete_filename = filename
+    filename = replace_extension(filename, f"part.{template_params['ext']}")
+
     # Dwango Media Service (DMS)
     if template_params.get("video_uri") or template_params.get("audio_uri"):
-        output("Downloading videos delivered with Dwango Media Service (DMS) is not currently supported.\n", logging.WARNING)
-        return
+
+        # .part file
+        if os.path.exists(filename):
+            output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
+        if _cmdl_opts.threads:
+            output("Multithreading is only supported for DMC delivery. Video will be downloaded using one thread.\n", logging.WARNING)
+
+        m3u8_streams = []
+        with get_temp_dir() as temp_dir:
+            for stream_type in ["video_uri", "audio_uri"]:
+                if template_params.get(stream_type):
+                    m3u8_path = os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.m3u8")
+                    m3u8 = generic_dl_request(session, template_params[stream_type], m3u8_path)
+                    # It's minimally viable to only rewrite the key file locally for now
+                    # Might be wise to eventually do this with the map and all individual segments
+                    key_match = M3U8_KEY_RE.search(m3u8)
+                    if not key_match:
+                        raise FormatNotAvailableException("Could not retrieve key file from manifest")
+                    key_url = key_match[2]
+                    key_path =  os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.key")
+                    generic_dl_request(session, key_url, key_path, binary=True)
+                    rewrite_file(m3u8_path, key_url, key_path)
+                    m3u8_streams.append(m3u8_path)
+            continue_code = perform_ffmpeg_dl(filename, float(template_params["duration"]), m3u8_streams)
+            os.rename(filename, complete_filename)
+            return continue_code
 
     # Dwango Media Cluster (DMC)
-
     dl_stream = session.head(template_params["url"])
     dl_stream.raise_for_status()
     video_len = int(dl_stream.headers["content-length"])
@@ -1258,8 +1412,10 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         output("\n", logging.DEBUG)
 
         output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
+        os.rename(filename, complete_filename)
         return True
 
+    # .part file
     if os.path.isfile(filename):
         with open(filename, "rb"):
             current_byte_pos = os.path.getsize(filename)
@@ -1288,7 +1444,8 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
             # current_byte_pos == video_len
             else:
                 output("File exists and matches current download length.\n", logging.INFO)
-                return False
+                os.rename(filename, complete_filename)
+                return True # Video was actually complete, but extension wasn't updated
 
     else:
         file_condition = "wb"
@@ -1337,6 +1494,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         output("\n", logging.DEBUG)
 
     output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
+    os.rename(filename, complete_filename)
     return True
 
 
@@ -1375,11 +1533,11 @@ def list_qualities(sources_type: str, sources: list, is_dms: bool):
         output("{:<24} | {:<10} | {:<46}\n".format(source_id, str(is_available), quality_aggregate), logging.INFO, force=True)
 
 
-def select_dmc_quality(template_params: dict, template_key: AnyStr, sources: list, quality="") -> List[AnyStr]:
-    """Select the specified quality from a sources list on DMC videos."""
+def select_quality(template_params: dict, template_key: AnyStr, sources: list, quality="") -> List[AnyStr]:
+    """Select the specified quality from a sources list on DMC and DMS videos."""
 
     if quality and _cmdl_opts.force_high_quality:
-        output("-f/--force-high-quality active. Ignoring quality...\n", logging.WARNING)
+        output("-f/--force-high-quality was set. Ignoring specified quality...\n", logging.WARNING)
 
     # Assumes qualities are in descending order
     highest_quality = sources[0]
@@ -1440,37 +1598,52 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
         # Perform request to Dwango Media Service (DMS)
         # Began rollout starting 2023-11-01 for select videos and users (https://blog.nicovideo.jp/niconews/205042.html)
         # Videos longer than 30 minutes in HD (>720p) quality appear to be served this way exclusively 
-        # elif params["media"]["domand"]:
-        #     if _cmdl_opts.list_qualities:
-        #         list_qualities("video", params["media"]["domand"]["videos"], True)
-        #         list_qualities("audio", params["media"]["domand"]["audios"], True)
-        #         raise ListQualitiesQuit("Exiting after listing available qualities")
+        elif params["media"]["domand"]:
+            if _cmdl_opts.list_qualities:
+                list_qualities("video", params["media"]["domand"]["videos"], True)
+                list_qualities("audio", params["media"]["domand"]["audios"], True)
+                raise ListQualitiesQuit("Exiting after listing available qualities")
 
-        #     video_id = params["video"]["id"]
-        #     access_right_key = params["media"]["domand"]["accessRightKey"]
-        #     watch_track_id = params["client"]["watchTrackId"]
+            video_id = params["video"]["id"]
+            access_right_key = params["media"]["domand"]["accessRightKey"]
+            watch_track_id = params["client"]["watchTrackId"]
 
-        #     # Limited to one video and audio source
-        #     payload = json.dumps({"outputs":[["video-h264-720p","audio-aac-128kbps",]]})
+            video_sources = select_quality(
+                template_params,
+                "video_quality",
+                params["media"]["domand"]["videos"],
+                _cmdl_opts.video_quality or "highest"
+            )
+            audio_sources = select_quality(
+                template_params,
+                "audio_quality",
+                params["media"]["domand"]["audios"],
+                _cmdl_opts.audio_quality or "highest"
+            )
 
-        #     output("Retrieving video manifest ...\n", logging.INFO)
-        #     headers = {
-        #         "X-Access-Right-Key": access_right_key,
-        #         "X-Request-With": "https://www.nicovideo.jp", # Only provided on this endpoint
-        #     }
-        #     session.options(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id)) # OPTIONS
-        #     get_manifest_request = session.post(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id), headers={**API_HEADERS, **headers}, data=payload)
-        #     get_manifest_request.raise_for_status()
-        #     manifest_url = get_manifest_request.json()["data"]["contentUrl"]
-        #     manifest_request = session.get(manifest_url)
-        #     manifest_request.raise_for_status()
-        #     manifest_text = manifest_request.text
-        #     output("Retrieved video manifest.\n", logging.INFO)
+            # Limited to one video and audio source
+            video_source = video_sources[0]
+            audio_source = audio_sources[0]
+            payload = json.dumps({"outputs":[[video_source,audio_source,]]})
 
-        #     output("Collecting video media URIs...\n")
-        #     template_params["video_uri"] = get_stream_from_manifest(manifest_text)
-        #     template_params["audio_uri"] = audio_playlist = get_media_from_manifest(manifest_text, "audio")
-        #     output("Collected video media URIs.\n", logging.INFO)
+            output("Retrieving video manifest...\n", logging.INFO)
+            headers = {
+                "X-Access-Right-Key": access_right_key,
+                "X-Request-With": "https://www.nicovideo.jp", # Only provided on this endpoint
+            }
+            session.options(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id)) # OPTIONS
+            get_manifest_request = session.post(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id), headers={**API_HEADERS, **headers}, data=payload)
+            get_manifest_request.raise_for_status()
+            manifest_url = get_manifest_request.json()["data"]["contentUrl"]
+            manifest_request = session.get(manifest_url)
+            manifest_request.raise_for_status()
+            manifest_text = manifest_request.text
+            output("Retrieved video manifest.\n", logging.INFO)
+
+            output("Collecting video media URIs...\n")
+            template_params["video_uri"] = get_stream_from_manifest(manifest_text)
+            template_params["audio_uri"] = get_media_from_manifest(manifest_text, "audio")
+            output("Collected video media URIs.\n", logging.INFO)
 
         # Perform request to Dwango Media Cluster (DMC)
         elif params["media"]["delivery"]:
@@ -1489,13 +1662,13 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             file_extension = template_params["ext"]
             priority = params["media"]["delivery"]["movie"]["session"]["priority"]
 
-            video_sources = select_dmc_quality(
+            video_sources = select_quality(
                 template_params,
                 "video_quality",
                 params["media"]["delivery"]["movie"]["videos"],
                 _cmdl_opts.video_quality
             )
-            audio_sources = select_dmc_quality(
+            audio_sources = select_quality(
                 template_params,
                 "audio_quality",
                 params["media"]["delivery"]["movie"]["audios"],
@@ -1645,7 +1818,7 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
         template_params["thread_key"] = params["comment"]["nvComment"]["threadKey"]
         template_params["thread_params"] = params["comment"]["nvComment"]["params"]
         template_params["published"] = params["video"]["registeredAt"]
-        template_params["duration"] = params["video"]["duration"]
+        template_params["duration"] = params["video"]["duration"] # Seconds
         template_params["view_count"] = int(params["video"]["count"]["view"])
         template_params["mylist_count"] = int(params["video"]["count"]["mylist"])
         template_params["comment_count"] = int(params["video"]["count"]["comment"])
@@ -1767,8 +1940,8 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
         status_forcelist=(500, 502, 503, 504),
     )
     adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
 
     session.headers.update({"User-Agent": f"{MODULE_NAME}/{__version__}"})
 
