@@ -1329,6 +1329,9 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
     # Dwango Media Service (DMS)
     if template_params.get("video_uri") or template_params.get("audio_uri"):
+        if _cmdl_opts.threads:
+            output("Multithreading is only supported for DMC delivery. Video will be downloaded on one thread.")
+
         m3u8_streams = []
         # TODO: Fix clumsy parameters check
         with get_temp_dir() as temp_dir:
@@ -2063,6 +2066,9 @@ def main():
         account_username = _cmdl_opts.username
         account_password = _cmdl_opts.password
         session_cookie = _cmdl_opts.session_cookie
+
+        if _cmdl_opts.threads:
+            output("Multithread downloading (-r/--threads) will be deprecated in a future release as it is not supported for DMS delivery.\n", logging.WARNING)
 
         if _cmdl_opts.netrc:
             if _cmdl_opts.username or _cmdl_opts.password or _cmdl_opts.session_cookie:
