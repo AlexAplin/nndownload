@@ -1339,7 +1339,6 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
             output("Multithreading is only supported for DMC delivery. Video will be downloaded on one thread.\n", logging.WARNING)
 
         m3u8_streams = []
-        # TODO: Fix clumsy parameters check
         with get_temp_dir() as temp_dir:
             for stream_type in ["video_uri", "audio_uri"]:
                 if template_params.get(stream_type):
