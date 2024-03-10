@@ -1,6 +1,6 @@
 # nndownload
 
-![PyPI](https://img.shields.io/pypi/v/nndownload.svg)
+[![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
 
 <p align='center'>
     <a href='./README.md'>EN</a> | JA
