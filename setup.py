@@ -9,7 +9,7 @@ with open("README.md", "r") as description_file:
 with open("requirements.txt", "r") as requirements_file:
     requirements = requirements_file.read().split("\n")
 
-ver_path = convert_path("nndownload/nndownload.py")
+ver_path = convert_path("src/nndownload.py")
 with open(ver_path, encoding="utf8") as ver_file:
     version = re.search(r'__version__ = "(.+)"', ver_file.read()).group(1)
 
@@ -24,7 +24,7 @@ setuptools.setup(
     packages=["nndownload"],
     install_requires=requirements,
     python_requires=">=3.5.3",
-    scripts=["nndownload/nndownload.py"],
+    scripts=["src/nndownload.py"],
     classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
