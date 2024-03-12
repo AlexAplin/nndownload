@@ -71,6 +71,8 @@ class FfmpegDL:
                 progress.update(out_time.total_seconds() - progress.n)
                 continue
             if stdout_line == "" and self.proc.poll() is not None:
+                progress.refresh()
+                progress.close()
                 exit_code = self.proc.poll()
                 if exit_code:
                     raise FfmpegDLException(prev_line)
