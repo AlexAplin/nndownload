@@ -32,7 +32,7 @@ from urllib3.util import Retry
 
 from ffmpeg_dl import FfmpegDL, FfmpegDLException
 
-__version__ = "1.16"
+__version__ = "1.16.1"
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2024 Alex Aplin"
 __license__ = "MIT"
