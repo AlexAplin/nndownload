@@ -30,7 +30,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
 
-from ffmpeg_dl import FfmpegDL
+from ffmpeg_dl import FfmpegDL, FfmpegDLException
 
 __version__ = "1.16"
 __author__ = "Alex Aplin"
@@ -1261,6 +1261,8 @@ def perform_ffmpeg_dl(video_id: AnyStr, filename: AnyStr, duration: float, strea
                                     })
         video_download.convert(name=video_id, duration=duration)
         return True
+    except FfmpegDLException as error:
+        raise FormatNotAvailableException(f"ffmpeg failed to download the video or audio stream with the following error: \"{error}\"")
     except Exception:
         raise FormatNotAvailableException("Failed to download video or audio stream")
 
