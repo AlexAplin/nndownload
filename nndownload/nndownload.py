@@ -14,28 +14,23 @@ import netrc
 import os
 import re
 import shutil
-import socket
 import sys
 import tempfile
 import threading
 import time
-import warnings
 import xml.dom.minidom
 from typing import AnyStr, List, Match
 
 import aiohttp
 import requests
-import ffmpeg
-import gevent.monkey
-gevent.monkey.patch_all(ssl=False,thread=False)
 from aiohttp_socks import ProxyConnector
 from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
-from tqdm import tqdm, TqdmWarning
 
+from ffmpeg_dl import FfmpegDL
 
 __version__ = "1.16"
 __author__ = "Alex Aplin"
@@ -1250,80 +1245,22 @@ def download_video_part(session: requests.Session, start, end, filename: AnyStr,
             update_multithread_progress(len(block))
 
 
-def capture_ffmpeg_progress(filename, sock, handler):
-    """Capture and send ffmpeg events to the provided handler."""
-
-    connection, client_address = sock.accept()
-    data = b""
-    try:
-        while True:
-            more_data = connection.recv(16)
-            if not more_data:
-                break
-            data += more_data
-            lines = data.split(b"\n")
-            for line in lines[:-1]:
-                line = line.decode()
-                parts = line.split("=")
-                key = parts[0] if len(parts) > 0 else None
-                value = parts[1] if len(parts) > 1 else None
-                handler(key, value)
-            data = lines[-1]
-    finally:
-        connection.close()
-
-
-@contextlib.contextmanager
-def watch_ffmpeg_progress(handler):
-    """Spawn a socket to capture ffmpeg events."""
-
-    with get_temp_dir() as temp_dir:
-        socket_filename = os.path.join(temp_dir, "sock")
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        with contextlib.closing(sock):
-            sock.bind(socket_filename)
-            sock.listen(1)
-            child = gevent.spawn(capture_ffmpeg_progress, socket_filename, sock, handler)
-            try:
-                yield socket_filename
-            except:
-                gevent.kill(child)
-                raise
-
-
-@contextlib.contextmanager
-def show_ffmpeg_progress(duration: float):
-    """Render a tqdm progress bar relative to a specified stream duration."""
-
-    warnings.filterwarnings("ignore", category=TqdmWarning)
-    with tqdm(total=round(duration, 2)) as progress_bar:
-        def handler(key, value):
-            if key == "out_time_ms":
-                time = round(float(value) / 1000000., 2)
-                progress_bar.update(time - progress_bar.n)
-            elif key == "progress" and value == "end":
-                progress_bar.update(progress_bar.total - progress_bar.n)
-        with watch_ffmpeg_progress(handler) as socket_filename:
-            yield socket_filename
-
-
-def perform_ffmpeg_dl(filename: AnyStr, duration: float, streams: List):
+def perform_ffmpeg_dl(video_id: AnyStr, filename: AnyStr, duration: float, streams: List):
     """Send video and/or audio stream to ffmpeg for download."""
 
-    inputs = []
     try:
-        with show_ffmpeg_progress(duration) as socket_filename:
-            for stream in streams:
-                input = ffmpeg.input(stream, protocol_whitelist="https,http,tls,tcp,file,crypto", allowed_extensions="ALL")
-                inputs.append(input)
-            output = ffmpeg.output(*inputs, filename, vcodec="copy", acodec="copy")
-            output = output.global_args("-progress", "unix://{}".format(socket_filename), "-y")
-            output.run(capture_stdout=True, capture_stderr=True)
-            return True
-    except ffmpeg.Error as error:
-        stderr = error.stderr.decode("utf8")
-        actual_error = stderr.splitlines()[-1]
-        raise FormatNotAvailableException(f"ffmpeg exited with an error: {actual_error}")
+        video_download = FfmpegDL(streams=streams,
+                                    input_kwargs={
+                                        "protocol_whitelist": "https,http,tls,tcp,file,crypto",
+                                        "allowed_extensions": "ALL",
+                                    },
+                                    output_path=filename,
+                                    output_kwargs={
+                                        "vcodec": "copy",
+                                        "acodec": "copy",
+                                    })
+        video_download.convert(name=video_id, duration=duration)
+        return True
     except Exception:
         raise FormatNotAvailableException("Failed to download video or audio stream")
 
@@ -1366,7 +1303,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
                     generic_dl_request(session, key_url, key_path, binary=True)
                     rewrite_file(m3u8_path, key_url, key_path)
                     m3u8_streams.append(m3u8_path)
-            continue_code = perform_ffmpeg_dl(filename, float(template_params["duration"]), m3u8_streams)
+            continue_code = perform_ffmpeg_dl(template_params["id"], filename, float(template_params["duration"]), m3u8_streams)
             os.rename(filename, complete_filename)
             return continue_code
 
