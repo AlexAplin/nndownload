@@ -4,11 +4,12 @@ import warnings
 from datetime import timedelta, datetime
 from typing import AnyStr, List
 
+import ffmpeg
 from tqdm import TqdmExperimentalWarning
 from tqdm.rich import tqdm_rich
+
 warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
 
-import ffmpeg
 
 class FfmpegDLException(Exception):
     """Raised when a download fails."""
