@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['nndownload.py'],
+    ['src/nndownload.py'],
     pathex=[],
     binaries=[],
     datas=[],
