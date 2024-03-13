@@ -1,4 +1,4 @@
-import regex as re
+import re
 import subprocess
 import warnings
 from datetime import timedelta, datetime
