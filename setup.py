@@ -6,7 +6,7 @@ from distutils.util import convert_path
 with open("README.md", "r") as description_file:
     long_description = description_file.read()
 
-with open("requirements.txt", "r") as requirements_file:
+with open("src/requirements.txt", "r") as requirements_file:
     requirements = requirements_file.read().split("\n")
 
 ver_path = convert_path("src/nndownload.py")

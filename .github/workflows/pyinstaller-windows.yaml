@@ -13,7 +13,7 @@ jobs:
       uses: JackMcKew/pyinstaller-action-windows@python3-10-pyinstaller-5-3
       with:
         path: src
-        spec:  nndownload.spec
+        spec: nndownload.spec
         requirements: requirements.txt
     - uses: actions/upload-artifact@v2
       with:
