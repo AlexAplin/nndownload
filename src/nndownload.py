@@ -30,7 +30,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
 
-from ffmpeg_dl import FfmpegDL, FfmpegDLException
+from .ffmpeg_dl import FfmpegDL, FfmpegDLException
 
 __version__ = "1.16.1"
 __author__ = "Alex Aplin"
@@ -1541,7 +1541,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
 
         # Perform request to Dwango Media Service (DMS)
         # Began rollout starting 2023-11-01 for select videos and users (https://blog.nicovideo.jp/niconews/205042.html)
-        # Videos longer than 30 minutes in HD (>720p) quality appear to be served this way exclusively 
+        # Videos longer than 30 minutes in HD (>720p) quality appear to be served this way exclusively
         elif params["media"]["domand"]:
             if _cmdl_opts.list_qualities:
                 list_qualities("video", params["media"]["domand"]["videos"], True)
