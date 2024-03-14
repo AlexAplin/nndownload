@@ -5,6 +5,7 @@ ffmpeg-python
 gevent
 mutagen
 requests
+rich
 setuptools
 tqdm
 urllib3
