@@ -6,10 +6,10 @@ from distutils.util import convert_path
 with open("README.md", "r") as description_file:
     long_description = description_file.read()
 
-with open("src/requirements.txt", "r") as requirements_file:
+with open("requirements.txt", "r") as requirements_file:
     requirements = requirements_file.read().split("\n")
 
-ver_path = convert_path("src/nndownload.py")
+ver_path = convert_path("nndownload/nndownload.py")
 with open(ver_path, encoding="utf8") as ver_file:
     version = re.search(r'__version__ = "(.+)"', ver_file.read()).group(1)
 
