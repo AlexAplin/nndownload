@@ -30,10 +30,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
 
-if __name__ == "__main__":
-    from ffmpeg_dl import FfmpegDL, FfmpegDLException
-else:
-    from .ffmpeg_dl import FfmpegDL, FfmpegDLException
+from .ffmpeg_dl import FfmpegDL, FfmpegDLException
 
 __version__ = "1.16.1"
 __author__ = "Alex Aplin"
