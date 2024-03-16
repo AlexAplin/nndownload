@@ -2,13 +2,12 @@
 
 
 a = Analysis(
-    ['nndownload.py'],
+    ['nndownload/nndownload.py'],
     pathex=[],
     binaries=[],
     datas=[],
     hiddenimports=[],
     hookspath=[],
-    hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,

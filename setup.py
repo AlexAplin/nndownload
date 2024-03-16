@@ -24,7 +24,11 @@ setuptools.setup(
     packages=["nndownload"],
     install_requires=requirements,
     python_requires=">=3.5.3",
-    scripts=["src/nndownload.py"],
+    entry_points={
+        "console_scripts": [
+            "nndownload=nndownload.nndownload:cli"
+        ]
+    },
     classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
