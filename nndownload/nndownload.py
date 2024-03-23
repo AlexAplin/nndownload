@@ -30,7 +30,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
 
-from src.ffmpeg_dl import FfmpegDL, FfmpegDLException
+from .ffmpeg_dl import FfmpegDL, FfmpegDLException
 
 __version__ = "1.16.1"
 __author__ = "Alex Aplin"
@@ -2093,10 +2093,16 @@ def main():
         log_exception(error)
 
 
-if __name__ == "__main__":
+def cli():
+    global _cmdl_opts
+
     try:
         _cmdl_opts = cmdl_parser.parse_args()
         main()
     except KeyboardInterrupt:
         output(f"Keyboard interrupt received. Exiting...\n", logging.INFO)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    cli()
