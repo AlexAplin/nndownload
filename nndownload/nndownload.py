@@ -1302,6 +1302,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
                         raise FormatNotAvailableException("Could not retrieve key file from manifest")
                     key_url = key_match[2]
                     key_path =  os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.key")
+                    key_path = key_path.replace("\\", "/")
                     generic_dl_request(session, key_url, key_path, binary=True)
                     rewrite_file(m3u8_path, key_url, key_path)
                     m3u8_streams.append(m3u8_path)
