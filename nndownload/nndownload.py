@@ -31,6 +31,7 @@ from requests.utils import add_dict_to_cookiejar
 from urllib3.util import Retry
 
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException
+from .downloader import download_hls
 
 __version__ = "1.16.3"
 __author__ = "Alex Aplin"
@@ -1267,6 +1268,28 @@ def perform_ffmpeg_dl(video_id: AnyStr, filename: AnyStr, duration: float, strea
         raise FormatNotAvailableException("Failed to download video or audio stream")
 
 
+def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration: float, m3u8_streams: List, threads: int = 1):
+    """Download video and audio streams using native HLS downloader and merge using ffmpeg."""
+
+    for stream, stream_filename in m3u8_streams:
+        download_hls(stream, stream_filename, session=session, threads=threads)
+
+    if len(m3u8_streams) > 1:
+        video_convert = FfmpegDL(streams=[stream_filename for _, stream_filename in m3u8_streams],
+                                 input_kwargs={},
+                                 output_path=filename,
+                                 output_kwargs={
+                                     "vcodec": "copy",
+                                     "acodec": "copy",
+                                 })
+        video_convert.convert(name='Merging audio and video', duration=duration)
+        for _, stream_filename in m3u8_streams:
+            os.remove(stream_filename)
+    else:
+        os.rename(m3u8_streams[0][1], filename)
+    return True
+
+
 def download_video_media(session: requests.Session, filename: AnyStr, template_params: dict):
     """Download video from response URL and display progress."""
 
@@ -1286,29 +1309,17 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         # .part file
         if os.path.exists(filename):
             output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
-        if _cmdl_opts.threads:
-            output("Multithreading is only supported for DMC delivery. Video will be downloaded using one thread.\n", logging.WARNING)
 
         m3u8_streams = []
-        with get_temp_dir() as temp_dir:
-            for stream_type in ["dms_video_uri", "dms_audio_uri"]:
-                if template_params.get(stream_type):
-                    m3u8_path = os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.m3u8")
-                    m3u8 = generic_dl_request(session, template_params[stream_type], m3u8_path)
-                    # It's minimally viable to only rewrite the key file locally for now
-                    # Might be wise to eventually do this with the map and all individual segments
-                    key_match = M3U8_KEY_RE.search(m3u8)
-                    if not key_match:
-                        raise FormatNotAvailableException("Could not retrieve key file from manifest")
-                    key_url = key_match[2]
-                    key_path =  os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.key")
-                    key_path = key_path.replace("\\", "/")
-                    generic_dl_request(session, key_url, key_path, binary=True)
-                    rewrite_file(m3u8_path, key_url, key_path)
-                    m3u8_streams.append(m3u8_path)
-            continue_code = perform_ffmpeg_dl(template_params["id"], filename, float(template_params["duration"]), m3u8_streams)
-            os.rename(filename, complete_filename)
-            return continue_code
+        for stream_type, type_ext in [("dms_video_uri", "vid"), ("dms_audio_uri", "aud")]:
+            if template_params.get(stream_type):
+                stream_filename = filename + "." + type_ext
+                if os.path.exists(filename):
+                    output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
+                m3u8_streams.append((template_params.get(stream_type), stream_filename))
+        continue_code = perform_native_hls_dl(session, filename, float(template_params["duration"]), m3u8_streams, _cmdl_opts.threads)
+        os.rename(filename, complete_filename)
+        return continue_code
 
     # Dwango Media Cluster (DMC)
     dl_stream = session.head(template_params["url"])
