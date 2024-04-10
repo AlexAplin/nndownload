@@ -9,6 +9,7 @@ M3U8_KEY_RE = re.compile(r"((?:#EXT-X-KEY)(?:.*),?URI=\")(?P<url>.*)\",IV=0x(?P<
 M3U8_MAP_RE = re.compile(r"((?:#EXT-X-MAP)(?:.*),?URI=\")(?P<url>.*)\"(.*)")
 M3U8_SEGMENT_RE = re.compile(r"(?:#EXTINF):.*\n(.*)")
 
+
 def download_hls(m3u8_url, filename, session, threads=5):
     from .nndownload import FormatNotAvailableException
 
@@ -33,10 +34,10 @@ def download_hls(m3u8_url, filename, session, threads=5):
         f.write(session.get(init_url).content)
 
     def download_segment(segment):
-        r = session.get(segment)
-        r.raise_for_status()
-        cipher = AES.new(key, AES.MODE_CBC, iv=iv)
-        return unpad(cipher.decrypt(r.content), AES.block_size)
+        with session.get(segment) as r:
+            r.raise_for_status()
+            cipher = AES.new(key, AES.MODE_CBC, iv=iv)
+            return unpad(cipher.decrypt(r.content), AES.block_size)
 
     progress = tqdm(total=len(segments), colour="green", unit="seg", desc=f"Downloading {m3u8_type}")
     with ThreadPoolExecutor(max_workers=threads) as executor:
