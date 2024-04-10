@@ -13,7 +13,9 @@ M3U8_SEGMENT_RE = re.compile(r"(?:#EXTINF):.*\n(.*)")
 def download_hls(m3u8_url, filename, session, threads=5):
     from .nndownload import FormatNotAvailableException
 
-    m3u8 = session.get(m3u8_url).text
+    with session.get(m3u8_url) as m3u8_request:
+        m3u8_request.raise_for_status()
+        m3u8 = m3u8_request.text
     key_match = M3U8_KEY_RE.search(m3u8)
     init_match = M3U8_MAP_RE.search(m3u8)
     segments = M3U8_SEGMENT_RE.findall(m3u8)
@@ -26,7 +28,9 @@ def download_hls(m3u8_url, filename, session, threads=5):
 
     m3u8_type = 'video' if '/video/' in m3u8 else 'audio'
     key_url = key_match['url']
-    key = session.get(key_url).content
+    with session.get(key_url) as key_request:
+        key_request.raise_for_status()
+        key = key_request.content
     iv = key_match['iv']
     iv = bytes.fromhex(iv)
     init_url = init_match['url']
