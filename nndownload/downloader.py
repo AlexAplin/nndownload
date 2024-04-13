@@ -26,14 +26,14 @@ def download_hls(m3u8_url, filename, session, threads=5):
     if not segments:
         raise FormatNotAvailableException("Could not retrieve segments from manifest")
 
-    m3u8_type = 'video' if '/video/' in m3u8 else 'audio'
-    key_url = key_match['url']
+    m3u8_type = "video" if "/video/" in m3u8 else "audio"
+    key_url = key_match["url"]
     with session.get(key_url) as key_request:
         key_request.raise_for_status()
         key = key_request.content
-    iv = key_match['iv']
+    iv = key_match["iv"]
     iv = bytes.fromhex(iv)
-    init_url = init_match['url']
+    init_url = init_match["url"]
     with open(filename, "wb") as f:
         f.write(session.get(init_url).content)
 

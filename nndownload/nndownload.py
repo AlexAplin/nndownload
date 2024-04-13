@@ -1314,7 +1314,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         for stream_type, type_ext in [("dms_video_uri", "vid"), ("dms_audio_uri", "aud")]:
             if template_params.get(stream_type):
                 stream_filename = filename + "." + type_ext
-                if os.path.exists(filename):
+                if os.path.exists(stream_filename):
                     output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
                 m3u8_streams.append((template_params.get(stream_type), stream_filename))
         continue_code = perform_native_hls_dl(session, filename, float(template_params["duration"]), m3u8_streams, _cmdl_opts.threads)
