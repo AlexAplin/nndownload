@@ -10,7 +10,7 @@ M3U8_MAP_RE = re.compile(r"((?:#EXT-X-MAP)(?:.*),?URI=\")(?P<url>.*)\"(.*)")
 M3U8_SEGMENT_RE = re.compile(r"(?:#EXTINF):.*\n(.*)")
 
 
-def download_hls(m3u8_url, filename, session, threads=5):
+def download_hls(m3u8_url, filename, name, session, threads=5):
     from .nndownload import FormatNotAvailableException
 
     with session.get(m3u8_url) as m3u8_request:
@@ -26,7 +26,6 @@ def download_hls(m3u8_url, filename, session, threads=5):
     if not segments:
         raise FormatNotAvailableException("Could not retrieve segments from manifest")
 
-    m3u8_type = "video" if "/video/" in m3u8 else "audio"
     key_url = key_match["url"]
     with session.get(key_url) as key_request:
         key_request.raise_for_status()
@@ -43,11 +42,12 @@ def download_hls(m3u8_url, filename, session, threads=5):
             cipher = AES.new(key, AES.MODE_CBC, iv=iv)
             return unpad(cipher.decrypt(r.content), AES.block_size)
 
-    progress = tqdm(total=len(segments), colour="green", unit="seg", desc=f"Downloading {m3u8_type}")
+    progress = tqdm(total=len(segments), colour="green", unit="seg", desc=f"Downloading {name}")
     with ThreadPoolExecutor(max_workers=threads) as executor:
         results = executor.map(download_segment, segments)
         for decrypted in results:
             with open(filename, "ab") as f:
                 f.write(decrypted)
             progress.update()
+    progress.refresh()
     progress.close()

@@ -68,8 +68,6 @@ VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 M3U8_MEDIA_RE = re.compile(r"(?:#EXT-X-MEDIA:TYPE=)(?:(\w+))(?:.*),URI=\"(.*)\"")
-M3U8_KEY_RE = re.compile(r"((?:#EXT-X-KEY)(?:.*),?URI=\")(.*)\"(.*)")
-M3U8_MAP_RE = re.compile(r"((?:#EXT-X-MAP)(?:.*),?URI=\")(.*)\"(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
@@ -1271,22 +1269,26 @@ def perform_ffmpeg_dl(video_id: AnyStr, filename: AnyStr, duration: float, strea
 def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration: float, m3u8_streams: List, threads: int = 1):
     """Download video and audio streams using native HLS downloader and merge using ffmpeg."""
 
-    for stream, stream_filename in m3u8_streams:
-        download_hls(stream, stream_filename, session=session, threads=threads)
+    with get_temp_dir() as temp_dir:
+        stream_filenames = []
+        for stream, name in m3u8_streams:
+            stream_filename = os.path.join(temp_dir, name + ".ts")
+            stream_filenames.append(stream_filename)
+            download_hls(stream, stream_filename, name=name, session=session, threads=threads)
 
-    if len(m3u8_streams) > 1:
-        video_convert = FfmpegDL(streams=[stream_filename for _, stream_filename in m3u8_streams],
-                                 input_kwargs={},
-                                 output_path=filename,
-                                 output_kwargs={
-                                     "vcodec": "copy",
-                                     "acodec": "copy",
-                                 })
-        video_convert.convert(name='Merging audio and video', duration=duration)
-        for _, stream_filename in m3u8_streams:
-            os.remove(stream_filename)
-    else:
-        os.rename(m3u8_streams[0][1], filename)
+        if len(stream_filenames) > 1:
+            video_convert = FfmpegDL(streams=stream_filenames,
+                                    input_kwargs={},
+                                    output_path=filename,
+                                    output_kwargs={
+                                        "vcodec": "copy",
+                                        "acodec": "copy",
+                                    })
+            video_convert.convert(name='Merging audio and video', duration=duration)
+            for stream_filename in stream_filenames:
+                os.remove(stream_filename)
+        else:
+            shutil.move(stream_filenames[0], filename)
     return True
 
 
@@ -1311,12 +1313,9 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
             output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
 
         m3u8_streams = []
-        for stream_type, type_ext in [("dms_video_uri", "vid"), ("dms_audio_uri", "aud")]:
+        for stream_type, name in [("dms_video_uri", "video"), ("dms_audio_uri", "audio")]:
             if template_params.get(stream_type):
-                stream_filename = filename + "." + type_ext
-                if os.path.exists(stream_filename):
-                    output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
-                m3u8_streams.append((template_params.get(stream_type), stream_filename))
+                m3u8_streams.append((template_params.get(stream_type), name))
         continue_code = perform_native_hls_dl(session, filename, float(template_params["duration"]), m3u8_streams, _cmdl_opts.threads)
         os.rename(filename, complete_filename)
         return continue_code
