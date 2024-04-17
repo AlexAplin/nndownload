@@ -1271,7 +1271,7 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
     """Download video and audio streams using native HLS downloader and merge using ffmpeg."""
 
     with get_temp_dir() as temp_dir:
-        with Progress(expand=True) as progress:
+        with Progress() as progress:
             tasks = []
             for stream, name in m3u8_streams:
                 stream_filename = os.path.join(temp_dir, name + ".ts")
