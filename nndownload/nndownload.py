@@ -28,6 +28,7 @@ from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
+from rich.progress import Progress
 from urllib3.util import Retry
 
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException
@@ -1270,13 +1271,22 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
     """Download video and audio streams using native HLS downloader and merge using ffmpeg."""
 
     with get_temp_dir() as temp_dir:
-        stream_filenames = []
-        for stream, name in m3u8_streams:
-            stream_filename = os.path.join(temp_dir, name + ".ts")
-            stream_filenames.append(stream_filename)
-            download_hls(stream, stream_filename, name=name, session=session, threads=threads)
+        with Progress(expand=True) as progress:
+            tasks = []
+            for stream, name in m3u8_streams:
+                stream_filename = os.path.join(temp_dir, name + ".ts")
+                thread = threading.Thread(target=download_hls, args=(stream, stream_filename, name, session, progress, threads))
+                thread.start()
+                tasks.append({
+                    "thread": thread,
+                    "filename": stream_filename,
+                })
 
-        if len(stream_filenames) > 1:
+            for task in tasks:
+                task["thread"].join()
+
+        if len(tasks) > 1:
+            stream_filenames = [task["filename"] for task in tasks]
             video_convert = FfmpegDL(streams=stream_filenames,
                                     input_kwargs={},
                                     output_path=filename,
@@ -1288,7 +1298,7 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
             for stream_filename in stream_filenames:
                 os.remove(stream_filename)
         else:
-            shutil.move(stream_filenames[0], filename)
+            shutil.move(task[0]["filename"], filename)
     return True
 
 

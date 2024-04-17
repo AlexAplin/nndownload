@@ -3,14 +3,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
-from tqdm.rich import tqdm
 
 M3U8_KEY_RE = re.compile(r"((?:#EXT-X-KEY)(?:.*),?URI=\")(?P<url>.*)\",IV=0x(?P<iv>.*)")
 M3U8_MAP_RE = re.compile(r"((?:#EXT-X-MAP)(?:.*),?URI=\")(?P<url>.*)\"(.*)")
 M3U8_SEGMENT_RE = re.compile(r"(?:#EXTINF):.*\n(.*)")
 
 
-def download_hls(m3u8_url, filename, name, session, threads=5):
+def download_hls(m3u8_url, filename, name, session, progress, threads=5):
     from .nndownload import FormatNotAvailableException
 
     with session.get(m3u8_url) as m3u8_request:
@@ -42,12 +41,11 @@ def download_hls(m3u8_url, filename, name, session, threads=5):
             cipher = AES.new(key, AES.MODE_CBC, iv=iv)
             return unpad(cipher.decrypt(r.content), AES.block_size)
 
-    progress = tqdm(total=len(segments), colour="green", unit="seg", desc=f"Downloading {name}")
+    task_id = progress.add_task(name, total=len(segments))
     with ThreadPoolExecutor(max_workers=threads) as executor:
         results = executor.map(download_segment, segments)
         for decrypted in results:
             with open(filename, "ab") as f:
                 f.write(decrypted)
-            progress.update()
-    progress.refresh()
-    progress.close()
+            progress.advance(task_id)
+
