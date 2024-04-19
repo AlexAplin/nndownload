@@ -271,7 +271,7 @@ def log_exception(error: Exception):
     if _cmdl_opts.log:
         sys.stdout.write("{0}: {1}\n".format(type(error).__name__, str(error)))
         sys.stdout.flush()
-        logger.exception("An exception was encountered:\n".format(type(error).__name__, str(error)))
+        logger.exception("An exception was encountered:\n")
     else:
         output("{0}: {1}\n".format(type(error).__name__, str(error)), logging.ERROR, force=True)
 
@@ -2126,7 +2126,7 @@ def cli():
         _cmdl_opts = cmdl_parser.parse_args()
         main()
     except KeyboardInterrupt:
-        output(f"Keyboard interrupt received. Exiting...\n", logging.INFO)
+        output("Keyboard interrupt received. Exiting...\n", logging.INFO)
         sys.exit(1)
 
 
