@@ -12,8 +12,10 @@ import math
 import mimetypes
 import netrc
 import os
+import random
 import re
 import shutil
+import string
 import sys
 import tempfile
 import threading
@@ -96,6 +98,7 @@ BLOCK_SIZE = 1024
 EPSILON = 0.0001
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2  # retry_timeout_s = BACKOFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
+TEMP_PATH_LEN = 16
 
 MIMETYPES = {
     "image/gif": "gif",
@@ -1274,7 +1277,8 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
         with Progress() as progress:
             tasks = []
             for stream, name in m3u8_streams:
-                stream_filename = replace_extension(os.path.join(temp_dir, name), "ts")
+                random_path_string = ''.join(random.choices(string.ascii_letters + string.digits, k=TEMP_PATH_LEN))
+                stream_filename = replace_extension(os.path.join(temp_dir, random_path_string), "ts")
                 thread = threading.Thread(target=download_hls, args=(stream, stream_filename, name, session, progress, threads))
                 thread.start()
                 tasks.append({
@@ -1325,7 +1329,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         m3u8_streams = []
         for stream_type, name in [("dms_video_uri", "video"), ("dms_audio_uri", "audio")]:
             if template_params.get(stream_type):
-                m3u8_streams.append((template_params.get(stream_type), name))
+                m3u8_streams.append((template_params[stream_type], name))
         continue_code = perform_native_hls_dl(session, filename, float(template_params["duration"]), m3u8_streams, _cmdl_opts.threads)
         os.rename(filename, complete_filename)
         return continue_code
