@@ -6,10 +6,11 @@
     <a href='./README.md'>EN</a> | JA
 </p>
 
-nndownloadでは、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)から動画、画像、マンガをダウンロードしたり、その他のリンクを処理したりできます。従来のダウンローダーとは異なり、nndownloadではDMC(Dwango Media Cluster)とDMS(Dwango Media Services)サーバーと通信して、高品質の動画へのアクセスを確保します。
+nndownload では、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)から動画、画像、マンガをダウンロードしたり、その他のリンクを処理したりできます。従来のダウンローダーとは異なり、nndownload では DMC(Dwango Media Cluster)と DMS(Dwango Media Services)サーバーと通信して、高品質の動画へのアクセスを確保します。
 
 ## Disclaimers
-- [プレミアムアカウント](https://secure.nicovideo.jp/secure/premium_detail/)を持っていない場合、エコノミーモードの時間帯  (通常は日本時間の午後12時～午前2 時) または混雑する時間帯では低品質の動画となります。
+
+- [プレミアムアカウント](https://secure.nicovideo.jp/secure/premium_detail/)を持っていない場合、エコノミーモードの時間帯 (通常は日本時間の午後 12 時～午前 2 時) または混雑する時間帯では低品質の動画となります。
 - ログインせずに (-g/--no-login を使用して) ダウンロードする場合、一部の動画はダウンロードできないか、低品質でしか利用できない場合があります。
 - 同じ接続で複数のダウンロードセッションを実行すると、一時的なブロックやスロットリングが発生する可能性があります。
 - 次の機能は現在サポートされていません。
@@ -18,38 +19,36 @@ nndownloadでは、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)か
   - チャンネルやブログ、コメントのダウンロード
 
 ## Features
- - コメント、サムネイル、メタデータを含む動画のダウンロード
- - メタデータを含むニコニコ静画の画像やマンガのダウンロード
- - メタデータを含むチャンネル動画やブログのダウンロード
- - マイリストのダウンロード
- - ユーザの動画、マイリスト、イラスト、マンガのダウンロード
- - ニコ生用のストリームURLの生成
- - 複数スレッドによる動画ダウンロードの高速化
- - テキストファイルで受け取ったURLリストの処理
+
+- コメント、サムネイル、メタデータを含む動画のダウンロード
+- メタデータを含むニコニコ静画の画像やマンガのダウンロード
+- メタデータを含むチャンネル動画やブログのダウンロード
+- マイリストのダウンロード
+- ユーザの動画、マイリスト、イラスト、マンガのダウンロード
+- ニコ生用のストリーム URL の生成
+- 複数スレッドによる動画ダウンロードの高速化
+- テキストファイルで受け取った URL リストの処理
 
 ## Requirements
+
 ### Python version
-- Python >=3.5.3
+
+Python >=3.5.3
 
 ### Dependencies
-- aiohttp
-- aiohttp-socks
-- beautifulsoup4
-- ffmpeg-python
-- gevent
-- mutagen
-- requests
-- setuptools
-- tqdm
-- urllib3
+
+`requirements.txt`を参照
 
 # Installation
+
 ```bash
 pip install nndownload
 ```
 
 ## Usage
+
 ### CLI
+
 ```
 usage: nndownload.py [options] input
 
@@ -99,6 +98,7 @@ download options:
 ```
 
 ### Module
+
 ```python
 import nndownload
 
@@ -108,6 +108,7 @@ nndownload.execute("-g", "-o", output_path, url)
 ```
 
 ### Custom Output Paths
+
 カスタムファイルパスは、標準の Python テンプレート文字列のように構築されます。例：`{uploader} - {title}.{ext}`  
 ニコニコ静画の場合、出力パスはチャプターディレクトリのテンプレートにする必要があります。例：`{manga_id}\{id} - {title}`  
 利用可能なオプションは以下の通りです。
@@ -144,13 +145,16 @@ nndownload.execute("-g", "-o", output_path, url)
 - thumbnail_url (videos)
 
 ### Using Stream Links
-ストリームURLの生成後は、ストリームをアクティブな状態に保つためにプログラムを実行し続ける必要があります。生成されたストリームURLを再生するには、[mpv](https://github.com/mpv-player/mpv)と[streamlink](https://github.com/streamlink/streamlink)が最適なオプションです。ただし、アグレッシブなHLS キャッシングとスレッドを使用する他のプログラムも動作する可能性があります。
+
+ストリーム URL の生成後は、ストリームをアクティブな状態に保つためにプログラムを実行し続ける必要があります。生成されたストリーム URL を再生するには、[mpv](https://github.com/mpv-player/mpv)と[streamlink](https://github.com/streamlink/streamlink)が最適なオプションです。ただし、アグレッシブな HLS キャッシングとスレッドを使用する他のプログラムも動作する可能性があります。
 
 `mpv https://...`
 `streamlink https://... best`
 
 ## Known Bugs
-- 既知のバグについてはopen issuesをご参照ください。
+
+- 既知のバグについては open issues をご参照ください。
 
 ## License
+
 This project is licensed under the MIT License.
