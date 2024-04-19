@@ -56,7 +56,7 @@ class FfmpegDL:
         )
 
     def convert(self, name: AnyStr, duration: float):
-        progress = tqdm_rich(desc=name, unit="seg", colour="green", total=duration)
+        progress = tqdm_rich(desc=name, unit="sec", colour="green", total=duration)
 
         self.load_subprocess()
 

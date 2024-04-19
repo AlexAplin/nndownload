@@ -12,8 +12,10 @@ import math
 import mimetypes
 import netrc
 import os
+import random
 import re
 import shutil
+import string
 import sys
 import tempfile
 import threading
@@ -28,9 +30,11 @@ from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
+from rich.progress import Progress
 from urllib3.util import Retry
 
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException
+from .hls_dl import download_hls
 
 __version__ = "1.16.3"
 __author__ = "Alex Aplin"
@@ -67,8 +71,6 @@ VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 M3U8_MEDIA_RE = re.compile(r"(?:#EXT-X-MEDIA:TYPE=)(?:(\w+))(?:.*),URI=\"(.*)\"")
-M3U8_KEY_RE = re.compile(r"((?:#EXT-X-KEY)(?:.*),?URI=\")(.*)\"(.*)")
-M3U8_MAP_RE = re.compile(r"((?:#EXT-X-MAP)(?:.*),?URI=\")(.*)\"(.*)")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
@@ -96,6 +98,7 @@ BLOCK_SIZE = 1024
 EPSILON = 0.0001
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2  # retry_timeout_s = BACKOFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
+TEMP_PATH_LEN = 16
 
 MIMETYPES = {
     "image/gif": "gif",
@@ -1267,6 +1270,44 @@ def perform_ffmpeg_dl(video_id: AnyStr, filename: AnyStr, duration: float, strea
         raise FormatNotAvailableException("Failed to download video or audio stream")
 
 
+def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration: float, m3u8_streams: List, threads: int = 1):
+    """Download video and audio streams using native HLS downloader and merge using ffmpeg if necessary."""
+
+    with get_temp_dir() as temp_dir:
+        with Progress() as progress:
+            tasks = []
+            for stream, name in m3u8_streams:
+                random_path_string = ''.join(random.choices(string.ascii_letters + string.digits, k=TEMP_PATH_LEN))
+                stream_filename = replace_extension(os.path.join(temp_dir, random_path_string), "ts")
+                thread = threading.Thread(target=download_hls, args=(stream, stream_filename, name, session, progress, threads))
+                thread.start()
+                tasks.append({
+                    "thread": thread,
+                    "filename": stream_filename,
+                })
+
+            for task in tasks:
+                task["thread"].join()
+
+        # Video and audio
+        if len(tasks) > 1:
+            stream_filenames = [task["filename"] for task in tasks]
+            video_convert = FfmpegDL(streams=stream_filenames,
+                                    input_kwargs={},
+                                    output_path=filename,
+                                    output_kwargs={
+                                        "vcodec": "copy",
+                                        "acodec": "copy",
+                                    })
+            video_convert.convert(name='Merging audio and video', duration=duration)
+            for stream_filename in stream_filenames:
+                os.remove(stream_filename)
+        # Only audio or video
+        else:
+            shutil.move(task[0]["filename"], filename)
+    return True
+
+
 def download_video_media(session: requests.Session, filename: AnyStr, template_params: dict):
     """Download video from response URL and display progress."""
 
@@ -1286,29 +1327,14 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         # .part file
         if os.path.exists(filename):
             output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
-        if _cmdl_opts.threads:
-            output("Multithreading is only supported for DMC delivery. Video will be downloaded using one thread.\n", logging.WARNING)
 
         m3u8_streams = []
-        with get_temp_dir() as temp_dir:
-            for stream_type in ["dms_video_uri", "dms_audio_uri"]:
-                if template_params.get(stream_type):
-                    m3u8_path = os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.m3u8")
-                    m3u8 = generic_dl_request(session, template_params[stream_type], m3u8_path)
-                    # It's minimally viable to only rewrite the key file locally for now
-                    # Might be wise to eventually do this with the map and all individual segments
-                    key_match = M3U8_KEY_RE.search(m3u8)
-                    if not key_match:
-                        raise FormatNotAvailableException("Could not retrieve key file from manifest")
-                    key_url = key_match[2]
-                    key_path =  os.path.join(temp_dir, f"{template_params['id']}_{stream_type}.key")
-                    key_path = key_path.replace("\\", "/")
-                    generic_dl_request(session, key_url, key_path, binary=True)
-                    rewrite_file(m3u8_path, key_url, key_path)
-                    m3u8_streams.append(m3u8_path)
-            continue_code = perform_ffmpeg_dl(template_params["id"], filename, float(template_params["duration"]), m3u8_streams)
-            os.rename(filename, complete_filename)
-            return continue_code
+        for stream_type, name in [("dms_video_uri", "video"), ("dms_audio_uri", "audio")]:
+            if template_params.get(stream_type):
+                m3u8_streams.append((template_params[stream_type], name))
+        continue_code = perform_native_hls_dl(session, filename, float(template_params["duration"]), m3u8_streams, _cmdl_opts.threads)
+        os.rename(filename, complete_filename)
+        return continue_code
 
     # Dwango Media Cluster (DMC)
     dl_stream = session.head(template_params["url"])
