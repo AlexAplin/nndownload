@@ -1540,9 +1540,8 @@ def select_quality(template_params: dict, template_key: AnyStr, sources: list, q
 
     # Default (return all qualities)
     else:
-        default_quality = bare_sources[0]
-        template_params[template_key] = default_quality
-        return [default_quality]
+        template_params[template_key] = bare_sources
+        return bare_sources
 
 
 def perform_api_request(session: requests.Session, document: BeautifulSoup) -> dict:
@@ -1583,13 +1582,13 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
                 template_params,
                 "video_quality",
                 params["media"]["domand"]["videos"],
-                _cmdl_opts.video_quality or "highest"
+                _cmdl_opts.video_quality
             )
             audio_sources = select_quality(
                 template_params,
                 "audio_quality",
                 params["media"]["domand"]["audios"],
-                _cmdl_opts.audio_quality or "highest"
+                _cmdl_opts.audio_quality
             )
 
             # Limited to one video and audio source
