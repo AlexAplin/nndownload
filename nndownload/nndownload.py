@@ -1271,7 +1271,7 @@ def perform_ffmpeg_dl(video_id: AnyStr, filename: AnyStr, duration: float, strea
 
 
 def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration: float, m3u8_streams: List, threads: int = 1):
-    """Download video and audio streams using native HLS downloader and merge using ffmpeg."""
+    """Download video and audio streams using native HLS downloader and merge using ffmpeg if necessary."""
 
     with get_temp_dir() as temp_dir:
         with Progress() as progress:
@@ -1289,6 +1289,7 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
             for task in tasks:
                 task["thread"].join()
 
+        # Video and audio
         if len(tasks) > 1:
             stream_filenames = [task["filename"] for task in tasks]
             video_convert = FfmpegDL(streams=stream_filenames,
@@ -1301,6 +1302,7 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
             video_convert.convert(name='Merging audio and video', duration=duration)
             for stream_filename in stream_filenames:
                 os.remove(stream_filename)
+        # Only audio or video
         else:
             shutil.move(task[0]["filename"], filename)
     return True

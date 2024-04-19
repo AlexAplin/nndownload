@@ -11,6 +11,7 @@ M3U8_SEGMENT_RE = re.compile(r"(?:#EXTINF):.*\n(.*)")
 
 def download_hls(m3u8_url, filename, name, session, progress, threads):
     """Perform a native HLS download of a provided M3U8 manifest."""
+    # TODO: Support proxies (#150)
 
     from .nndownload import FormatNotAvailableException
 
