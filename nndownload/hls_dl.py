@@ -9,7 +9,9 @@ M3U8_MAP_RE = re.compile(r"((?:#EXT-X-MAP)(?:.*),?URI=\")(?P<url>.*)\"(.*)")
 M3U8_SEGMENT_RE = re.compile(r"(?:#EXTINF):.*\n(.*)")
 
 
-def download_hls(m3u8_url, filename, name, session, progress, threads=5):
+def download_hls(m3u8_url, filename, name, session, progress, threads):
+    """Perform a native HLS download of a provided M3U8 manifest."""
+
     from .nndownload import FormatNotAvailableException
 
     with session.get(m3u8_url) as m3u8_request:
@@ -48,4 +50,3 @@ def download_hls(m3u8_url, filename, name, session, progress, threads=5):
             with open(filename, "ab") as f:
                 f.write(decrypted)
             progress.advance(task_id)
-

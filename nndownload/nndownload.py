@@ -32,7 +32,7 @@ from rich.progress import Progress
 from urllib3.util import Retry
 
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException
-from .downloader import download_hls
+from .hls_dl import download_hls
 
 __version__ = "1.16.3"
 __author__ = "Alex Aplin"
@@ -1274,7 +1274,7 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
         with Progress() as progress:
             tasks = []
             for stream, name in m3u8_streams:
-                stream_filename = os.path.join(temp_dir, name + ".ts")
+                stream_filename = replace_extension(os.path.join(temp_dir, name), "ts")
                 thread = threading.Thread(target=download_hls, args=(stream, stream_filename, name, session, progress, threads))
                 thread.start()
                 tasks.append({
