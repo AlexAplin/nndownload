@@ -1626,8 +1626,6 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
 
         # Perform request to Dwango Media Cluster (DMC)
         elif params["media"]["delivery"]:
-            output("Higher available qualities may not be available to download for certain videos uploaded after 2023-11-01. Follow this issue for more detail: https://github.com/AlexAplin/nndownload/issues/139\n", logging.INFO)
-
             if _cmdl_opts.list_qualities:
                 list_qualities("video", params["media"]["delivery"]["movie"]["videos"], False)
                 list_qualities("audio", params["media"]["delivery"]["movie"]["audios"], False)
