@@ -57,7 +57,9 @@ CHANNEL_ARTICLE_URL = "https://ch.nicovideo.jp/article/{0}"
 SEIGA_USER_ILLUST_URL = "https://seiga.nicovideo.jp/user/illust/{0}?page={1}"
 SEIGA_USER_MANGA_URL = "https://seiga.nicovideo.jp/manga/list?user_id={0}&page={1}"  # Not all manga are not listed with /user/manga/{0}
 SEIGA_IMAGE_URL = "https://seiga.nicovideo.jp/seiga/{0}"
+SEIGA_IMAGE_THUMBNAIL_URL = "https://lohas.nicoseiga.jp//thumb/{0}qz" # "cz" can be specified for a consistent 176x176 thumb
 SEIGA_MANGA_URL = "https://seiga.nicovideo.jp/comic/{0}"
+SEIGA_MANGA_THUMBNAIL_URL = "https://deliver.cdn.nicomanga.jp/thumb/mg_thumb/{0}q" # Not sure where this ID originates, so instead we pull "og:image"
 SEIGA_CHAPTER_URL = "https://seiga.nicovideo.jp/watch/{0}"
 SEIGA_SOURCE_URL = "https://seiga.nicovideo.jp/image/source/{0}"
 SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
@@ -667,6 +669,7 @@ def collect_seiga_image_parameters(session: requests.Session, document: Beautifu
     template_params["clip_count"] = int(document.select("li.clip span.count_value")[0].text)
     template_params["tags"] = document.select("meta[name=\"keywords\"]")[0]["content"]
     template_params["document_url"] = SEIGA_IMAGE_URL.format(template_params["id"])
+    template_params["thumbnail_url"] = SEIGA_IMAGE_THUMBNAIL_URL.format(template_params["id"])
 
     seiga_source_request = session.get(SEIGA_SOURCE_URL.format(template_params["id"].lstrip("im")))
     seiga_source_request.raise_for_status()
@@ -698,6 +701,7 @@ def collect_seiga_manga_parameters(session, document, template_params):
     template_params["view_count"] = int(document.select("#view_count")[0].text)
     template_params["uploader"] = document.select("span.author_name")[0].text
     template_params["document_url"] = SEIGA_CHAPTER_URL.format(template_params["id"])
+    template_params["thumbnail_url"] = document.select("meta[property='og\:image']")[0]["content"]
 
     tags = []
     tags_request = session.get(SEIGA_MANGA_TAGS_API.format(bare_chapter_id))
@@ -761,7 +765,8 @@ def download_manga_chapter(session, chapter_id):
         metadata_path = os.path.join(chapter_directory, "metadata.json")
         dump_metadata(metadata_path, template_params)
     if _cmdl_opts.download_thumbnail:
-        output("Downloading thumbnails for Seiga comics is not currently supported.\n", logging.WARNING)
+        thumb_filename = os.path.join(chapter_directory, "folder")
+        download_thumbnail(session, thumb_filename, template_params)
     if _cmdl_opts.download_comments:
         output("Downloading comments for Seiga comics is not currently supported.\n", logging.WARNING)
 
@@ -809,7 +814,7 @@ def download_image(session, image_id):
     if _cmdl_opts.dump_metadata:
         dump_metadata(filename, template_params)
     if _cmdl_opts.download_thumbnail:
-        output("Downloading thumbnails for Seiga images is not currently supported.\n", logging.WARNING)
+        download_thumbnail(session, filename, template_params, set_thumb_extension=True)
     if _cmdl_opts.download_comments:
         output("Downloading comments for Seiga images is not currently supported.\n", logging.WARNING)
 
@@ -1853,12 +1858,16 @@ def dump_metadata(filename: AnyStr, template_params: dict):
     output("Finished downloading metadata for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
-def download_thumbnail(session: requests.Session, filename: AnyStr, template_params: dict):
-    """Download the video thumbnail."""
+def download_thumbnail(session: requests.Session, filename: AnyStr, template_params: dict, set_thumb_extension: bool = False):
+    """Download the media thumbnail."""
 
     output("Downloading thumbnail for {0}...\n".format(template_params["id"]), logging.INFO)
 
-    filename = replace_extension(filename, "jpg")
+    # TODO: Probably should check for mimetype
+    if set_thumb_extension:
+        filename = replace_extension(filename, "thumb.jpg")
+    else:
+        filename = replace_extension(filename, "jpg")
 
     thumb_request = session.get(template_params["thumbnail_url"])
     thumb_request.raise_for_status()

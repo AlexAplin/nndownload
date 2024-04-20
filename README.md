@@ -15,7 +15,7 @@ nndownload allows you to download videos, images, manga, and process other links
 - Running multiple download sessions on the same connection may lead to temporary blocks or throttling.
 - These functions are not currently supported:
   - Downloading Niconama timeshifts
-  - Downloading Seiga thumbnails and comments
+  - Downloading Seiga comments
   - Downloading channel blog comments
 
 ## Features
