@@ -701,7 +701,7 @@ def collect_seiga_manga_parameters(session, document, template_params):
     template_params["view_count"] = int(document.select("#view_count")[0].text)
     template_params["uploader"] = document.select("span.author_name")[0].text
     template_params["document_url"] = SEIGA_CHAPTER_URL.format(template_params["id"])
-    template_params["thumbnail_url"] = document.select("meta[property='og\:image']")[0]["content"]
+    template_params["thumbnail_url"] = document.select("meta[property='og:image']")[0]["content"]
 
     tags = []
     tags_request = session.get(SEIGA_MANGA_TAGS_API.format(bare_chapter_id))
