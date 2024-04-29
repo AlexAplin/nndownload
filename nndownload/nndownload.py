@@ -713,7 +713,7 @@ def collect_seiga_manga_parameters(session, document, template_params):
     template_params["tags"] = tags
 
     # No uploader ID for official manga uploads
-    if document.select("dd.user_name a"):
+    if document.select_one("dd.user_name a"):
         template_params["uploader_id"] = int(SEIGA_USER_ID_RE.search(document.select_one("dd.user_name a")["href"]).group(1))
 
     return template_params
