@@ -658,16 +658,16 @@ def determine_seiga_file_type(dec_bytes):
 def collect_seiga_image_parameters(session: requests.Session, document: BeautifulSoup, template_params: dict) -> dict:
     """Extract template parameters from a Seiga image page."""
 
-    template_params["id"] = document.select("#clip_group_list")[0]["data-target_id"]
-    template_params["title"] = document.select("h1.title")[0].text
-    template_params["description"] = document.select("p.discription")[0].text
-    template_params["published"] = document.select("span.created")[0].text
-    template_params["uploader"] = document.select("li.user_name strong")[0].text
-    template_params["uploader_id"] = int(document.select("li.user_link a")[0]["href"].replace("/user/illust/", ""))
-    template_params["view_count"] = int(document.select("li.view span.count_value")[0].text)
-    template_params["comment_count"] = int(document.select("li.comment span.count_value")[0].text)
-    template_params["clip_count"] = int(document.select("li.clip span.count_value")[0].text)
-    template_params["tags"] = document.select("meta[name=\"keywords\"]")[0]["content"]
+    template_params["id"] = document.select_one("#clip_group_list")["data-target_id"]
+    template_params["title"] = document.select_one("h1.title").text
+    template_params["description"] = document.select_one("p.discription").text
+    template_params["published"] = document.select_one("span.created").text
+    template_params["uploader"] = document.select_one("li.user_name strong").text
+    template_params["uploader_id"] = int(document.select_one("li.user_link a")["href"].replace("/user/illust/", ""))
+    template_params["view_count"] = int(document.select_one("li.view span.count_value").text)
+    template_params["comment_count"] = int(document.select_one("li.comment span.count_value").text)
+    template_params["clip_count"] = int(document.select_one("li.clip span.count_value").text)
+    template_params["tags"] = document.select_one("meta[name=\"keywords\"]")["content"]
     template_params["document_url"] = SEIGA_IMAGE_URL.format(template_params["id"])
     template_params["thumbnail_url"] = SEIGA_IMAGE_THUMBNAIL_URL.format(template_params["id"])
 
@@ -675,7 +675,7 @@ def collect_seiga_image_parameters(session: requests.Session, document: Beautifu
     seiga_source_request.raise_for_status()
     seiga_source_document = BeautifulSoup(seiga_source_request.text, "html.parser")
 
-    source_url_relative = seiga_source_document.select("div.illust_view_big")[0]["data-src"]
+    source_url_relative = seiga_source_document.select_one("div.illust_view_big")["data-src"]
     template_params["url"] = source_url_relative
 
     source_image_request = session.get(template_params["url"])
@@ -689,19 +689,19 @@ def collect_seiga_image_parameters(session: requests.Session, document: Beautifu
 def collect_seiga_manga_parameters(session, document, template_params):
     """Extract template parameters from a Seiga manga chapter page."""
 
-    bare_chapter_id = document.select("#full_watch_head_bar")[0]["data-theme-id"]
-    template_params["manga_id"] = int(document.select("#full_watch_head_bar")[0]["data-content-id"])
-    template_params["manga_title"] = document.select("div.manga_title a")[0].text
+    bare_chapter_id = document.select_one("#full_watch_head_bar")["data-theme-id"]
+    template_params["manga_id"] = int(document.select_one("#full_watch_head_bar")["data-content-id"])
+    template_params["manga_title"] = document.select_one("div.manga_title a").text
     template_params["id"] = "mg" + bare_chapter_id
-    template_params["page_count"] = int(document.select("#full_watch_head_bar")[0]["data-page-count"])
-    template_params["title"] = document.select("span.episode_title")[0].text
-    template_params["published"] = document.select("span.created")[0].text
-    template_params["description"] = document.select("div.description .full")[0].text
-    template_params["comment_count"] = int(document.select("#comment_count")[0].text)
-    template_params["view_count"] = int(document.select("#view_count")[0].text)
-    template_params["uploader"] = document.select("span.author_name")[0].text
+    template_params["page_count"] = int(document.select_one("#full_watch_head_bar")["data-page-count"])
+    template_params["title"] = document.select_one("span.episode_title").text
+    template_params["published"] = document.select_one("span.created").text
+    template_params["description"] = document.select_one("div.description .full").text
+    template_params["comment_count"] = int(document.select_one("#comment_count").text)
+    template_params["view_count"] = int(document.select_one("#view_count").text)
+    template_params["uploader"] = document.select_one("span.author_name").text
     template_params["document_url"] = SEIGA_CHAPTER_URL.format(template_params["id"])
-    template_params["thumbnail_url"] = document.select("meta[property='og:image']")[0]["content"]
+    template_params["thumbnail_url"] = document.select_one("meta[property='og:image']")["content"]
 
     tags = []
     tags_request = session.get(SEIGA_MANGA_TAGS_API.format(bare_chapter_id))
@@ -714,7 +714,7 @@ def collect_seiga_manga_parameters(session, document, template_params):
 
     # No uploader ID for official manga uploads
     if document.select("dd.user_name a"):
-        template_params["uploader_id"] = int(SEIGA_USER_ID_RE.search(document.select("dd.user_name a")[0]["href"]).group(1))
+        template_params["uploader_id"] = int(SEIGA_USER_ID_RE.search(document.select_one("dd.user_name a")["href"]).group(1))
 
     return template_params
 
@@ -1956,7 +1956,7 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
 
             otp_code_request = session.get(login_request.url)
             otp_code_page = BeautifulSoup(otp_code_request.text, "html.parser")
-            otp_code_account = otp_code_page.select("div.pageMainMsg span.userAccount")[0].text
+            otp_code_account = otp_code_page.select_one("div.pageMainMsg span.userAccount").text
 
             otp_requests_made = 0
             while otp_requests_made < 10 and not session.cookies.get_dict().get("user_session", None):
