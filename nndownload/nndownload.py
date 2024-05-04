@@ -2124,6 +2124,7 @@ def main():
         output(f"{inert_exception}\n", logging.INFO)
     except Exception as error:
         log_exception(error)
+        raise
 
 
 def cli():
