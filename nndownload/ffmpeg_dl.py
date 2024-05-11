@@ -64,14 +64,15 @@ class FfmpegDL:
         while True:
             if self.proc.stdout is None:
                 continue
-            prev_line = stdout_line
+            if stdout_line:
+                prev_line = stdout_line
             stdout_line = self.proc.stdout.readline().decode("utf-8", errors="replace").strip()
             out_time_data = self.REGEX_OUT_TIME.search(stdout_line)
             if out_time_data is not None:
                 out_time = self.get_timedelta(out_time_data.group(1))
                 progress.update(out_time.total_seconds() - progress.n)
                 continue
-            if stdout_line == "" and self.proc.poll() is not None:
+            if not stdout_line and self.proc.poll() is not None:
                 progress.refresh()
                 progress.close()
                 exit_code = self.proc.poll()

@@ -1297,14 +1297,21 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
         # Video and audio
         if len(tasks) > 1:
             stream_filenames = [task["filename"] for task in tasks]
-            video_convert = FfmpegDL(streams=stream_filenames,
-                                    input_kwargs={},
-                                    output_path=filename,
-                                    output_kwargs={
-                                        "vcodec": "copy",
-                                        "acodec": "copy",
-                                    })
-            video_convert.convert(name='Merging audio and video', duration=duration)
+
+            try:
+                video_convert = FfmpegDL(streams=stream_filenames,
+                                        input_kwargs={},
+                                        output_path=filename,
+                                        output_kwargs={
+                                            "vcodec": "copy",
+                                            "acodec": "copy",
+                                        })
+                video_convert.convert(name='Merging audio and video', duration=duration)
+            except FfmpegDLException as error:
+                raise FormatNotAvailableException(f"ffmpeg failed to download the video or audio stream with the following error: \"{error}\"")
+            except Exception:
+                raise FormatNotAvailableException("Failed to download video or audio stream")
+
             for stream_filename in stream_filenames:
                 os.remove(stream_filename)
         # Only audio or video
