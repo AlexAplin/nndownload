@@ -1,3 +1,5 @@
+"""ffmpeg subprocess for merging DMS streams to output."""
+
 import re
 import subprocess
 import warnings
@@ -13,18 +15,17 @@ warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
 
 class FfmpegDLException(Exception):
     """Raised when a download fails."""
-    pass
 
 
 class FfmpegDL:
     """Send input streams for download to an `ffmpeg` subprocess."""
 
-    FF_GLOBAL_ARGS = [
+    FF_GLOBAL_ARGS = (
         "-progress",
         "-",
         "-nostats",
         "-y"
-    ]
+    )
 
     REGEX_TIME_GROUP = "([0-9]{2}:[0-9]{2}:[0-9]{2}[.[0-9]*]?)"
     REGEX_OUT_TIME = re.compile(
@@ -33,20 +34,26 @@ class FfmpegDL:
 
     @classmethod
     def get_timedelta(cls, time_str: AnyStr, str_format: AnyStr = "%H:%M:%S.%f"):
+        """Return a timedelta for a given time string"""
+
         t = datetime.strptime(time_str, str_format)
         return timedelta(hours=t.hour, minutes=t.minute, seconds=t.second, microseconds=t.microsecond)
 
     def __init__(self, streams: List, input_kwargs: List, output_path: AnyStr, output_kwargs: List, global_args: List = FF_GLOBAL_ARGS):
+        """Initialize a downloader to perform an ffmpeg conversion task."""
+
         inputs = []
         for stream in streams:
-            input = ffmpeg.input(stream, **input_kwargs)
-            inputs.append(input)
+            stream_input = ffmpeg.input(stream, **input_kwargs)
+            inputs.append(stream_input)
         stream_spec = ffmpeg.output(*inputs, output_path, **output_kwargs).global_args(*global_args)
 
         self.proc_args = ffmpeg._run.compile(stream_spec=stream_spec)
         self.proc: subprocess.Popen = None
 
     def load_subprocess(self):
+        """Open an ffmpeg subprocess."""
+
         self.proc = subprocess.Popen(
             args=self.proc_args,
             stdin=subprocess.PIPE,
@@ -56,11 +63,14 @@ class FfmpegDL:
         )
 
     def convert(self, name: AnyStr, duration: float):
+        """Perform an ffmpeg conversion while printing progress using tqdm."""
+
         progress = tqdm_rich(desc=name, unit="sec", colour="green", total=duration)
 
         self.load_subprocess()
 
         stdout_line = None
+        prev_line = None
         while True:
             if self.proc.stdout is None:
                 continue
