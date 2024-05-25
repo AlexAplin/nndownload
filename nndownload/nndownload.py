@@ -1,4 +1,5 @@
 """Download videos and process other links from Niconico (nicovideo.jp)."""
+
 import argparse
 import asyncio
 import collections

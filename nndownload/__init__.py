@@ -1,4 +1,5 @@
 """Module entry for nndownload."""
+
 from . import nndownload
 
 
