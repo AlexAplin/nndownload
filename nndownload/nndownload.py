@@ -1850,7 +1850,7 @@ def dump_metadata(filename: AnyStr, template_params: dict):
     filename = replace_extension(filename, "json")
 
     with open(filename, "w", encoding="utf-8") as file:
-        json.dump(template_params, file, sort_keys=True)
+        json.dump(template_params, file, indent=4, ensure_ascii=False, sort_keys=True)
 
     output("Finished downloading metadata for {0}.\n".format(template_params["id"]), logging.INFO)
 
