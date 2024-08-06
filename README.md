@@ -1,4 +1,4 @@
-<table><tr><td><b>All functions are currently being verified after Nico's relaunch on Auugst 5th. Follow https://github.com/AlexAplin/nndownload/issues/174 for more details</b></td></tr></table>
+<table><tr><td><b>All functions are currently being verified after Nico's relaunch on August 5th. Follow https://github.com/AlexAplin/nndownload/issues/174 for more details</b></td></tr></table>
 
 # nndownload
 
