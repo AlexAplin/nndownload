@@ -1553,8 +1553,8 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
 
     # .mp4 videos (HTML5)
     # As of 2021, all videos are served this way
-    if document.find(id="js-initial-watch-data"):
-        params = json.loads(document.find(id="js-initial-watch-data")["data-api-data"])
+    if document.find("meta", {"name": "server-response"}):
+        params = json.loads(document.find("meta", {"name": "server-response"})["content"])["data"]["response"]
 
         if params["video"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
