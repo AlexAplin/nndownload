@@ -126,7 +126,7 @@ TW_COOKIE = {
 API_HEADERS = {
     "X-Frontend-Id": "6",
     "X-Frontend-Version": "0",
-    "X-Niconico-Language": "ja-jp"
+    "X-Niconico-Language": "ja-jp" # Does not impact parameter extraction
 }
 
 NAMA_ORIGIN_HEADER = {"Origin": "https://live2.nicovideo.jp"}
@@ -1601,7 +1601,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             output("Retrieving video manifest...\n", logging.INFO)
             headers = {
                 "X-Access-Right-Key": access_right_key,
-                "X-Request-With": "https://www.nicovideo.jp", # Only provided on this endpoint
+                "X-Request-With": "niconico", # Only provided on this endpoint
             }
             session.options(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id)) # OPTIONS
             get_manifest_request = session.post(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id), headers={**API_HEADERS, **headers}, data=payload)
@@ -1887,8 +1887,8 @@ def download_comments(session: requests.Session, filename: AnyStr, template_para
     session.options(COMMENTS_API, headers=API_HEADERS) # OPTIONS
     get_comments_request = session.post(COMMENTS_API, data=comments_post, headers=API_HEADERS)
     get_comments_request.raise_for_status()
-    with open(filename, "wb") as file:
-        file.write(get_comments_request.content)
+    with open(filename, "w", encoding="utf-8") as file:
+        json.dump(get_comments_request.json(), file, indent=4, ensure_ascii=False, sort_keys=True)
 
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
