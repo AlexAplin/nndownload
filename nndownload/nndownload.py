@@ -48,7 +48,6 @@ MY_URL = "https://www.nicovideo.jp/my"
 LOGIN_URL = "https://account.nicovideo.jp/login/redirector?show_button_twitter=1&site=niconico&show_button_facebook=1&sec=header_pc&next_url=/"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
-SERIES_URL = "https://www.nicovideo.jp/series/{0}"
 CHANNEL_VIDEOS_URL = "https://ch.nicovideo.jp/{0}/video?page={1}"
 CHANNEL_LIVES_URL = "https://ch.nicovideo.jp/{0}/live?page={1}"
 CHANNEL_BLOMAGA_URL = "https://ch.nicovideo.jp/{0}/blomaga?page={1}"
@@ -68,7 +67,7 @@ TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 CONTENT_TYPE = r"(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust|series)"
 VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga|manga)\.)|(?:(live[0-9]?|cas)\.))?"
                           rf"(?:(?:nicovideo\.jp/{CONTENT_TYPE}?)(?(3)/|))|(nico\.ms)/)"
-                          r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list))?"
+                          r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list|series))?"
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 M3U8_MEDIA_RE = re.compile(r"(?:#EXT-X-MEDIA:TYPE=)(?:(\w+))(?:.*),URI=\"(.*)\"")
@@ -78,12 +77,17 @@ SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}?pageSize=500"  # 500 video limit for premium mylists
+SERIES_API = "https://nvapi.nicovideo.jp/v2/series/{0}?&pageSize=500"  # Same as mylists
 VIDEO_DMS_WATCH_API = "https://nvapi.nicovideo.jp/v1/watch/{0}/access-rights/hls?actionTrackId={1}"
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
+USER_SERIES_API = "https://nvapi.nicovideo.jp/v1/users/{0}/series"
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
 COMMENTS_API = "https://public.nvcomment.nicovideo.jp/v1/threads"
 COMMENTS_API_POST_DATA = "{{\'params\':{0},\'threadKey\':\'{1}\',\'additionals\':{{}}}}"
+USER_HISTORY_API = "https://nvapi.nicovideo.jp/v1/users/me/watch/history?page={0}&pageSize={1}"
+USER_LIKES_API = "nvapi.nicovideo.jp/v1/users/me/watch/likes?page={0}&pageSize={1}"
+USER_WATCHLATER_API = "https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize={0}&page={1}"
 
 REGION_LOCK_ERRORS = {  "お住まいの地域・国からは視聴することができません。",
                         "この動画は投稿( アップロード )された地域と同じ地域からのみ視聴できます。"
@@ -126,7 +130,7 @@ TW_COOKIE = {
 API_HEADERS = {
     "X-Frontend-Id": "6",
     "X-Frontend-Version": "0",
-    "X-Niconico-Language": "ja-jp" # Does not impact parameter extraction
+    "X-Niconico-Language": "ja-jp"  # Does not impact parameter extraction
 }
 
 NAMA_ORIGIN_HEADER = {"Origin": "https://live2.nicovideo.jp"}
@@ -1169,25 +1173,43 @@ def request_series(session: requests.Session, series_id: AnyStr):
     "Request videos associated with a series."
 
     output("Requesting series {0}...\n".format(series_id), logging.INFO)
-    series_request = session.get(SERIES_URL.format(series_id))
+    session.options(SERIES_API.format(series_id), headers=API_HEADERS) # OPTIONS
+    series_request = session.get(SERIES_API.format(series_id), headers=API_HEADERS)
     series_request.raise_for_status()
-    series_page = BeautifulSoup(series_request.text, "html.parser")
+    mylist_json = json.loads(series_request.text)
+    items = mylist_json["data"]["items"]
 
-    series_videos = series_page.select("div.SeriesVideoListContainer div.NC-MediaObject-main a")
+    if _CMDL_OPTS.playlist_start:
+        start_index = _CMDL_OPTS.playlist_start
+        if start_index >= len(items):
+            raise ArgumentException("Starting index exceeds length of the series")
+        else:
+            items = items[start_index:]
+            output("Beginning at index {}.\n".format(start_index), logging.INFO)
 
-    if len(series_videos) == 0:
-        output("No videos identified for series.\n", logging.INFO)
-        return
-
-    video_ids = []
-    for link in series_videos:
-        unstripped_id = link["href"]
-        video_ids.append(re.sub(r"^https://www.nicovideo.jp/watch/", "", unstripped_id))
-
-    for index, video_id in enumerate(video_ids):
+    for index, item in enumerate(items):
         try:
-            output("{0}/{1}\n".format(index + 1, len(video_ids)), logging.INFO)
-            request_video(session, video_id)
+            output("{0}/{1}\n".format(index + 1, len(items)), logging.INFO)
+            request_video(session, item["video"]["id"])
+
+        except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
+            log_exception(error)
+            continue
+
+
+def request_user_series(session: requests.Session, user_id: AnyStr):
+    """Request series associated with a user."""
+
+    output("Requesting series from user {0}...\n".format(user_id), logging.INFO)
+
+    series_request = session.get(USER_SERIES_API.format(user_id), headers=API_HEADERS)
+    series_request.raise_for_status()
+    user_series_json = json.loads(series_request.text)
+    user_series = user_series_json["data"]["items"]
+    for index, item in enumerate(user_series):
+        try:
+            output("{0}/{1}\n".format(index + 1, len(user_series)), logging.INFO)
+            request_series(session, item["id"])
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
@@ -2013,13 +2035,24 @@ def process_url_mo(session, url_mo: Match):
         request_mylist(session, url_id)
     elif url_mo.group(2):
         request_nama(session, url_id)
-    elif url_mo.group(3) == "user":
+    elif url_mo.group(3) == "user" or url_mo.group(5) == "my":
+        if url_mo.group(5) == "my": #No user ID provided, so we need to attempt extracting it
+            if _CMDL_OPTS.no_login:
+                 raise AuthenticationException("Requesting a /my URL is not possible when -g/--no-login is specified. Please login or provide a session cookie")
+            output("Requesting /my URLs is not currently supported.\n", logging.WARNING)
+            # TODO: Extract user ID (#177)
         if url_mo.group(6) == "mylist":
             if url_mo.group(7):
                 url_id = url_mo.group(7)
                 request_mylist(session, url_id)
             else:
                 request_user_mylists(session, url_id)
+        elif url_mo.group(6) == "series":
+            if url_mo.group(7):
+                url_id = url_mo.group(7)
+                request_series(session, url_id)
+            else:
+                request_user_series(session, url_id)
         elif not url_mo.group(6) or url_mo.group(6) == "video":
             request_user(session, url_id)
         else:
