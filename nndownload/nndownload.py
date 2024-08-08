@@ -66,7 +66,7 @@ TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
 CONTENT_TYPE = r"(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust|series)"
-VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga)\.)|(?:(live[0-9]?|cas)\.))?"
+VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga|manga)\.)|(?:(live[0-9]?|cas)\.))?"
                           rf"(?:(?:nicovideo\.jp/{CONTENT_TYPE}?)(?(3)/|))|(nico\.ms)/)"
                           r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list))?"
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
@@ -2041,6 +2041,15 @@ def process_url_mo(session, url_mo: Match):
             download_image(session, url_id)
         else:
             raise ArgumentException("Seiga URL argument is not of a known or accepted type of Nico URL")
+    elif url_mo.group(1) == "manga":
+        if url_mo.group(3) == "watch":
+            download_manga_chapter(session, url_id)
+        elif url_mo.group(3) == "comic":
+            download_manga(session, url_id)
+        elif url_mo.group(3) == "user/manga" or url_mo.group(3) == "manga":
+            if url_mo.group(8):
+                url_id = url_mo.group(8)
+            request_seiga_user_manga(session, url_id)
     elif url_mo.group(1) == "ch":
         if url_mo.group(3) == "article":
             download_channel_article(session, url_id)
