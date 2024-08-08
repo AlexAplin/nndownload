@@ -1,5 +1,3 @@
-<table><tr><td><b>All functions are currently being verified after Nico's relaunch on August 5th. Follow https://github.com/AlexAplin/nndownload/issues/174 for more details</b></td></tr></table>
-
 # nndownload
 
 [![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
