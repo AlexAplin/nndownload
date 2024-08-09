@@ -1623,7 +1623,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             output("Retrieving video manifest...\n", logging.INFO)
             headers = {
                 "X-Access-Right-Key": access_right_key,
-                "X-Request-With": "niconico", # Only provided on this endpoint
+                "X-Request-With": "nicovideo", # Only provided on this endpoint
             }
             session.options(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id)) # OPTIONS
             get_manifest_request = session.post(VIDEO_DMS_WATCH_API.format(video_id, watch_track_id), headers={**API_HEADERS, **headers}, data=payload)
