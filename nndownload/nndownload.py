@@ -1155,9 +1155,12 @@ def request_mylist(session: requests.Session, mylist_id: AnyStr, is_authed_user:
 def request_user_mylists(session: requests.Session, user_id: AnyStr):
     """Request mylists associated with a user."""
 
-    output("Requesting mylists from user {0}...\n".format(user_id), logging.INFO)
-
     is_authed_user = True if user_id == "me" else False
+    if not is_authed_user:
+        output("Requesting mylists from user {0}...\n".format(user_id), logging.INFO)
+    else:
+        output("Requesting mylists from logged in user...\n", logging.INFO)
+
     mylists_request = session.get(USER_MYLISTS_API.format(user_id), headers=API_HEADERS)
     mylists_request.raise_for_status()
     user_mylists_json = json.loads(mylists_request.text)
