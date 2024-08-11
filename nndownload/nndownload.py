@@ -35,7 +35,7 @@ from urllib3.util import Retry
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException
 from .hls_dl import download_hls
 
-__version__ = "1.17"
+__version__ = "1.18"
 __author__ = "Alex Aplin"
 __copyright__ = "Copyright 2024 Alex Aplin"
 __license__ = "MIT"
