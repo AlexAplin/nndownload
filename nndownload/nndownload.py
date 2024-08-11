@@ -77,6 +77,7 @@ SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
 MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}?pageSize=500"  # 500 video limit for premium mylists
+MYLIST_ME_API = "https://nvapi.nicovideo.jp/v1/users/me/mylists/{0}?pageSize=500" # Still on /v1
 SERIES_API = "https://nvapi.nicovideo.jp/v2/series/{0}?&pageSize=500"  # Same as mylists
 VIDEO_DMS_WATCH_API = "https://nvapi.nicovideo.jp/v1/watch/{0}/access-rights/hls?actionTrackId={1}"
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
@@ -1122,12 +1123,13 @@ def request_user(session: requests.Session, user_id: AnyStr):
             continue
 
 
-def request_mylist(session: requests.Session, mylist_id: AnyStr):
+def request_mylist(session: requests.Session, mylist_id: AnyStr, is_authed_user: bool = False):
     """Request videos associated with a mylist."""
 
     output("Requesting mylist {0}...\n".format(mylist_id), logging.INFO)
-    session.options(MYLIST_API.format(mylist_id), headers=API_HEADERS) # OPTIONS
-    mylist_request = session.get(MYLIST_API.format(mylist_id), headers=API_HEADERS)
+    active_mylist_api = MYLIST_ME_API if is_authed_user else MYLIST_API
+    session.options(active_mylist_api.format(mylist_id), headers=API_HEADERS) # OPTIONS
+    mylist_request = session.get(active_mylist_api.format(mylist_id), headers=API_HEADERS)
     mylist_request.raise_for_status()
     mylist_json = json.loads(mylist_request.text)
     items = mylist_json["data"]["mylist"]["items"]
@@ -1155,14 +1157,17 @@ def request_user_mylists(session: requests.Session, user_id: AnyStr):
 
     output("Requesting mylists from user {0}...\n".format(user_id), logging.INFO)
 
+    is_authed_user = True if user_id == "me" else False
     mylists_request = session.get(USER_MYLISTS_API.format(user_id), headers=API_HEADERS)
     mylists_request.raise_for_status()
     user_mylists_json = json.loads(mylists_request.text)
     user_mylists = user_mylists_json["data"]["mylists"]
+    total_mylists = len(user_mylists)
+    output("{} mylists returned.\n".format(total_mylists), logging.INFO)
     for index, item in enumerate(user_mylists):
         try:
             output("{0}/{1}\n".format(index + 1, len(user_mylists)), logging.INFO)
-            request_mylist(session, item["id"])
+            request_mylist(session, item["id"], is_authed_user)
 
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
@@ -2029,22 +2034,23 @@ def process_url_mo(session, url_mo: Match):
     """Dispatches URL to the appropriate function."""
 
     url_id = url_mo.group(5)
+    if url_id == "my":
+        if _CMDL_OPTS.no_login:
+                raise AuthenticationException("Requesting a /my URL is not possible when -g/--no-login is specified. Please login or provide a session cookie")
+        url_id = "me" # Rewrite for use with the API
+
     if url_mo.group(8):
         output("Additional URL parameters will be ignored.\n", logging.WARNING)
     if url_mo.group(3) == "mylist":
         request_mylist(session, url_id)
     elif url_mo.group(2):
         request_nama(session, url_id)
-    elif url_mo.group(3) == "user" or url_mo.group(5) == "my":
-        if url_mo.group(5) == "my": #No user ID provided, so we need to attempt extracting it
-            if _CMDL_OPTS.no_login:
-                 raise AuthenticationException("Requesting a /my URL is not possible when -g/--no-login is specified. Please login or provide a session cookie")
-            output("Requesting /my URLs is not currently supported.\n", logging.WARNING)
-            # TODO: Extract user ID (#177)
+    elif url_mo.group(3) == "user" or url_id == "me":
+        is_authed_user = True if url_id == "me" else False
         if url_mo.group(6) == "mylist":
             if url_mo.group(7):
                 url_id = url_mo.group(7)
-                request_mylist(session, url_id)
+                request_mylist(session, url_id, is_authed_user)
             else:
                 request_user_mylists(session, url_id)
         elif url_mo.group(6) == "series":
