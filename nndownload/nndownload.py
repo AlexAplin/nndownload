@@ -80,7 +80,7 @@ MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}?pageSize=500"  # 500 vid
 MYLIST_ME_API = "https://nvapi.nicovideo.jp/v1/users/me/mylists/{0}?pageSize=500" # Still on /v1
 SERIES_API = "https://nvapi.nicovideo.jp/v2/series/{0}?&pageSize=500"  # Same as mylists
 VIDEO_DMS_WATCH_API = "https://nvapi.nicovideo.jp/v1/watch/{0}/access-rights/hls?actionTrackId={1}"
-USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
+USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v3/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 USER_SERIES_API = "https://nvapi.nicovideo.jp/v1/users/{0}/series"
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
@@ -94,7 +94,7 @@ REGION_LOCK_ERRORS = {  "お住まいの地域・国からは視聴すること�
                         "この動画は投稿( アップロード )された地域と同じ地域からのみ視聴できます。"
                      }
 
-USER_VIDEOS_API_N = 25
+USER_VIDEOS_API_N = 100
 NAMA_HEARTBEAT_INTERVAL_S = 30
 NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
@@ -1103,7 +1103,7 @@ def request_user(session: requests.Session, user_id: AnyStr):
         videos_request.raise_for_status()
         user_videos_json = json.loads(videos_request.text)
         for video in user_videos_json["data"]["items"]:
-            video_ids.append(video["id"])
+            video_ids.append(video["essential"]["id"])
 
     if _CMDL_OPTS.playlist_start:
         start_index = _CMDL_OPTS.playlist_start
