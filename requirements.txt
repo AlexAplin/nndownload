@@ -8,5 +8,4 @@ pycryptodome
 requests
 rich
 setuptools
-tqdm
 urllib3
