@@ -2,15 +2,11 @@
 
 import re
 import subprocess
-import warnings
 from datetime import timedelta, datetime
 from typing import AnyStr, List
 
 import ffmpeg
-from tqdm import TqdmExperimentalWarning
-from tqdm.rich import tqdm_rich
-
-warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
+from rich.progress import Progress
 
 
 class FfmpegDLException(Exception):
@@ -63,30 +59,28 @@ class FfmpegDL:
         )
 
     def convert(self, name: AnyStr, duration: float):
-        """Perform an ffmpeg conversion while printing progress using tqdm."""
+        """Perform an ffmpeg conversion while printing progress using rich.progress."""
 
-        progress = tqdm_rich(desc=name, unit="sec", colour="green", total=duration)
+        with Progress() as progress:
+            task = progress.add_task(name, total=duration)
+            self.load_subprocess()
 
-        self.load_subprocess()
-
-        stdout_line = None
-        prev_line = None
-        while True:
-            if self.proc.stdout is None:
-                continue
-            if stdout_line:
-                prev_line = stdout_line
-            stdout_line = self.proc.stdout.readline().decode("utf-8", errors="replace").strip()
-            out_time_data = self.REGEX_OUT_TIME.search(stdout_line)
-            if out_time_data is not None:
-                out_time = self.get_timedelta(out_time_data.group(1))
-                progress.update(out_time.total_seconds() - progress.n)
-                continue
-            if not stdout_line and self.proc.poll() is not None:
-                progress.refresh()
-                progress.close()
-                exit_code = self.proc.poll()
-                if exit_code:
-                    raise FfmpegDLException(prev_line)
-                else:
-                    break
+            stdout_line = None
+            prev_line = None
+            while True:
+                if self.proc.stdout is None:
+                    continue
+                if stdout_line:
+                    prev_line = stdout_line
+                stdout_line = self.proc.stdout.readline().decode("utf-8", errors="replace").strip()
+                out_time_data = self.REGEX_OUT_TIME.search(stdout_line)
+                if out_time_data is not None:
+                    out_time = self.get_timedelta(out_time_data.group(1))
+                    progress.update(task, completed=out_time.total_seconds())
+                    continue
+                if not stdout_line and self.proc.poll() is not None:
+                    exit_code = self.proc.poll()
+                    if exit_code:
+                        raise FfmpegDLException(prev_line)
+                    else:
+                        break
