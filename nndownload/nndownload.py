@@ -66,9 +66,10 @@ TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
 CONTENT_TYPE = r"(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust|series)"
+USER_CONTENT_TYPE = r"(video|mylist|live|blomaga|list|series|follow)"
 VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga|manga)\.)|(?:(live[0-9]?|cas)\.))?"
                           rf"(?:(?:nicovideo\.jp/{CONTENT_TYPE}?)(?(3)/|))|(nico\.ms)/)"
-                          r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list|series|follow))?"
+                          rf"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/{USER_CONTENT_TYPE})?"
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 M3U8_MEDIA_RE = re.compile(r"(?:#EXT-X-MEDIA:TYPE=)(?:(\w+))(?:.*),URI=\"(.*)\"")
