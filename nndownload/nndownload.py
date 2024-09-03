@@ -47,6 +47,7 @@ MY_URL = "https://www.nicovideo.jp/my"
 # LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
 LOGIN_URL = "https://account.nicovideo.jp/login/redirector?show_button_twitter=1&site=niconico&show_button_facebook=1&sec=header_pc&next_url=/"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
+USER_URL = "https://nicovideo.jp/user/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
 CHANNEL_VIDEOS_URL = "https://ch.nicovideo.jp/{0}/video?page={1}"
 CHANNEL_LIVES_URL = "https://ch.nicovideo.jp/{0}/live?page={1}"
@@ -67,7 +68,7 @@ TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 CONTENT_TYPE = r"(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust|series)"
 VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga|manga)\.)|(?:(live[0-9]?|cas)\.))?"
                           rf"(?:(?:nicovideo\.jp/{CONTENT_TYPE}?)(?(3)/|))|(nico\.ms)/)"
-                          r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list|series))?"
+                          r"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/(video|mylist|live|blomaga|list|series|follow))?"
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
 M3U8_MEDIA_RE = re.compile(r"(?:#EXT-X-MEDIA:TYPE=)(?:(\w+))(?:.*),URI=\"(.*)\"")
@@ -83,6 +84,7 @@ VIDEO_DMS_WATCH_API = "https://nvapi.nicovideo.jp/v1/watch/{0}/access-rights/hls
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v3/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 USER_SERIES_API = "https://nvapi.nicovideo.jp/v1/users/{0}/series"
+USER_FOLLOWING_API = "https://nvapi.nicovideo.jp/v1/users/{0}/following/users?pageSize=800" # 800 following limit for premium users
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
 COMMENTS_API = "https://public.nvcomment.nicovideo.jp/v1/threads"
 COMMENTS_API_POST_DATA = "{{\'params\':{0},\'threadKey\':\'{1}\',\'additionals\':{{}}}}"
@@ -1082,7 +1084,11 @@ def request_video(session: requests.Session, video_id: AnyStr):
 def request_user(session: requests.Session, user_id: AnyStr):
     """Request videos associated with a user."""
 
-    output("Requesting videos from user {0}...\n".format(user_id), logging.INFO)
+    is_authed_user = True if user_id == "me" else False
+    if not is_authed_user:
+        output("Requesting videos from user {0}...\n".format(user_id), logging.INFO)
+    else:
+        output("Requesting videos from logged in user...\n", logging.INFO)
 
     video_ids = []
 
@@ -1222,6 +1228,25 @@ def request_user_series(session: requests.Session, user_id: AnyStr):
         except (FormatNotSupportedException, FormatNotAvailableException, ParameterExtractionException) as error:
             log_exception(error)
             continue
+
+
+def request_user_following(session: requests.Session, user_id: AnyStr):
+    """Request following users associated with a user and output as a list of URLs."""
+
+    is_authed_user = True if user_id == "me" else False
+    if not is_authed_user:
+        output("Requesting following users from user {0}...\n".format(user_id), logging.INFO)
+    else:
+        output("Requesting following users from logged in user...\n", logging.INFO)
+
+    following_request = session.get(USER_FOLLOWING_API.format(user_id), headers=API_HEADERS)
+    following_request.raise_for_status()
+    following_json = json.loads(following_request.text)
+    following = following_json["data"]["items"]
+
+    for item in following:
+        user_url = USER_URL.format(item["id"])
+        output(f"{user_url}\n", logging.INFO, force=True)
 
 
 def show_multithread_progress(video_len):
@@ -2062,6 +2087,8 @@ def process_url_mo(session, url_mo: Match):
                 request_series(session, url_id)
             else:
                 request_user_series(session, url_id)
+        elif url_mo.group(6) == "follow":
+            request_user_following(session, url_id)
         elif not url_mo.group(6) or url_mo.group(6) == "video":
             request_user(session, url_id)
         else:
