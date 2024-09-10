@@ -186,7 +186,7 @@ cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD"
 cmdl_parser.add_argument("--session-cookie", dest="session_cookie", metavar="COOKIE", help="user_session cookie value (string or filepath)")
 cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
 cmdl_parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
-cmdl_parser.add_argument("-l", "--log", nargs="?", const=f"[{MODULE_NAME}] {time.strftime('%Y-%m-%d')}.log", dest="log", metavar="[PATH]", help="log output to file")
+cmdl_parser.add_argument("-l", "--log", nargs="?", const=f"[{MODULE_NAME}] {time.strftime('%Y-%m-%d')}.log", dest="log", metavar="PATH", help="log output to file")
 cmdl_parser.add_argument("-v", "--version", action="version", version=CMDL_VERSION)
 cmdl_parser.add_argument("input", action="store", nargs="*", help="URLs or files")
 

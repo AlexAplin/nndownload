@@ -65,7 +65,8 @@ options:
                         user_session クッキー値 (文字列またはファイルパス)
   -n, --netrc           .netrcを認証に利用
   -q, --quiet           コンソールに出力しない
-  -l, --log             ファイルにログ出力
+  -l [PATH], --log [PATH]
+                        ファイルにログ出力
   -v, --version         プログラムのバージョン情報を表示
 
 download options:

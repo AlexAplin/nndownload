@@ -65,7 +65,8 @@ options:
                         user_session cookie value (string or filepath)
   -n, --netrc           use .netrc authentication
   -q, --quiet           suppress output to console
-  -l, --log             log output to file
+  -l [PATH], --log [PATH]
+                        log output to file
   -v, --version         show program's version number and exit
 
 download options:
