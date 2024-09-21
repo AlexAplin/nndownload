@@ -3,6 +3,7 @@
 import re
 import subprocess
 from datetime import timedelta, datetime
+from shutil import which
 from typing import AnyStr, List
 
 import ffmpeg
@@ -12,6 +13,8 @@ from rich.progress import Progress
 class FfmpegDLException(Exception):
     """Raised when a download fails."""
 
+class FfmpegExistsException(Exception):
+    """Raised when ffmpeg is not found on the PATH."""
 
 class FfmpegDL:
     """Send input streams for download to an `ffmpeg` subprocess."""
@@ -35,8 +38,12 @@ class FfmpegDL:
         t = datetime.strptime(time_str, str_format)
         return timedelta(hours=t.hour, minutes=t.minute, seconds=t.second, microseconds=t.microsecond)
 
-    def __init__(self, streams: List, input_kwargs: List, output_path: AnyStr, output_kwargs: List, global_args: List = FF_GLOBAL_ARGS):
+    def __init__(self, streams: List, input_kwargs: List, output_path: AnyStr, output_kwargs: List, global_args: List = FF_GLOBAL_ARGS, ffmpeg_binary: AnyStr = "ffmpeg"):
         """Initialize a downloader to perform an ffmpeg conversion task."""
+
+        self.ffmpeg_binary = ffmpeg_binary
+        if not self.is_ffmpeg_on_path():
+            raise FfmpegExistsException(f"`{self.ffmpeg_binary}` was not found on your PATH")
 
         inputs = []
         for stream in streams:
@@ -46,6 +53,9 @@ class FfmpegDL:
 
         self.proc_args = ffmpeg._run.compile(stream_spec=stream_spec)
         self.proc: subprocess.Popen = None
+
+    def is_ffmpeg_on_path(self):
+        return which(self.ffmpeg_binary) is not None
 
     def load_subprocess(self):
         """Open an ffmpeg subprocess."""

@@ -32,7 +32,7 @@ from requests.utils import add_dict_to_cookiejar
 from rich.progress import Progress
 from urllib3.util import Retry
 
-from .ffmpeg_dl import FfmpegDL, FfmpegDLException
+from .ffmpeg_dl import FfmpegDL, FfmpegDLException, FfmpegExistsException
 from .hls_dl import download_hls
 
 __version__ = "1.18"
@@ -220,7 +220,6 @@ dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_medi
 dl_group.add_argument("--break-on-existing", action="store_true", dest="break_on_existing", help="break after encountering an existing download")
 dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", type=int, default=0,
                       help="specify the index to start a list of items from (begins at 0)")
-
 
 # Globals
 
@@ -1296,28 +1295,6 @@ def download_video_part(session: requests.Session, start, end, filename: AnyStr,
             update_multithread_progress(len(block))
 
 
-def perform_ffmpeg_dl(video_id: AnyStr, filename: AnyStr, duration: float, streams: List):
-    """Send video and/or audio stream to ffmpeg for download."""
-
-    try:
-        video_download = FfmpegDL(streams=streams,
-                                    input_kwargs={
-                                        "protocol_whitelist": "https,http,tls,tcp,file,crypto",
-                                        "allowed_extensions": "ALL",
-                                    },
-                                    output_path=filename,
-                                    output_kwargs={
-                                        "vcodec": "copy",
-                                        "acodec": "copy",
-                                    })
-        video_download.convert(name=video_id, duration=duration)
-        return True
-    except FfmpegDLException as error:
-        raise FormatNotAvailableException(f"ffmpeg failed to download the video or audio stream with the following error: \"{error}\"") from error
-    except Exception as exception:
-        raise FormatNotAvailableException("Failed to download video or audio stream") from exception
-
-
 def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration: float, m3u8_streams: List, threads: int = 1):
     """Download video and audio streams using native HLS downloader and merge using ffmpeg if necessary."""
 
@@ -1353,6 +1330,8 @@ def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration:
                                             "acodec": "copy",
                                         })
                 video_convert.convert(name='Merging audio and video', duration=duration)
+            except FfmpegExistsException as error:
+                raise(error)
             except FfmpegDLException as error:
                 raise FormatNotAvailableException(f"ffmpeg failed to download the video or audio stream with the following error: \"{error}\"") from error
             except Exception as exception:
@@ -1381,7 +1360,6 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
     # Dwango Media Service (DMS)
     if template_params.get("dms_video_uri") or template_params.get("dms_audio_uri"):
-
         # .part file
         if os.path.exists(filename):
             output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
