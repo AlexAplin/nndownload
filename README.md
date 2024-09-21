@@ -37,7 +37,7 @@ Python >=3.5.3
 
 ### Dependencies
 
-See `requirements.txt`. `ffmpeg` must also be available on your PATH.
+See `requirements.txt`. `ffmpeg` must also be available on your PATH when requesting videos.
 
 # Installation
 
