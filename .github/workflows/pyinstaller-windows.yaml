@@ -15,7 +15,7 @@ jobs:
         path: .
         spec: nndownload.spec
         requirements: requirements.txt
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: nndownload
         path: dist/windows
