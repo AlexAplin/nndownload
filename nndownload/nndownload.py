@@ -1986,9 +1986,17 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
                 raise AuthenticationException("Incorrect email/telephone or password. Please verify your login details")
 
             if "mfa?continue" in login_request.url:
+                otp_code_request = session.get(login_request.url)
+                otp_code_page = BeautifulSoup(otp_code_request.text, "html.parser")
+                if otp_code_page.select_one("div.pageMainMsg span.userAccount"):
+                    otp_code_account = otp_code_page.select_one("div.pageMainMsg span.userAccount").text
+                    otp_message = "Enter the OTP code sent to the email/telephone on file for your account ({}): ".format(otp_code_account)
+                else:
+                    otp_message = "Enter the OTP code displayed in the authenticator app associated with your account ({}): ".format(username)
+
                 otp_requests_made = 0
                 while otp_requests_made < 10 and not session.cookies.get_dict().get("user_session", None):
-                    otp_code = input("Enter the OTP code sent to the email/telephone on file for your account ({}): ".format(username))
+                    otp_code = input("{}".format(otp_message))
                     otp_code = otp_code.strip()
 
                     otp_post = {
