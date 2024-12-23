@@ -31,6 +31,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from rich.progress import Progress
 from urllib3.util import Retry
+from urllib.parse import urlparse
 
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException, FfmpegExistsException
 from .hls_dl import download_hls
@@ -1981,11 +1982,12 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
 
             login_request = session.post(LOGIN_URL, data=login_post)
             login_request.raise_for_status()
+            parsed_login_request_url = urlparse(login_request.url)
 
-            if "message=cant_login" in login_request.url:
+            if "message=cant_login" in parsed_login_request_url.query:
                 raise AuthenticationException("Incorrect email/telephone or password. Please verify your login details")
 
-            if "mfa?continue" in login_request.url:
+            if parsed_login_request_url.path == "/mfa":
                 otp_code_request = session.get(login_request.url)
                 otp_code_page = BeautifulSoup(otp_code_request.text, "html.parser")
                 if otp_code_page.select_one("div.pageMainMsg span.userAccount"):
