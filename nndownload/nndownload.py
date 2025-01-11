@@ -31,6 +31,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from rich.progress import Progress
 from urllib3.util import Retry
+from urllib.parse import urlparse
 
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException, FfmpegExistsException
 from .hls_dl import download_hls
@@ -1981,30 +1982,36 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
 
             login_request = session.post(LOGIN_URL, data=login_post)
             login_request.raise_for_status()
+            parsed_login_request_url = urlparse(login_request.url)
 
-            if "message=cant_login" in login_request.url:
+            if "message=cant_login" in parsed_login_request_url.query:
                 raise AuthenticationException("Incorrect email/telephone or password. Please verify your login details")
 
-            otp_code_request = session.get(login_request.url)
-            otp_code_page = BeautifulSoup(otp_code_request.text, "html.parser")
-            otp_code_account = otp_code_page.select_one("div.pageMainMsg span.userAccount").text
+            if parsed_login_request_url.path == "/mfa":
+                otp_code_request = session.get(login_request.url)
+                otp_code_page = BeautifulSoup(otp_code_request.text, "html.parser")
+                if otp_code_page.select_one("div.pageMainMsg span.userAccount"):
+                    otp_code_account = otp_code_page.select_one("div.pageMainMsg span.userAccount").text
+                    otp_message = "Enter the OTP code sent to the email/telephone on file for your account ({}): ".format(otp_code_account)
+                else:
+                    otp_message = "Enter the OTP code displayed in the authenticator app associated with your account ({}): ".format(username)
 
-            otp_requests_made = 0
-            while otp_requests_made < 10 and not session.cookies.get_dict().get("user_session", None):
-                otp_code = input("Enter the OTP code sent to the email/telephone on file for your account ({}): ".format(otp_code_account))
-                otp_code = otp_code.strip()
+                otp_requests_made = 0
+                while otp_requests_made < 10 and not session.cookies.get_dict().get("user_session", None):
+                    otp_code = input("{}".format(otp_message))
+                    otp_code = otp_code.strip()
 
-                otp_post = {
-                    "otp": otp_code,
-                    "device_name": f"{MODULE_NAME}/{__version__}"
-                }
+                    otp_post = {
+                        "otp": otp_code,
+                        "device_name": f"{MODULE_NAME}/{__version__}"
+                    }
 
-                otp_post_request = session.post(login_request.url, data=otp_post)
-                otp_requests_made += 1
-                otp_post_request.raise_for_status()
+                    otp_post_request = session.post(login_request.url, data=otp_post)
+                    otp_requests_made += 1
+                    otp_post_request.raise_for_status()
 
-                if not session.cookies.get_dict().get("user_session", None):
-                    output("Failed to login. Please verify your OTP code and try again.\n", logging.INFO)
+                    if not session.cookies.get_dict().get("user_session", None):
+                        output("Failed to login. Please verify your OTP code and try again.\n", logging.INFO)
 
             if not session.cookies.get_dict().get("user_session", None):
                 raise AuthenticationException("Failed to login. Please verify your email/telephone, password, and OTP code")
