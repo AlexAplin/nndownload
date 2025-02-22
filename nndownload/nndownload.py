@@ -36,9 +36,9 @@ from urllib.parse import urlparse
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException, FfmpegExistsException
 from .hls_dl import download_hls
 
-__version__ = "1.18"
+__version__ = "1.19"
 __author__ = "Alex Aplin"
-__copyright__ = "Copyright 2024 Alex Aplin"
+__copyright__ = "Copyright 2025 Alex Aplin"
 __license__ = "MIT"
 
 MODULE_NAME = "nndownload"
