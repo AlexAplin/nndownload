@@ -97,7 +97,7 @@ download options:
   --break-on-existing   break after encountering an existing download
   --playlist-start N    specify the index to start a list of items from (begins at 0)
   --user-agent USER_AGENT
-                      specify a custom user agent for the download session)
+                      specify a custom user agent for the download session
 ```
 
 ### Module
