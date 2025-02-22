@@ -96,6 +96,8 @@ download options:
   -s, --skip-media      メディアのダウンロードをスキップ
   --break-on-existing   既存のダウンロードが見つかったら抜ける
   --playlist-start N    リストの開始番号を指定 (最小値：0)
+  --user-agent USER_AGENT
+                    ユーザーエージェントを指定
 ```
 
 ### Module

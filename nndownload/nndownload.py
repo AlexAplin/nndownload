@@ -221,6 +221,7 @@ dl_group.add_argument("-s", "--skip-media", action="store_true", dest="skip_medi
 dl_group.add_argument("--break-on-existing", action="store_true", dest="break_on_existing", help="break after encountering an existing download")
 dl_group.add_argument("--playlist-start", dest="playlist_start", metavar="N", type=int, default=0,
                       help="specify the index to start a list of items from (begins at 0)")
+dl_group.add_argument("--user-agent", dest="user_agent", metavar="USER_AGENT", help="specify a custom user agent for the download session")
 
 # Globals
 
@@ -1962,7 +1963,7 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
     session.mount("http://", adapter)
     session.mount("https://", adapter)
 
-    session.headers.update({"User-Agent": f"{MODULE_NAME}/{__version__}"})
+    session.headers.update({"User-Agent": _CMDL_OPTS.user_agent or f"{MODULE_NAME}/{__version__}"})
 
     if _CMDL_OPTS.proxy:
         proxies = {
