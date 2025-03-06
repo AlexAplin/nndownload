@@ -1937,11 +1937,11 @@ def add_metadata_to_container(filename: AnyStr, template_params: dict):
         container_file = MP4(filename)
         if not container_file.tags:
             container_file.add_tags()
-        if not template_params["title"]:
+        if template_params["title"]:
             container_file["\251nam"] = str(template_params["title"])  # Title
-        if not template_params["uploader"]:
+        if template_params["uploader"]:
             container_file["\251ART"] = str(template_params["uploader"])  # Uploader
-        if not template_params["description"]:
+        if template_params["description"]:
             container_file["desc"] = str(template_params["description"])  # Description
         container_file.save(filename)
     else:
