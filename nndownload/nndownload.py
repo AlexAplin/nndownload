@@ -1938,7 +1938,8 @@ def add_metadata_to_container(filename: AnyStr, template_params: dict):
         if not container_file.tags:
             container_file.add_tags()
         container_file["\251nam"] = template_params["title"]  # Title
-        container_file["\251ART"] = template_params["uploader"]  # Uploader
+        if template_params["uploader"] != None:
+            container_file["\251ART"] = template_params["uploader"]  # Uploader
         container_file["desc"] = template_params["description"]  # Description
         container_file.save(filename)
     else:
