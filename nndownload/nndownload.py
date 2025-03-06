@@ -1937,9 +1937,12 @@ def add_metadata_to_container(filename: AnyStr, template_params: dict):
         container_file = MP4(filename)
         if not container_file.tags:
             container_file.add_tags()
-        container_file["\251nam"] = template_params["title"]  # Title
-        container_file["\251ART"] = template_params["uploader"]  # Uploader
-        container_file["desc"] = template_params["description"]  # Description
+        if template_params["title"]:
+            container_file["\251nam"] = str(template_params["title"])  # Title
+        if template_params["uploader"]:
+            container_file["\251ART"] = str(template_params["uploader"])  # Uploader
+        if template_params["description"]:
+            container_file["desc"] = str(template_params["description"])  # Description
         container_file.save(filename)
     else:
         output("Container metadata is not supported for this file extension. Skipping...\n", logging.INFO)
