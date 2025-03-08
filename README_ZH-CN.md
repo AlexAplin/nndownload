@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
 <a href='./README.md'>EN</a> | <a href='./README_JA.md'>JA</a> | ZH-CN
 <p align='center'>
-    <a href='./README.md'>英文</a> | <a href='./README_JA.md'>日文</a>  | 中文
+    <a href='./README.md'>英文</a> | <a href='./README_JA.md'>日文</a> | 中文
 </p>
 
 nndownload 允许您下载来自 [Niconico](http://nicovideo.jp)（前身为 Nico Nico Douga）的视频、图像、漫画以及处理其他链接。与其他现有下载器不同，该程序与 DMC（Dwango Media Cluster）和 Dwango Media Services（DMS）服务器进行通信，以确保访问高质量的视频。
