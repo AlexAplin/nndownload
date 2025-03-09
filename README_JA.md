@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
 
 <p align='center'>
-    <a href='./README.md'>EN</a> | JA
+    <a href='./README.md'>EN</a> | JA | <a href='./README_ZH-CN.md'>中文</a>
 </p>
 
 nndownload では、 [Niconico](http://nicovideo.jp)(通称ニコニコ動画)から動画、画像、マンガをダウンロードしたり、その他のリンクを処理したりできます。従来のダウンローダーとは異なり、nndownload では DMC(Dwango Media Cluster)と DMS(Dwango Media Services)サーバーと通信して、高品質の動画へのアクセスを確保します。
