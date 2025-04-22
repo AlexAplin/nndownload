@@ -149,7 +149,7 @@ NAMA_PERMIT_FRAME = json.loads("""
             "quality": "super_high",
             "protocol": "hls",
             "latency": "low",
-            "accessRightMethod": "single_cookie"
+            "accessRightMethod": "single_cookie",
             "chasePlay": false
         },
         "room": {
