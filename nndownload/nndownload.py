@@ -20,6 +20,7 @@ import tempfile
 import threading
 import time
 import xml.dom.minidom
+from datetime import datetime
 from typing import AnyStr, List, Match
 
 import aiohttp
@@ -73,7 +74,6 @@ VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga|manga)\.)|(?:(liv
                           rf"((?:(?:[a-z]{2})?\d+)|[a-zA-Z0-9-]+?)/?(?:/{USER_CONTENT_TYPE})?"
                           r"(?(6)/((?:[a-z]{2})?\d+))?(?:\?(?:user_id=(.*)|.*)?)?$")
 M3U8_STREAM_RE = re.compile(r"(?:(?:#EXT-X-STREAM-INF)|#EXT-X-I-FRAME-STREAM-INF):.*(?:BANDWIDTH=(\d+)).*\n(.*)")
-M3U8_MEDIA_RE = re.compile(r"(?:#EXT-X-MEDIA:TYPE=)(?:(\w+))(?:.*),URI=\"(.*)\"")
 SEIGA_DRM_KEY_RE = re.compile(r"/image/([a-z0-9]+)")
 SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
@@ -140,6 +140,7 @@ API_HEADERS = {
 
 NAMA_ORIGIN_HEADER = {"Origin": "https://live2.nicovideo.jp"}
 
+# TODO: Verify access change with on-air namas
 NAMA_PERMIT_FRAME = json.loads("""
 {
     "type": "startWatching",
@@ -148,6 +149,7 @@ NAMA_PERMIT_FRAME = json.loads("""
             "quality": "super_high",
             "protocol": "hls",
             "latency": "low",
+            "accessRightMethod": "single_cookie"
             "chasePlay": false
         },
         "room": {
@@ -383,7 +385,8 @@ def read_file(session: requests.Session, file: AnyStr):
 def get_media_from_manifest(manifest_text: AnyStr, media_type: AnyStr) -> AnyStr:
     """Return the first seen media match for a given type from a .m3u8 manifest."""
 
-    media_type = media_type.capitalize()
+    media_type = media_type.upper()
+    M3U8_MEDIA_RE = re.compile(rf"(?:#EXT-X-MEDIA:TYPE={media_type},)(?:(\w+))(?:.*),URI=\"(.*)\"")
     match = M3U8_MEDIA_RE.search(manifest_text)
 
     if not match:
@@ -504,7 +507,7 @@ async def perform_nama_heartbeat(websocket: aiohttp.ClientWebSocketResponse, wat
 async def open_nama_websocket(
         session: requests.Session,
         uri: AnyStr, event_loop: asyncio.AbstractEventLoop,
-        is_timeshift: bool = False
+        is_timeshift: dict = None
 ):
     """Open a WebSocket connection to receive and generate the stream playlist URL."""
 
@@ -535,18 +538,39 @@ async def open_nama_websocket(
 
                     if frame_type == "stream":
                         master_url = frame["data"]["uri"]
-                        stream_url = generate_stream(session, master_url)
-
                         if is_timeshift:
-                            output("Downloading timeshifts is not currently supported.\n", logging.WARNING)
+                            template_params = is_timeshift
+
+                            # Not strictly necessary, but included in the frame
+                            cookie = frame["data"]["cookies"][0]
+                            cookie["expires"] = datetime.strptime(cookie["expires"], "%a, %d %b %Y %H:%M:%S %Z").timestamp()
+                            session.cookies.set(**cookie)
+                            output("Downloading timeshifts...\n", logging.WARNING)
+
+                            m3u8_streams = []
+                            manifest_request = session.get(master_url)
+                            manifest_request.raise_for_status()
+                            manifest_text = manifest_request.text
+
+                            if not _CMDL_OPTS.no_video:
+                                video_stream = get_stream_from_manifest(manifest_text)
+                                m3u8_streams.append((video_stream, "video"))
+                            if not _CMDL_OPTS.no_audio:
+                                audio_stream = get_media_from_manifest(manifest_text, "audio")
+                                m3u8_streams.append((audio_stream, "audio"))
+
+                            filename = create_filename(template_params)
+                            output("Downloading {0} to \"{1}\"...\n".format(template_params["id"], filename), logging.INFO)
+                            perform_native_hls_dl(session, filename, float(template_params["duration"]), m3u8_streams, _CMDL_OPTS.threads)
                             break
-                            # event_loop.create_task(download_stream_clips(session, stream_url)
-                        output(
-                            "Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n",
-                            logging.INFO)
-                        output("For more instructions on playing this stream, please consult the README.\n",
-                               logging.INFO)
-                        output("{0}\n".format(stream_url), logging.INFO, force=True)
+                        else:
+                            stream_url = generate_stream(session, master_url)
+                            output(
+                                "Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n",
+                                logging.INFO)
+                            output("For more instructions on playing this stream, please consult the README.\n",
+                                logging.INFO)
+                            output("{0}\n".format(stream_url), logging.INFO, force=True)
 
                     elif frame_type == "disconnect":
                         command_param = frame["body"]["params"][1]
@@ -605,14 +629,27 @@ def request_nama(session: requests.Session, nama_id: AnyStr):
         event_loop = asyncio.get_event_loop()
 
         if params["program"]["status"] == "ENDED":
-            if not websocket_url:
-                websocket_url = reserve_timeshift(session, nama_id)
-            event_loop.run_until_complete(
-                open_nama_websocket(session, websocket_url, event_loop, is_timeshift=True))
+            if (_CMDL_OPTS.no_audio and _CMDL_OPTS.no_video):
+                output("--no-audio and --no-video were both specified. Treating this download as if --skip-media was set.\n", logging.WARNING)
+                _CMDL_OPTS.skip_media = True
+
+            template_params ={}
+            template_params["id"] = params["program"]["nicoliveProgramId"]
+            template_params["title"] = params["program"]["title"]
+            template_params["ext"] = "mp4" # TODO: Presumed
+            template_params["duration"] = params["program"]["endTime"] - params["program"]["beginTime"] 
+
+            if not _CMDL_OPTS.skip_media:
+                if not websocket_url:
+                    websocket_url = reserve_timeshift(session, nama_id)
+                event_loop.run_until_complete(
+                    open_nama_websocket(session, websocket_url, event_loop, is_timeshift=template_params))
+
+            # TODO: Dump metadata, either here or for all namas
 
         elif params["program"]["status"] == "ON_AIR":
             event_loop.run_until_complete(
-                open_nama_websocket(session, websocket_url, event_loop, is_timeshift=False))
+                open_nama_websocket(session, websocket_url, event_loop))
 
     else:
         raise FormatNotAvailableException("Could not retrieve nama info")
@@ -1937,9 +1974,9 @@ def add_metadata_to_container(filename: AnyStr, template_params: dict):
         container_file = MP4(filename)
         if not container_file.tags:
             container_file.add_tags()
-        container_file["\251nam"] = template_params["title"]  # Title
-        container_file["\251ART"] = template_params["uploader"]  # Uploader
-        container_file["desc"] = template_params["description"]  # Description
+        container_file["\251nam"] = str(template_params["title"])  # Title
+        container_file["\251ART"] = str(template_params["uploader"]) # Uploader
+        container_file["desc"] = str(template_params["description"]) # Description
         container_file.save(filename)
     else:
         output("Container metadata is not supported for this file extension. Skipping...\n", logging.INFO)
