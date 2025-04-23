@@ -14,7 +14,8 @@ nndownload allows you to download videos, images, manga, and process other links
 - When downloading without a login (using -g/--no-login), some videos may not be available for download or may only be available in a lower quality.
 - Running multiple download sessions on the same connection may lead to temporary blocks or throttling.
 - These functions are not currently supported:
-  - Downloading Niconama timeshifts
+  - Watching on-air Niconama streams exteranlly
+  - Downloading Niconama timeshift comments
   - Downloading Seiga comments
   - Downloading channel blog comments
 
@@ -114,18 +115,18 @@ nndownload.execute("-g", "-o", output_path, url)
 
 Custom filepaths are constructed like standard Python template strings, e.g. `{uploader} - {title}.{ext}`. For Seiga manga, the output path should be the template for a chapter directory, e.g. `{manga_id}\{id} - {title}`. The available options are:
 
-- comment_count (videos, images, manga, articles)
-- description (videos, images, manga)
+- comment_count (videos, images, manga, articles, timeshifts)
+- description (videos, images, manga, timeshifts)
 - document_url (videos, images, manga, articles)
-- ext (videos, images, articles)
-- id (videos, images, manga, articles)
-- published (videos, images, manga, articles)
+- ext (videos, images, articles, timeshifts)
+- id (videos, images, manga, articles, timeshifts)
+- published (videos, images, manga, articles, timeshifts)
 - tags (videos, images, manga, articles)
-- title (videos, images, manga, articles)
-- uploader (videos, images, manga, articles)
-- uploader_id (videos, images, manga, articles)
+- title (videos, images, manga, articles, timeshifts)
+- uploader (videos, images, manga, articles, timeshifts)
+- uploader_id (videos, images, manga, articles, timeshifts)
 - url (videos, images)
-- view_count (videos, images, manga)
+- view_count (videos, images, manga, timeshifts)
 - audio_quality (videos)
 - video_quality (videos)
 - article (articles)
@@ -133,21 +134,26 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 - clip_count (images)
 - dms_video_uri (videos)
 - dms_audio_uri (videos)
-- duration (videos)
+- duration (videos, timeshifts)
 - manga_id (manga)
 - manga_title (manga)
 - mylist_count (videos)
 - page_count (manga)
+- provider_type (timeshifts)
 - size_high (videos)
 - size_low (videos)
 - thread_id (videos)
 - thread_key (videos)
 - thread_params (videos)
-- thumbnail_url (videos)
+- thumbnail_url (videos, timeshifts)
+- timeshift_count (timeshifts)
 
 ### Using Stream Links
 
-After generating a stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
+> [!NOTE]
+> This function is currently not working due to site changes. Follow #102 for more information
+
+After generating a Niconama stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
 
 `mpv https://...`
 `streamlink https://... best`
