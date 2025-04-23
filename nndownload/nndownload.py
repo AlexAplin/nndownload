@@ -140,7 +140,6 @@ API_HEADERS = {
 
 NAMA_ORIGIN_HEADER = {"Origin": "https://live2.nicovideo.jp"}
 
-# TODO: Verify access change with on-air namas
 NAMA_PERMIT_FRAME = json.loads("""
 {
     "type": "startWatching",
@@ -469,7 +468,7 @@ async def perform_nama_heartbeat(websocket: aiohttp.ClientWebSocketResponse, wat
 async def open_nama_websocket(
         session: requests.Session,
         uri: AnyStr, event_loop: asyncio.AbstractEventLoop,
-        is_timeshift: dict = None
+        is_timeshift: tuple = None
 ):
     """Open a WebSocket connection to receive and generate the stream playlist URL."""
 
