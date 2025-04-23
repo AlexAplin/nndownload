@@ -145,7 +145,7 @@ NAMA_PERMIT_FRAME = json.loads("""
     "type": "startWatching",
     "data": {
         "stream": {
-            "quality": "super_high",
+            "quality": "{0}",
             "protocol": "hls",
             "latency": "low",
             "accessRightMethod": "single_cookie",
@@ -159,6 +159,10 @@ NAMA_PERMIT_FRAME = json.loads("""
     }
 }
 """)
+
+NAMA_AUDIO_ONLY_QUALITIES = ["audio_high", "audio_only"]
+NAMA_VIDEO_QUALITIES = ["super_high", "high", "normal", "low", "super_low"]
+NAMA_ABR_QUALITY = ["abr"]
 
 NAMA_QUALITY_FRAME = json.loads("""
 {
@@ -467,8 +471,12 @@ async def perform_nama_heartbeat(websocket: aiohttp.ClientWebSocketResponse, wat
 
 async def open_nama_websocket(
         session: requests.Session,
-        uri: AnyStr, event_loop: asyncio.AbstractEventLoop,
-        is_timeshift: tuple = None
+        uri: AnyStr,
+        event_loop: asyncio.AbstractEventLoop,
+        max_quality: AnyStr,
+        template_params: dict,
+        filename: AnyStr = None,
+        is_timeshift: bool = False
 ):
     """Open a WebSocket connection to receive and generate the stream playlist URL."""
 
@@ -476,7 +484,10 @@ async def open_nama_websocket(
     connector = ProxyConnector.from_url(proxy) if proxy else None
     async with aiohttp.ClientSession(connector=connector) as websocket_session:
         async with websocket_session.ws_connect(uri) as websocket:
-            await websocket.send_str(json.dumps(NAMA_PERMIT_FRAME))
+            permit_frame = NAMA_PERMIT_FRAME
+            permit_frame["data"]["quality"] = max_quality
+
+            await websocket.send_str(json.dumps(permit_frame))
             heartbeat = event_loop.create_task(perform_nama_heartbeat(websocket, NAMA_WATCHING_FRAME))
 
             try:
@@ -499,15 +510,26 @@ async def open_nama_websocket(
 
                     if frame_type == "stream":
                         master_url = frame["data"]["uri"]
+                        available_qualities = frame["data"]["availableQualities"]
+                        if _CMDL_OPTS.list_qualities:
+                            list_nama_qualities(available_qualities)
+                            raise ListQualitiesQuit("Exiting after listing available qualities")
+
+                        if _CMDL_OPTS.video_quality:
+                            video_quality = select_nama_quality(template_params, "video_quality", available_qualities, max_quality, _CMDL_OPTS.video_quality)
+                            # TODO: Send NAMA_QUALITY_FRAME
+                        if _CMDL_OPTS.audio_quality:
+                            separate_audio_quality = select_nama_quality(template_params, "audio_quality", available_qualities, None, _CMDL_OPTS.video_quality)
+                            # TODO: Send NAMA_QUALITY_FRAME
 
                         cookie = frame["data"]["cookies"][0]
                         cookie["expires"] = datetime.strptime(cookie["expires"], "%a, %d %b %Y %H:%M:%S %Z").timestamp()
                         session.cookies.set(**cookie)
 
                         if is_timeshift:
-                            template_params, filename = is_timeshift
                             output("Downloading timeshift...\n", logging.WARNING)
 
+                            # TODO: Retrieve audio manifest additionally, if specified
                             m3u8_streams = []
                             manifest_request = session.get(master_url)
                             manifest_request.raise_for_status()
@@ -540,6 +562,62 @@ async def open_nama_websocket(
 
             finally:
                 heartbeat.cancel()
+
+def list_nama_qualities(sources: list):
+    output(f"Qualities:\n")
+    output(f"{'ID':<24} | {'Available':<10} | {'Type':<10}\n", logging.INFO, force=True)
+
+    all_qualities = NAMA_VIDEO_QUALITIES + NAMA_AUDIO_ONLY_QUALITIES + NAMA_ABR_QUALITY
+    for source in all_qualities:
+        is_available = source in sources
+        source_type = "audio" if source in NAMA_AUDIO_ONLY_QUALITIES else "video+audio"
+        output("{:<24} | {:<10} | {:<10}\n".format(source, str(is_available), source_type), logging.INFO, force=True)
+
+
+def select_nama_quality(template_params: dict, template_key: AnyStr, sources: list, max_quality: AnyStr, quality="") -> List[AnyStr]:
+    highest_quality = max_quality if template_key == "video_quality" else NAMA_AUDIO_ONLY_QUALITIES[0]
+    lowest_quality = NAMA_VIDEO_QUALITIES[-1] if template_key == "video_quality" else NAMA_AUDIO_ONLY_QUALITIES[-1]
+    hq_available = highest_quality in sources
+    lq_available = lowest_quality in sources
+
+    if quality and _CMDL_OPTS.force_high_quality:
+        output("-f/--force-high-quality was set. The specified quality will be ignored.\n", logging.WARNING)
+        template_params[template_key] = max_quality
+        return template_params[template_key]
+
+    if quality and _CMDL_OPTS.no_video :
+        output("--no-video or --no-audio was set in addition to a quality. The specified quality will be ignored.\n")
+        template_params[template_key] = max_quality
+        return template_params[template_key]
+
+    # quality = "highest"
+    if not hq_available and (_CMDL_OPTS.force_high_quality or (quality and quality.lower() == "highest")):
+        raise FormatNotAvailableException("Highest quality is not currently available")
+    elif _CMDL_OPTS.force_high_quality or (quality and quality.lower() == "highest"):
+        template_params[template_key] = highest_quality
+        return template_params[template_key]
+
+    # quality = "lowest"
+    if (quality and quality.lower() == "lowest") and lq_available:
+        template_params[template_key] = lowest_quality
+        return template_params[template_key]
+    elif quality and quality.lower() == "lowest":
+        raise FormatNotAvailableException("Lowest quality not available. Please verify that the stream is able to be viewed")
+
+    # Other specified quality
+    if quality:
+        filtered_qualities = NAMA_VIDEO_QUALITIES + NAMA_ABR_QUALITY if template_key == "video_quality" else NAMA_AUDIO_ONLY_QUALITIES
+        if quality not in filtered_qualities:
+            raise FormatNotAvailableException("{1} '{0}' is not available. Available qualities: {2}".format(quality, template_key, filtered_qualities))
+        else:
+            template_params[template_key] = quality
+            return template_params[template_key]
+
+    # Default (return highest available quality, not including ABR)
+    else:
+        filtered_qualities = NAMA_VIDEO_QUALITIES if template_key == "video_quality" else NAMA_AUDIO_ONLY_QUALITIES
+        template_params[template_key] = filtered_qualities[0]
+        return template_params[template_key]
 
 
 def reserve_timeshift(session: requests.Session, nama_id: AnyStr) -> AnyStr:
@@ -585,39 +663,45 @@ def request_nama(session: requests.Session, nama_id: AnyStr):
         websocket_url = params["site"]["relive"]["webSocketUrl"]
         event_loop = asyncio.get_event_loop()
 
+        # Specify the max quality reported with the permit frame
+        # Lesser qualities are received on the response frame and can be specified with NAMA_QUALITY_FRAME
+        max_quality = params["program"]["stream"]["maxQuality"]
+
+        template_params = {}
+        template_params["id"] = params["program"]["nicoliveProgramId"]
+        template_params["title"] = params["program"]["title"]
+
+        template_params["ext"] = "mp4"
+        if _CMDL_OPTS.no_video and not _CMDL_OPTS.no_audio:
+            template_params["ext"] = "m4a"
+        elif _CMDL_OPTS.no_audio and not _CMDL_OPTS.no_video:
+            template_params["ext"] = "m4v"
+
+        template_params["published"] = params["program"]["beginTime"]
+        template_params["duration"] = params["program"]["endTime"] - params["program"]["beginTime"] 
+        template_params["provider_type"] = params["program"]["providerType"]
+        template_params["uploader"] = params["program"]["supplier"]["name"]
+        template_params["uploader_id"] = params["program"]["supplier"]["programProviderId"]
+        template_params["description"] = params["program"]["description"]
+
+        template_params["thumbnail_url"] = (  # Use highest quality thumbnail available
+                params["program"]["screenshot"]["urlSet"]["large"]
+                or params["program"]["screenshot"]["urlSet"]["middle"]
+                or params["program"]["screenshot"]["urlSet"]["small"]
+                or params["program"]["screenshot"]["urlSet"]["micro"])
+
+        template_params["view_count"] = int(params["program"]["statistics"]["watchCount"] or 0)
+        template_params["comment_count"] = int(params["program"]["statistics"]["commentCount"] or 0)
+        template_params["timeshift_count"] = int(params["program"]["statistics"]["timeshiftReservationCount"] or 0)
+
+        filename = create_filename(template_params)
+
         if params["program"]["status"] == "ENDED":
             if (_CMDL_OPTS.no_audio and _CMDL_OPTS.no_video):
                 output("--no-audio and --no-video were both specified. Treating this download as if --skip-media was set.\n", logging.WARNING)
                 _CMDL_OPTS.skip_media = True
-
-            template_params = {}
-            template_params["id"] = params["program"]["nicoliveProgramId"]
-            template_params["title"] = params["program"]["title"]
-
-            template_params["ext"] = "mp4"
-            if not _CMDL_OPTS.no_video and _CMDL_OPTS.no_audio:
-                template_params["ext"] = "m4v"
-            elif not _CMDL_OPTS.no_audio and _CMDL_OPTS.no_video:
-                template_params["ext"] = "m4a"
-
-            template_params["published"] = params["program"]["beginTime"]
-            template_params["duration"] = params["program"]["endTime"] - params["program"]["beginTime"] 
-            template_params["provider_type"] = params["program"]["providerType"]
-            template_params["uploader"] = params["program"]["supplier"]["name"]
-            template_params["uploader_id"] = params["program"]["supplier"]["programProviderId"]
-            template_params["description"] = params["program"]["description"]
-
-            template_params["thumbnail_url"] = (  # Use highest quality thumbnail available
-                    params["program"]["screenshot"]["urlSet"]["large"]
-                    or params["program"]["screenshot"]["urlSet"]["middle"]
-                    or params["program"]["screenshot"]["urlSet"]["small"]
-                    or params["program"]["screenshot"]["urlSet"]["micro"])
-
-            template_params["view_count"] = int(params["program"]["statistics"]["watchCount"] or 0)
-            template_params["comment_count"] = int(params["program"]["statistics"]["commentCount"] or 0)
-            template_params["timeshift_count"] = int(params["program"]["statistics"]["timeshiftReservationCount"] or 0)
-
-            filename = create_filename(template_params)
+            if _CMDL_OPTS.video_quality and _CMDL_OPTS.audio_quality:
+                output("The video stream manifest includes an audio stream. --audio-quality will be ignored.\n", logging.WARNING)
 
             if not _CMDL_OPTS.skip_media:
                 if os.path.exists(filename):
@@ -626,7 +710,7 @@ def request_nama(session: requests.Session, nama_id: AnyStr):
                 if not websocket_url:
                     websocket_url = reserve_timeshift(session, nama_id)
                 event_loop.run_until_complete(
-                    open_nama_websocket(session, websocket_url, event_loop, is_timeshift=(template_params, filename)))
+                    open_nama_websocket(session, websocket_url, event_loop, max_quality, template_params, filename, is_timeshift=True))
 
             if _CMDL_OPTS.dump_metadata:
                 dump_metadata(filename, template_params)
@@ -638,7 +722,7 @@ def request_nama(session: requests.Session, nama_id: AnyStr):
 
         elif params["program"]["status"] == "ON_AIR":
             event_loop.run_until_complete(
-                open_nama_websocket(session, websocket_url, event_loop))
+                open_nama_websocket(session, websocket_url, event_loop, max_quality, template_params, is_timeshift=False))
 
     else:
         raise FormatNotAvailableException("Could not retrieve nama info")
@@ -1568,8 +1652,17 @@ def list_qualities(sources_type: str, sources: list, is_dms: bool):
 def select_quality(template_params: dict, template_key: AnyStr, sources: list, quality="") -> List[AnyStr]:
     """Select the specified quality from a sources list on DMC and DMS videos."""
 
+    bare_sources = [item["id"] for item in sources if item["isAvailable"]]
+
     if quality and _CMDL_OPTS.force_high_quality:
-        output("-f/--force-high-quality was set. Ignoring specified quality...\n", logging.WARNING)
+        output("-f/--force-high-quality was set. The specified quality will be ignored.\n", logging.WARNING)
+        template_params[template_key] = bare_sources[0]
+        return bare_sources
+
+    if quality and _CMDL_OPTS.no_video :
+        output("--no-video or --no-audio was set in addition to a quality. The specified quality will be ignored.\n")
+        template_params[template_key] = bare_sources[0]
+        return bare_sources
 
     # Assumes qualities are in descending order
     highest_quality = sources[0]
@@ -1592,7 +1685,6 @@ def select_quality(template_params: dict, template_key: AnyStr, sources: list, q
         raise FormatNotAvailableException("Lowest quality not available. Please verify that the video is able to be viewed")
 
     # Other specified quality
-    bare_sources = [item["id"] for item in sources if item["isAvailable"]]
     if quality:
         filtered = list(filter(lambda q: q.lower() == quality.lower(), bare_sources))
         if not filtered:
@@ -1658,7 +1750,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             # Limited to one video and audio source
             video_source = video_sources[0]
             audio_source = audio_sources[0]
-            payload = json.dumps({"outputs":[[video_source, audio_source]]})
+            payload = json.dumps({"outputs": [[video_source, audio_source]]})
 
             output("Retrieving video manifest...\n", logging.INFO)
             headers = {
