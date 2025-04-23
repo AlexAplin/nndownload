@@ -457,44 +457,6 @@ def get_temp_dir():
 
 ## Nama methods
 
-def generate_stream(session: requests.Session, master_url: AnyStr) -> AnyStr:
-    """Output the highest quality stream URL for a live Niconama broadcast."""
-
-    output("Retrieving master playlist...\n", logging.INFO)
-
-    m3u8_request = session.get(master_url)
-    m3u8_request.raise_for_status()
-
-    output("Retrieved master playlist.\n", logging.INFO)
-
-    playlist_slug = get_stream_from_manifest(m3u8_request.text)
-    stream_url = master_url.rsplit("/", maxsplit=1)[0] + "/" + playlist_slug
-
-    return stream_url
-
-
-async def download_stream_clips(session: requests.Session, stream_url: AnyStr):
-    """Download the clips associated with a stream playlist and stitch them into a file."""
-
-    # TODO: Determine end condition, stitch downloads together, end task on completion
-    while True:
-        stream_request = session.get(stream_url)
-        stream_request.raise_for_status()
-        # stream_length = re.search(r"(?:#STREAM-DURATION:)(.*)", stream_request.text)[1]
-
-        clip_matches = re.compile(r"(?:#EXTINF):.*\n(.*)").findall(stream_request.text)
-        if not clip_matches:
-            raise FormatNotAvailableException("Could not retrieve stream clips from playlist")
-
-        # else:
-        # for match in clip_matches:
-        # output("{0}\n".format(match), logging.DEBUG)
-        # clip_slug = match
-        # clip_url = stream_url.rsplit("/", maxsplit=1)[0] + "/" + clip_slug
-
-        await asyncio.sleep(NAMA_PLAYLIST_INTERVAL_S)
-
-
 async def perform_nama_heartbeat(websocket: aiohttp.ClientWebSocketResponse, watching_frame: dict):
     """Send a watching frame periodically to keep the stream alive."""
 
@@ -538,14 +500,14 @@ async def open_nama_websocket(
 
                     if frame_type == "stream":
                         master_url = frame["data"]["uri"]
-                        if is_timeshift:
-                            template_params = is_timeshift
 
-                            # Not strictly necessary, but included in the frame
-                            cookie = frame["data"]["cookies"][0]
-                            cookie["expires"] = datetime.strptime(cookie["expires"], "%a, %d %b %Y %H:%M:%S %Z").timestamp()
-                            session.cookies.set(**cookie)
-                            output("Downloading timeshifts...\n", logging.WARNING)
+                        cookie = frame["data"]["cookies"][0]
+                        cookie["expires"] = datetime.strptime(cookie["expires"], "%a, %d %b %Y %H:%M:%S %Z").timestamp()
+                        session.cookies.set(**cookie)
+
+                        if is_timeshift:
+                            template_params, filename = is_timeshift
+                            output("Downloading timeshift...\n", logging.WARNING)
 
                             m3u8_streams = []
                             manifest_request = session.get(master_url)
@@ -559,18 +521,14 @@ async def open_nama_websocket(
                                 audio_stream = get_media_from_manifest(manifest_text, "audio")
                                 m3u8_streams.append((audio_stream, "audio"))
 
-                            filename = create_filename(template_params)
                             output("Downloading {0} to \"{1}\"...\n".format(template_params["id"], filename), logging.INFO)
                             perform_native_hls_dl(session, filename, float(template_params["duration"]), m3u8_streams, _CMDL_OPTS.threads)
                             break
                         else:
-                            stream_url = generate_stream(session, master_url)
                             output(
-                                "Generated stream URL. Please keep this window open to keep the stream active. Press ^C to exit.\n",
-                                logging.INFO)
-                            output("For more instructions on playing this stream, please consult the README.\n",
-                                logging.INFO)
-                            output("{0}\n".format(stream_url), logging.INFO, force=True)
+                                "Streaming on-air Niconama is not currently supported. Follow this issue for more information: https://github.com/AlexAplin/nndownload/issues/203\n",
+                                logging.WARNING)
+                            break
 
                     elif frame_type == "disconnect":
                         command_param = frame["body"]["params"][1]
@@ -633,19 +591,51 @@ def request_nama(session: requests.Session, nama_id: AnyStr):
                 output("--no-audio and --no-video were both specified. Treating this download as if --skip-media was set.\n", logging.WARNING)
                 _CMDL_OPTS.skip_media = True
 
-            template_params ={}
+            template_params = {}
             template_params["id"] = params["program"]["nicoliveProgramId"]
             template_params["title"] = params["program"]["title"]
-            template_params["ext"] = "mp4" # TODO: Presumed
+
+            template_params["ext"] = "mp4"
+            if not _CMDL_OPTS.no_video and _CMDL_OPTS.no_audio:
+                template_params["ext"] = "m4v"
+            elif not _CMDL_OPTS.no_audio and _CMDL_OPTS.no_video:
+                template_params["ext"] = "m4a"
+
+            template_params["published"] = params["program"]["beginTime"]
             template_params["duration"] = params["program"]["endTime"] - params["program"]["beginTime"] 
+            template_params["provider_type"] = params["program"]["providerType"]
+            template_params["uploader"] = params["program"]["supplier"]["name"]
+            template_params["uploader_id"] = params["program"]["supplier"]["programProviderId"]
+            template_params["description"] = params["program"]["description"]
+
+            template_params["thumbnail_url"] = (  # Use highest quality thumbnail available
+                    params["program"]["screenshot"]["urlSet"]["large"]
+                    or params["program"]["screenshot"]["urlSet"]["middle"]
+                    or params["program"]["screenshot"]["urlSet"]["small"]
+                    or params["program"]["screenshot"]["urlSet"]["micro"])
+
+            template_params["view_count"] = int(params["program"]["statistics"]["watchCount"] or 0)
+            template_params["comment_count"] = int(params["program"]["statistics"]["commentCount"] or 0)
+            template_params["timeshift_count"] = int(params["program"]["statistics"]["timeshiftReservationCount"] or 0)
+
+            filename = create_filename(template_params)
 
             if not _CMDL_OPTS.skip_media:
+                if os.path.exists(filename):
+                    output("Resuming partial downloads is not supported for Niconama timeshifts. Any partial data will be overwritten.\n", logging.WARNING)
+
                 if not websocket_url:
                     websocket_url = reserve_timeshift(session, nama_id)
                 event_loop.run_until_complete(
-                    open_nama_websocket(session, websocket_url, event_loop, is_timeshift=template_params))
+                    open_nama_websocket(session, websocket_url, event_loop, is_timeshift=(template_params, filename)))
 
-            # TODO: Dump metadata, either here or for all namas
+            if _CMDL_OPTS.dump_metadata:
+                dump_metadata(filename, template_params)
+            if _CMDL_OPTS.download_thumbnail:
+                thumb_filename = replace_extension(filename, "jpg")
+                download_thumbnail(session, thumb_filename, template_params)
+            if _CMDL_OPTS.download_comments:
+                output("Downloading comments for Niconama is not currently supported.\n", logging.WARNING)
 
         elif params["program"]["status"] == "ON_AIR":
             event_loop.run_until_complete(
@@ -1391,7 +1381,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
 
     # If extension was rewritten, presume the download is complete
     if os.path.exists(filename):
-        output("Video exists and appears to have been completed.\n", logging.INFO)
+        output("File exists and appears to have been completed.\n", logging.INFO)
         return False
 
     complete_filename = filename
@@ -1401,7 +1391,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
     if template_params.get("dms_video_uri") or template_params.get("dms_audio_uri"):
         # .part file
         if os.path.exists(filename):
-            output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial video data will be overwritten.\n", logging.WARNING)
+            output("Resuming partial downloads is not supported for videos using DMS delivery. Any partial data will be overwritten.\n", logging.WARNING)
 
         m3u8_streams = []
         for stream_type, name in [("dms_video_uri", "video"), ("dms_audio_uri", "audio")]:
