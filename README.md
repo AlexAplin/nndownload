@@ -151,7 +151,7 @@ Custom filepaths are constructed like standard Python template strings, e.g. `{u
 ### Using Stream Links
 
 > [!NOTE]
-> This function is currently not working due to site changes. Follow #102 for more information
+> This function is currently not working due to site changes. Follow [#203](https://github.com/AlexAplin/nndownload/issues/203) for more information
 
 After generating a Niconama stream URL, the program must be kept running to keep the stream active. [mpv](https://github.com/mpv-player/mpv) and [streamlink](https://github.com/streamlink/streamlink) are the best options for playing generated stream URLs. Other programs that use aggressive HLS caching and threading may also work.
 
