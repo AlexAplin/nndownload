@@ -570,6 +570,7 @@ def list_nama_qualities(sources: list):
     all_qualities = NAMA_VIDEO_QUALITIES + NAMA_AUDIO_ONLY_QUALITIES + NAMA_ABR_QUALITY
     for source in all_qualities:
         is_available = source in sources
+        # TODO: Ideally specify rough encoding estimates ffor what these represent
         source_type = "audio" if source in NAMA_AUDIO_ONLY_QUALITIES else "video+audio"
         output("{:<24} | {:<10} | {:<10}\n".format(source, str(is_available), source_type), logging.INFO, force=True)
 
