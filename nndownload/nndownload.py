@@ -145,7 +145,7 @@ NAMA_PERMIT_FRAME = json.loads("""
     "type": "startWatching",
     "data": {
         "stream": {
-            "quality": "{0}",
+            "quality": "abr",
             "protocol": "hls",
             "latency": "low",
             "accessRightMethod": "single_cookie",
@@ -485,7 +485,7 @@ async def open_nama_websocket(
     async with aiohttp.ClientSession(connector=connector) as websocket_session:
         async with websocket_session.ws_connect(uri) as websocket:
             permit_frame = NAMA_PERMIT_FRAME
-            permit_frame["data"]["quality"] = max_quality
+            permit_frame["data"]["stream"]["quality"] = max_quality
 
             await websocket.send_str(json.dumps(permit_frame))
             heartbeat = event_loop.create_task(perform_nama_heartbeat(websocket, NAMA_WATCHING_FRAME))
