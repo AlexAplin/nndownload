@@ -682,15 +682,24 @@ def request_nama(session: requests.Session, nama_id: AnyStr):
         template_params["duration"] = params["program"]["endTime"] - params["program"]["beginTime"] 
         template_params["provider_type"] = params["program"]["providerType"]
         template_params["uploader"] = params["program"]["supplier"]["name"]
-        template_params["uploader_id"] = params["program"]["supplier"]["programProviderId"]
+        template_params["uploader_type"] = params["program"]["supplier"]["supplierType"]
+
+        if template_params["uploader_type"] == "channel":
+            template_params["uploader_id"] = params["channel"]["id"]
+            template_params["thumbnail_url"] = (  # Use highest quality thumbnail available
+                params["program"]["thumbnail"]["huge"].get(0)
+                or params["program"]["thumbnail"]["large"]
+                or params["program"]["thumbnail"]["small"]
+            )
+        else:
+            template_params["uploader_id"] = params["program"]["supplier"]["programProviderId"]
+            template_params["thumbnail_url"] = (  # Use highest quality thumbnail available
+                    params["program"]["screenshot"]["urlSet"]["large"]
+                    or params["program"]["screenshot"]["urlSet"]["middle"]
+                    or params["program"]["screenshot"]["urlSet"]["small"]
+                    or params["program"]["screenshot"]["urlSet"]["micro"])
+
         template_params["description"] = params["program"]["description"]
-
-        template_params["thumbnail_url"] = (  # Use highest quality thumbnail available
-                params["program"]["screenshot"]["urlSet"]["large"]
-                or params["program"]["screenshot"]["urlSet"]["middle"]
-                or params["program"]["screenshot"]["urlSet"]["small"]
-                or params["program"]["screenshot"]["urlSet"]["micro"])
-
         template_params["view_count"] = int(params["program"]["statistics"]["watchCount"] or 0)
         template_params["comment_count"] = int(params["program"]["statistics"]["commentCount"] or 0)
         template_params["timeshift_count"] = int(params["program"]["statistics"]["timeshiftReservationCount"] or 0)
