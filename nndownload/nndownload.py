@@ -32,7 +32,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from rich.progress import Progress
 from urllib3.util import Retry
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlparse
 
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException, FfmpegExistsException
 from .hls_dl import download_hls
