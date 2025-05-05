@@ -2060,9 +2060,6 @@ def fetch_comments_modern(
             last_time = get_niconico_timestamp(thread_comments[0]["postedAt"])
             fetched_count += 1
             
-            # Rate limiting (not sure if need this)
-            time.sleep(1)
-            
         except Exception as e:
             print(f"Error fetching comments: {e}")
             break
