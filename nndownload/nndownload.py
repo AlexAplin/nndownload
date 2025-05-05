@@ -21,6 +21,7 @@ import threading
 import time
 import xml.dom.minidom
 from typing import AnyStr, List, Match
+from datetime import datetime, timezone
 
 import aiohttp
 import requests
@@ -31,7 +32,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
 from rich.progress import Progress
 from urllib3.util import Retry
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from .ffmpeg_dl import FfmpegDL, FfmpegDLException, FfmpegExistsException
 from .hls_dl import download_hls
@@ -88,8 +89,6 @@ USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 USER_SERIES_API = "https://nvapi.nicovideo.jp/v1/users/{0}/series"
 USER_FOLLOWING_API = "https://nvapi.nicovideo.jp/v1/users/{0}/following/users?pageSize=800" # 800 following limit for premium users
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
-COMMENTS_API = "https://public.nvcomment.nicovideo.jp/v1/threads"
-COMMENTS_API_POST_DATA = "{{\'params\':{0},\'threadKey\':\'{1}\',\'additionals\':{{}}}}"
 USER_HISTORY_API = "https://nvapi.nicovideo.jp/v1/users/me/watch/history?page={0}&pageSize={1}"
 USER_LIKES_API = "nvapi.nicovideo.jp/v1/users/me/watch/likes?page={0}&pageSize={1}"
 USER_WATCHLATER_API = "https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize={0}&page={1}"
@@ -1829,7 +1828,9 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
                 or params["video"]["thumbnail"]["middleUrl"]
                 or params["video"]["thumbnail"]["url"])
 
+        template_params["threads"] = params["comment"]["threads"]
         template_params["thread_id"] = int(params["comment"]["threads"][0]["id"])
+        template_params["comment_server"] = params["comment"]["nvComment"]["server"]
         template_params["thread_key"] = params["comment"]["nvComment"]["threadKey"]
         template_params["thread_params"] = params["comment"]["nvComment"]["params"]
         template_params["published"] = params["video"]["registeredAt"]
@@ -1911,23 +1912,186 @@ def download_thumbnail(session: requests.Session, filename: AnyStr, template_par
 
     output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
 
+def get_niconico_timestamp(input_time=None):
+    if input_time is None:
+        return int(datetime.now(timezone.utc).timestamp())
+    
+    if isinstance(input_time, (int, float)):
+        return int(input_time)
+    
+    try:
+        # Try ISO format first
+        return int(datetime.strptime(input_time, "%Y-%m-%dT%H:%M:%S%z").timestamp())
+    except ValueError:
+        try:
+            # Try date-only format
+            return int(datetime.strptime(input_time, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+        except ValueError:
+            return int(datetime.now(timezone.utc).timestamp())  # Fallback
 
-def download_comments(session: requests.Session, filename: AnyStr, template_params: dict):
+def download_comments(
+    session: requests.Session,
+    filename: str,
+    template_params: dict,
+):
     """Download the video comments."""
+
+    comment_limit: int = 40
 
     output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "comments.json")
 
-    comments_post = COMMENTS_API_POST_DATA.format(template_params["thread_params"], template_params["thread_key"]).replace("\'", "\"").replace(": ", ":").replace(", ", ",")
-    session.options(COMMENTS_API, headers=API_HEADERS) # OPTIONS
-    get_comments_request = session.post(COMMENTS_API, data=comments_post, headers=API_HEADERS)
-    get_comments_request.raise_for_status()
+    comments = {
+        "globalComments": [
+            {
+                "count": 0,
+                "id": ""
+            }
+        ],
+        "threads": [],
+    }
+
+    # Convert date limit to timestamp
+    last_time = get_niconico_timestamp()
+
+    # Process each comment thread
+    for thread in template_params["thread_params"]["targets"]:
+        thread_comments = fetch_comments_modern(
+            session,
+            template_params["id"],
+            template_params["comment_server"],
+            template_params["thread_key"],
+            thread,
+            template_params["thread_params"]["language"],
+            last_time,
+            comment_limit,
+        )
+
+        if thread_comments.get("globalCommentsData"):
+            if thread_comments["globalCommentsData"]["count"] > comments["globalComments"][0]["count"]:
+                comments["globalComments"][0]["count"] = thread_comments["globalCommentsData"]["count"]
+            comments["globalComments"][0]["id"] = thread_comments["globalCommentsData"]["id"]
+        comments["threads"].append(thread_comments["threadData"])
+
+    # Save comments to file
     with open(filename, "w", encoding="utf-8") as file:
-        json.dump(get_comments_request.json(), file, indent=4, ensure_ascii=False, sort_keys=True)
+        json.dump(comments, file, indent=4, ensure_ascii=False, sort_keys=True)
 
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
+def fetch_comments_modern(
+    session: requests.Session,
+    video_id: str,
+    api_server: str,
+    thread_key: str,
+    thread: dict,
+    language: str,
+    last_time: int,
+    limit: int,
+) -> dict:
+    """Fetch comments using modern Niconico API (requires login)."""
+    global_comments_data = {
+        "count": 0,
+        "id": thread["id"],
+    }
+    thread_data = {
+        "commentCount": 0,
+        "comments": [],
+        "fork": thread["fork"],
+        "id": thread["id"]
+    }
+    base_data = {
+        "threadKey": thread_key,
+        "params": {
+            "language": language,
+            "targets": [thread]
+        }
+    }
+    fetched_count = 0
+    
+    while fetched_count < limit:
+        try:
+            payload = {
+                **base_data,
+                "additionals": {
+                    "res_from": -1000,
+                    "when": last_time
+                }
+            }
+            
+            headers = {
+                "content-type": "text/plain;charset=UTF-8",
+                "x-client-os-type": "others",
+                "x-frontend-id": "6",
+                "x-frontend-version": "0"
+            }
+            
+            response = session.post(
+                f"{api_server}/v1/threads",
+                json=payload,
+                headers=headers
+            )
+            data = response.json()
+            
+            # Handle errors
+            if "meta" in data and "errorCode" in data["meta"]:
+                handle_api_error(data["meta"]["errorCode"], session, video_id)
+                continue
+
+            global_comment_count = data["data"]["globalComments"][0]["count"]
+            if global_comment_count and global_comment_count > global_comments_data["count"]:
+                # Get the highest global comment count as our estimated global threads total comment count
+                global_comments_data["count"] = global_comment_count
+
+            comment_count = data["data"]["threads"][0]["commentCount"]
+            if comment_count and fetched_count == 0:
+                # Use first fetch count to know the thread total comment count
+                thread_data["commentCount"] = comment_count 
+                
+            # Extract comments
+            thread_comments = data["data"]["threads"][0]["comments"]
+            # Not sure why this `no < 5` check was in the original comment-zouryou source code.
+            # I uncommented it out because some easy threads comments would not be added to the list.
+            if not thread_comments: # or thread_comments[0]["no"] < 5: 
+                break  # Reached beginning
+                
+            thread_data["comments"].extend(thread_comments)
+            last_time = get_niconico_timestamp(thread_comments[0]["postedAt"])
+            fetched_count += 1
+            
+            # Rate limiting (not sure if need this)
+            time.sleep(1)
+            
+        except Exception as e:
+            print(f"Error fetching comments: {e}")
+            break
+            
+    return {"globalCommentsData": global_comments_data, "threadData": thread_data}
+
+def handle_api_error(error_code: str, session: requests.Session, video_id: str) -> None:
+    """Handle API errors with appropriate actions."""
+    if error_code == "TOO_MANY_REQUESTS":
+        output("Rate limited - waiting 60 seconds...", logging.INFO)
+        time.sleep(60)
+    elif error_code == "EXPIRED_TOKEN":
+        output("Refreshing thread key...", logging.INFO)
+        refresh_thread_key(session, video_id)
+    elif error_code == "INVALID_TOKEN":
+        raise Exception("Authentication required - please login first")
+    else:
+        raise Exception(f"API error: {error_code}")
+
+def refresh_thread_key(session: requests.Session, video_id: str) -> str:
+    """Refresh the thread key for modern API."""
+    url = f"https://nvapi.nicovideo.jp/v1/comment/keys/thread?videoId={video_id}"
+    headers = {
+        "X-Frontend-Id": "6",
+        "X-Frontend-Version": "0",
+        "Content-Type": "application/json"
+    }
+    response = session.get(url, headers=headers)
+    return response.json()["data"]["threadKey"]
 
 def add_metadata_to_container(filename: AnyStr, template_params: dict):
     """Add metadata to any MP4 container."""
