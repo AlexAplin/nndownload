@@ -80,6 +80,7 @@ SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
+THREAD_REFRESH_API = "https://nvapi.nicovideo.jp/v1/comment/keys/thread?videoId={0}"
 MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}?pageSize=500"  # 500 video limit for premium mylists
 MYLIST_ME_API = "https://nvapi.nicovideo.jp/v1/users/me/mylists/{0}?pageSize=500" # Still on /v1
 SERIES_API = "https://nvapi.nicovideo.jp/v2/series/{0}?&pageSize=500"  # Same as mylists
@@ -2080,11 +2081,11 @@ def handle_api_error(error_code: str, session: requests.Session, video_id: str) 
         raise Exception(f"API error: {error_code}")
 
 def refresh_thread_key(session: requests.Session, video_id: str) -> str:
-    """Refresh the thread key for modern API."""
-    url = f"https://nvapi.nicovideo.jp/v1/comment/keys/thread?videoId={video_id}"
+    """Refresh the thread key for comment API"""
+    url = THREAD_REFRESH_API.format(video_id)
+
     headers = {
-        "X-Frontend-Id": "6",
-        "X-Frontend-Version": "0",
+        **API_HEADERS,
         "Content-Type": "application/json"
     }
     response = session.get(url, headers=headers)
