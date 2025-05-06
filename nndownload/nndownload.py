@@ -99,6 +99,7 @@ REGION_LOCK_ERRORS = {  "お住まいの地域・国からは視聴すること�
                      }
 
 USER_VIDEOS_API_N = 100
+COMMENT_THREAD_COOLDOWN_S = 60
 NAMA_HEARTBEAT_INTERVAL_S = 30
 NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
@@ -450,6 +451,26 @@ def get_temp_dir():
         yield tmpdir
     finally:
         shutil.rmtree(tmpdir)
+
+def get_unix_timestamp(input_time=None):
+    """Convert a date or timestamp to a Unix timestamp."""
+
+    if input_time is None:
+        return int(datetime.now(timezone.utc).timestamp())
+    
+    if isinstance(input_time, (int, float)):
+        return int(input_time)
+    
+    try:
+        # Try ISO format first
+        return int(datetime.strptime(input_time, "%Y-%m-%dT%H:%M:%S%z").timestamp())
+    except ValueError:
+        try:
+            # Try date-only format
+            return int(datetime.strptime(input_time, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+        except ValueError:
+            return int(datetime.now(timezone.utc).timestamp())  # Fallback
+
 
 
 ## Nama methods
@@ -1080,7 +1101,7 @@ def request_video(session: requests.Session, video_id: AnyStr):
     if _CMDL_OPTS.download_thumbnail:
         download_thumbnail(session, filename, template_params)
     if _CMDL_OPTS.download_comments:
-        download_comments(session, filename, template_params)
+        download_video_comments(session, filename, template_params)
 
 
 def request_user(session: requests.Session, user_id: AnyStr):
@@ -1913,24 +1934,7 @@ def download_thumbnail(session: requests.Session, filename: AnyStr, template_par
 
     output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
 
-def get_niconico_timestamp(input_time=None):
-    if input_time is None:
-        return int(datetime.now(timezone.utc).timestamp())
-    
-    if isinstance(input_time, (int, float)):
-        return int(input_time)
-    
-    try:
-        # Try ISO format first
-        return int(datetime.strptime(input_time, "%Y-%m-%dT%H:%M:%S%z").timestamp())
-    except ValueError:
-        try:
-            # Try date-only format
-            return int(datetime.strptime(input_time, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
-        except ValueError:
-            return int(datetime.now(timezone.utc).timestamp())  # Fallback
-
-def download_comments(
+def download_video_comments(
     session: requests.Session,
     filename: str,
     template_params: dict,
@@ -1954,7 +1958,7 @@ def download_comments(
     }
 
     # Convert date limit to timestamp
-    last_time = get_niconico_timestamp()
+    last_time = get_unix_timestamp()
 
     # Process each comment thread
     for thread in template_params["thread_params"]["targets"]:
@@ -2022,10 +2026,9 @@ def fetch_comments_modern(
             }
             
             headers = {
+                **API_HEADERS,
                 "content-type": "text/plain;charset=UTF-8",
                 "x-client-os-type": "others",
-                "x-frontend-id": "6",
-                "x-frontend-version": "0"
             }
             
             response = session.post(
@@ -2058,11 +2061,11 @@ def fetch_comments_modern(
                 break  # Reached beginning
                 
             thread_data["comments"].extend(thread_comments)
-            last_time = get_niconico_timestamp(thread_comments[0]["postedAt"])
+            last_time = get_unix_timestamp(thread_comments[0]["postedAt"])
             fetched_count += 1
             
         except Exception as e:
-            print(f"Error fetching comments: {e}")
+            output(f"Error fetching comments {e}", logging.ERROR)
             break
             
     return {"globalCommentsData": global_comments_data, "threadData": thread_data}
@@ -2071,17 +2074,17 @@ def handle_api_error(error_code: str, session: requests.Session, video_id: str) 
     """Handle API errors with appropriate actions."""
     if error_code == "TOO_MANY_REQUESTS":
         output("Rate limited - waiting 60 seconds...", logging.INFO)
-        time.sleep(60)
+        time.sleep(COMMENT_THREAD_COOLDOWN_S)
     elif error_code == "EXPIRED_TOKEN":
         output("Refreshing thread key...", logging.INFO)
         refresh_thread_key(session, video_id)
     elif error_code == "INVALID_TOKEN":
-        raise Exception("Authentication required - please login first")
+        raise AuthenticationException
     else:
-        raise Exception(f"API error: {error_code}")
+        raise ParameterExtractionException(error_code)
 
 def refresh_thread_key(session: requests.Session, video_id: str) -> str:
-    """Refresh the thread key for comment API"""
+    """Refresh the thread key for the comments API"""
     url = THREAD_REFRESH_API.format(video_id)
 
     headers = {
