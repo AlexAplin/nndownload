@@ -99,10 +99,12 @@ REGION_LOCK_ERRORS = {  "お住まいの地域・国からは視聴すること�
                      }
 
 USER_VIDEOS_API_N = 100
-COMMENT_THREAD_COOLDOWN_S = 60
 NAMA_HEARTBEAT_INTERVAL_S = 30
 NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
+COMMENTS_THREAD_COOLDOWN_S = 60
+COMMENTS_THREAD_INTERVAL_S = 1
+COMMENTS_LIMIT_DEFAULT_N = sys.maxsize # effectively infinite (no videos on niconico have reached 100 mil comments)
 KILOBYTE = 1024
 KILOBIT = 1000
 BLOCK_SIZE = 1024
@@ -110,6 +112,16 @@ EPSILON = 0.0001
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2  # retry_timeout_s = BACKOFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
 TEMP_PATH_LEN = 16
+
+COMMENTS_DATA_JSON = {
+    "globalComments": [
+        {
+            "count": 0,
+            "id": None
+        }
+    ],
+    "threads": [],
+}
 
 MIMETYPES = {
     "image/gif": "gif",
@@ -452,7 +464,7 @@ def get_temp_dir():
     finally:
         shutil.rmtree(tmpdir)
 
-def get_unix_timestamp(input_time=None):
+def get_unix_timestamp(input_time=None) -> int:
     """Convert a date or timestamp to a Unix timestamp."""
 
     if input_time is None:
@@ -1941,28 +1953,20 @@ def download_video_comments(
 ):
     """Download the video comments."""
 
-    comment_limit: int = 40
-
     output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "comments.json")
 
-    comments = {
-        "globalComments": [
-            {
-                "count": 0,
-                "id": ""
-            }
-        ],
-        "threads": [],
-    }
+    # TODO: Make sure to limit date range to this:
+    # OLD_DATE.min = "2007-03-03";
+    # OLD_DATE.max = new Date().getFullYear() + "-12-31";
 
     # Convert date limit to timestamp
     last_time = get_unix_timestamp()
 
     # Process each comment thread
     for thread in template_params["thread_params"]["targets"]:
-        thread_comments = fetch_comments_modern(
+        thread_comments = fetch_thread_comments(
             session,
             template_params["id"],
             template_params["comment_server"],
@@ -1970,22 +1974,22 @@ def download_video_comments(
             thread,
             template_params["thread_params"]["language"],
             last_time,
-            comment_limit,
         )
 
-        if thread_comments.get("globalCommentsData"):
-            if thread_comments["globalCommentsData"]["count"] > comments["globalComments"][0]["count"]:
-                comments["globalComments"][0]["count"] = thread_comments["globalCommentsData"]["count"]
-            comments["globalComments"][0]["id"] = thread_comments["globalCommentsData"]["id"]
-        comments["threads"].append(thread_comments["threadData"])
+        # Update global comment count if it's higher than the previous highest
+        if thread_comments["globalCommentsData"]["count"] > COMMENTS_DATA_JSON["globalComments"][0]["count"]:
+            COMMENTS_DATA_JSON["globalComments"][0]["count"] = thread_comments["globalCommentsData"]["count"]
+            # Set the thread ID too
+            COMMENTS_DATA_JSON["globalComments"][0]["id"] = thread_comments["globalCommentsData"]["id"]
+        COMMENTS_DATA_JSON["threads"].append(thread_comments["threadData"])
 
     # Save comments to file
     with open(filename, "w", encoding="utf-8") as file:
-        json.dump(comments, file, indent=4, ensure_ascii=False, sort_keys=True)
+        json.dump(COMMENTS_DATA_JSON, file, indent=4, ensure_ascii=False, sort_keys=True)
 
     output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
-def fetch_comments_modern(
+def fetch_thread_comments(
     session: requests.Session,
     video_id: str,
     api_server: str,
@@ -1993,9 +1997,8 @@ def fetch_comments_modern(
     thread: dict,
     language: str,
     last_time: int,
-    limit: int,
 ) -> dict:
-    """Fetch comments using modern Niconico API (requires login)."""
+    """Fetch comments for thread (requires login)."""
     global_comments_data = {
         "count": 0,
         "id": thread["id"],
@@ -2014,8 +2017,11 @@ def fetch_comments_modern(
         }
     }
     fetched_count = 0
+
+    if _CMDL_OPTS.no_login:
+        raise AuthenticationException("Downloading comments is not possible when -g/--no-login is specified. Please login or provide a session cookie")
     
-    while fetched_count < limit:
+    while fetched_count < COMMENTS_LIMIT_DEFAULT_N:
         try:
             payload = {
                 **base_data,
@@ -2038,10 +2044,21 @@ def fetch_comments_modern(
             )
             data = response.json()
             
-            # Handle errors
-            if "meta" in data and "errorCode" in data["meta"]:
-                handle_api_error(data["meta"]["errorCode"], session, video_id)
-                continue
+            # Handle handle API errors, if any, with appropriate actions
+            error_code = data["meta"]["errorCode"] if "meta" in data and "errorCode" in data["meta"] else None
+            if error_code is not None:
+                if error_code == "TOO_MANY_REQUESTS":
+                    output("Rate limited - waiting 60 seconds...", logging.INFO)
+                    time.sleep(COMMENTS_THREAD_COOLDOWN_S)
+                    continue
+                elif error_code == "EXPIRED_TOKEN":
+                    output("Refreshing thread key...", logging.INFO)
+                    refresh_thread_key(session, video_id)
+                    continue
+                elif error_code == "INVALID_TOKEN":
+                    raise AuthenticationException
+                else:
+                    raise ParameterExtractionException(error_code)
 
             global_comment_count = data["data"]["globalComments"][0]["count"]
             if global_comment_count and global_comment_count > global_comments_data["count"]:
@@ -2050,38 +2067,27 @@ def fetch_comments_modern(
 
             comment_count = data["data"]["threads"][0]["commentCount"]
             if comment_count and fetched_count == 0:
-                # Use first fetch count to know the thread total comment count
+                # Use first fetch count to know the thread's total comment count
                 thread_data["commentCount"] = comment_count 
                 
-            # Extract comments
             thread_comments = data["data"]["threads"][0]["comments"]
-            # Not sure why this `no < 5` check was in the original comment-zouryou source code.
-            # I uncommented it out because some easy threads comments would not be added to the list.
-            if not thread_comments: # or thread_comments[0]["no"] < 5: 
-                break  # Reached beginning
+
+            # TODO: Add check for date range later
+            if not thread_comments:
+                # There are no comments before lastTime to fetch
+                break
                 
             thread_data["comments"].extend(thread_comments)
             last_time = get_unix_timestamp(thread_comments[0]["postedAt"])
             fetched_count += 1
+
+            time.sleep(COMMENTS_THREAD_COOLDOWN_S)
             
         except Exception as e:
             output(f"Error fetching comments {e}", logging.ERROR)
             break
             
     return {"globalCommentsData": global_comments_data, "threadData": thread_data}
-
-def handle_api_error(error_code: str, session: requests.Session, video_id: str) -> None:
-    """Handle API errors with appropriate actions."""
-    if error_code == "TOO_MANY_REQUESTS":
-        output("Rate limited - waiting 60 seconds...", logging.INFO)
-        time.sleep(COMMENT_THREAD_COOLDOWN_S)
-    elif error_code == "EXPIRED_TOKEN":
-        output("Refreshing thread key...", logging.INFO)
-        refresh_thread_key(session, video_id)
-    elif error_code == "INVALID_TOKEN":
-        raise AuthenticationException
-    else:
-        raise ParameterExtractionException(error_code)
 
 def refresh_thread_key(session: requests.Session, video_id: str) -> str:
     """Refresh the thread key for the comments API"""
