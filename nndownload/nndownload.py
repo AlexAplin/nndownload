@@ -484,7 +484,6 @@ def get_unix_timestamp(input_time=None) -> int:
             return int(datetime.now(timezone.utc).timestamp())  # Fallback
 
 
-
 ## Nama methods
 
 def generate_stream(session: requests.Session, master_url: AnyStr) -> AnyStr:
@@ -2098,6 +2097,7 @@ def refresh_thread_key(session: requests.Session, video_id: str) -> str:
         "Content-Type": "application/json"
     }
     response = session.get(url, headers=headers)
+    response.raise_for_status()
     return response.json()["data"]["threadKey"]
 
 def add_metadata_to_container(filename: AnyStr, template_params: dict):
