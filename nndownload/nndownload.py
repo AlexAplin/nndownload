@@ -64,6 +64,7 @@ SEIGA_MANGA_THUMBNAIL_URL = "https://deliver.cdn.nicomanga.jp/thumb/mg_thumb/{0}
 SEIGA_CHAPTER_URL = "https://seiga.nicovideo.jp/watch/{0}"
 SEIGA_SOURCE_URL = "https://seiga.nicovideo.jp/image/source/{0}"
 SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
+COMMENTS_THREAD_URL = "{0}/v1/threads"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
@@ -104,7 +105,7 @@ NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
 COMMENTS_THREAD_COOLDOWN_S = 60
 COMMENTS_THREAD_INTERVAL_S = 1
-COMMENTS_LIMIT_DEFAULT_N = sys.maxsize # effectively infinite (no videos on niconico have reached 100 mil comments)
+COMMENTS_LIMIT_DEFAULT_N = 1000
 KILOBYTE = 1024
 KILOBIT = 1000
 BLOCK_SIZE = 1024
@@ -188,11 +189,63 @@ NAMA_WATCHING_FRAME = json.loads("""{"type": "keepSeat"}""")
 
 PONG_FRAME = json.loads("""{"type":"pong"}""")
 
+MIN_DATE = datetime(2007, 3, 3).replace(tzinfo=timezone.utc) # constant taken from `comment-zouryou`
+MAX_DATE = datetime.now(timezone.utc)
+
 logger = logging.getLogger(__name__)
+
+# Needs to be defined first
+def parse_datetime_to_timestamp(value) -> int:
+    """
+    Parse either ISO 8601 datetime or Unix timestamp, returning Unix timestamp.
+    Validates date is between 2007-03-03 and today.
+    For ISO dates without time, defaults to 23:59:59 of that day.
+    """
+    try:
+        # First try to parse as Unix timestamp
+        timestamp = float(value)
+        dt = datetime.fromtimestamp(timestamp, timezone.utc)
+    except ValueError:
+        try:
+            # Try parsing as ISO 8601
+            if 'T' in value or ' ' in value:
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            else:
+                # Date-only format - set to end of day
+                dt = datetime.fromisoformat(value).replace(
+                    hour=23, minute=59, second=59
+                )
+            
+            # Ensure timezone awareness
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+                
+        except ValueError as e:
+            raise argparse.ArgumentTypeError(
+                f"Invalid datetime: '{value}'. Must be either:\n"
+                "- Unix timestamp (e.g., 1686787200)\n"
+                "- ISO 8601 date (e.g., '2023-06-15' → sets to 23:59:59)\n"
+                "- ISO 8601 datetime (e.g., '2023-06-15T14:30:00Z')"
+            ) from e
+    
+    # Validate date range
+    if dt < MIN_DATE:
+        raise argparse.ArgumentTypeError(
+            f"Date cannot be before {MIN_DATE.date()} (got {dt.date()})"
+        )
+    if dt > MAX_DATE:
+        raise argparse.ArgumentTypeError(
+            f"Date cannot be in the future (got {dt.date()}, today is {MAX_DATE.date()})"
+        )
+    
+    return int(dt.timestamp())
+
 
 CMDL_USAGE = "%(prog)s [options] input"
 CMDL_VERSION = __version__
-cmdl_parser = argparse.ArgumentParser(usage=CMDL_USAGE, conflict_handler="resolve")
+cmdl_parser = argparse.ArgumentParser(usage=CMDL_USAGE, conflict_handler="resolve", formatter_class=argparse.RawTextHelpFormatter)
 
 cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL",
                          help="account email address or telephone number")
@@ -221,6 +274,17 @@ dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="d
                       help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments",
                       help="download video comments")
+dl_group.add_argument("--comments-limit", dest="comments_limit", metavar="N", type=int, default=COMMENTS_LIMIT_DEFAULT_N,
+                      help=f"number of comments to download (default: {COMMENTS_LIMIT_DEFAULT_N})")
+dl_group.add_argument(
+    "--comments-from", dest="comments_from", type=parse_datetime_to_timestamp, metavar="DATETIME_OR_TIMESTAMP", default=int(datetime.now(timezone.utc).timestamp()), 
+    help="only download comments posted after specified time:\n"
+         "- Unix timestamp (e.g., 1686787200)\n"
+         "- ISO 8601 date (e.g., '2023-06-15' → sets to 23:59:59)\n"
+         "- ISO 8601 datetime (e.g., '2023-06-15T14:30:00' or '2023-06-15 14:30:00')\n"
+)
+dl_group.add_argument("--all-comments", action="store_true", dest="request_all_comments", 
+                      help="request all comments ignoring comments-limit")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english",
                       help="request video on english site")
 dl_group.add_argument("--chinese", action="store_true", dest="download_chinese",
@@ -463,25 +527,6 @@ def get_temp_dir():
         yield tmpdir
     finally:
         shutil.rmtree(tmpdir)
-
-def get_unix_timestamp(input_time=None) -> int:
-    """Convert a date or timestamp to a Unix timestamp."""
-
-    if input_time is None:
-        return int(datetime.now(timezone.utc).timestamp())
-    
-    if isinstance(input_time, (int, float)):
-        return int(input_time)
-    
-    try:
-        # Try ISO format first
-        return int(datetime.strptime(input_time, "%Y-%m-%dT%H:%M:%S%z").timestamp())
-    except ValueError:
-        try:
-            # Try date-only format
-            return int(datetime.strptime(input_time, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
-        except ValueError:
-            return int(datetime.now(timezone.utc).timestamp())  # Fallback
 
 
 ## Nama methods
@@ -1952,41 +1997,48 @@ def download_video_comments(
 ):
     """Download the video comments."""
 
+    if _CMDL_OPTS.no_login:
+        raise AuthenticationException("Downloading comments is not possible when -g/--no-login is specified. Please login or provide a session cookie")
+
     output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "comments.json")
 
-    # TODO: Make sure to limit date range to this:
-    # OLD_DATE.min = "2007-03-03";
-    # OLD_DATE.max = new Date().getFullYear() + "-12-31";
+    last_time: int = _CMDL_OPTS.comments_from
+    # sys.maxsize is practically big enough (no videos on niconico have reached 100 mil comments)
+    comments_limit: int = sys.maxsize if _CMDL_OPTS.request_all_comments else _CMDL_OPTS.comments_limit
 
-    # Convert date limit to timestamp
-    last_time = get_unix_timestamp()
+    try:
+        for thread in template_params["thread_params"]["targets"]:
+            thread_data = {
+                "commentCount": 0,
+                "comments": [],
+                "fork": thread["fork"],
+                "id": thread["id"]
+            }
+            COMMENTS_DATA_JSON["threads"].append(thread_data)
 
-    # Process each comment thread
-    for thread in template_params["thread_params"]["targets"]:
-        thread_comments = fetch_thread_comments(
-            session,
-            template_params["id"],
-            template_params["comment_server"],
-            template_params["thread_key"],
-            thread,
-            template_params["thread_params"]["language"],
-            last_time,
-        )
+            fetch_thread_comments(
+                session,
+                template_params["id"],
+                template_params["comment_server"],
+                template_params["thread_key"],
+                thread,
+                template_params["thread_params"]["language"],
+                last_time,
+                comments_limit,
+                thread_data
+            )
+        
+        output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
-        # Update global comment count if it's higher than the previous highest
-        if thread_comments["globalCommentsData"]["count"] > COMMENTS_DATA_JSON["globalComments"][0]["count"]:
-            COMMENTS_DATA_JSON["globalComments"][0]["count"] = thread_comments["globalCommentsData"]["count"]
-            # Set the thread ID too
-            COMMENTS_DATA_JSON["globalComments"][0]["id"] = thread_comments["globalCommentsData"]["id"]
-        COMMENTS_DATA_JSON["threads"].append(thread_comments["threadData"])
-
-    # Save comments to file
-    with open(filename, "w", encoding="utf-8") as file:
-        json.dump(COMMENTS_DATA_JSON, file, indent=4, ensure_ascii=False, sort_keys=True)
-
-    output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
+    except KeyboardInterrupt:
+        output("\nCTRL+C detected. Saving downloaded comments for {0}\n".format(template_params["id"]), logging.INFO)
+        raise
+    finally:
+        # Save in case of success and on interrupt)
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(COMMENTS_DATA_JSON, file, indent=4, ensure_ascii=False, sort_keys=True)
 
 def fetch_thread_comments(
     session: requests.Session,
@@ -1996,18 +2048,10 @@ def fetch_thread_comments(
     thread: dict,
     language: str,
     last_time: int,
-) -> dict:
+    comments_limit: int,
+    thread_data: dict
+) -> None:
     """Fetch comments for thread (requires login)."""
-    global_comments_data = {
-        "count": 0,
-        "id": thread["id"],
-    }
-    thread_data = {
-        "commentCount": 0,
-        "comments": [],
-        "fork": thread["fork"],
-        "id": thread["id"]
-    }
     base_data = {
         "threadKey": thread_key,
         "params": {
@@ -2015,12 +2059,9 @@ def fetch_thread_comments(
             "targets": [thread]
         }
     }
-    fetched_count = 0
-
-    if _CMDL_OPTS.no_login:
-        raise AuthenticationException("Downloading comments is not possible when -g/--no-login is specified. Please login or provide a session cookie")
+    fetched_comments_count = 0
     
-    while fetched_count < COMMENTS_LIMIT_DEFAULT_N:
+    while fetched_comments_count < comments_limit:
         try:
             payload = {
                 **base_data,
@@ -2037,7 +2078,7 @@ def fetch_thread_comments(
             }
             
             response = session.post(
-                f"{api_server}/v1/threads",
+                COMMENTS_THREAD_URL.format(api_server),
                 json=payload,
                 headers=headers
             )
@@ -2059,34 +2100,32 @@ def fetch_thread_comments(
                 else:
                     raise ParameterExtractionException(error_code)
 
+            # Update global comments count if higher
             global_comment_count = data["data"]["globalComments"][0]["count"]
-            if global_comment_count and global_comment_count > global_comments_data["count"]:
-                # Get the highest global comment count as our estimated global threads total comment count
-                global_comments_data["count"] = global_comment_count
+            if global_comment_count and global_comment_count > COMMENTS_DATA_JSON["globalComments"][0]["count"]:
+                COMMENTS_DATA_JSON["globalComments"][0]["count"] = global_comment_count
+                COMMENTS_DATA_JSON["globalComments"][0]["id"] = thread["id"]
 
-            comment_count = data["data"]["threads"][0]["commentCount"]
-            if comment_count and fetched_count == 0:
-                # Use first fetch count to know the thread's total comment count
-                thread_data["commentCount"] = comment_count 
+            # Update thread comment count if first fetch
+            if fetched_comments_count == 0:
+                thread_data["commentCount"] = data["data"]["threads"][0]["commentCount"]
                 
             thread_comments = data["data"]["threads"][0]["comments"]
 
-            # TODO: Add check for date range later
             if not thread_comments:
                 # There are no comments before lastTime to fetch
                 break
                 
+            # Append new comments and update last_time
             thread_data["comments"].extend(thread_comments)
-            last_time = get_unix_timestamp(thread_comments[0]["postedAt"])
-            fetched_count += 1
+            last_time = int(datetime.fromisoformat(thread_comments[0]["postedAt"]).timestamp())
+            fetched_comments_count += len(thread_comments)
 
-            time.sleep(COMMENTS_THREAD_COOLDOWN_S)
+            time.sleep(COMMENTS_THREAD_INTERVAL_S)
             
         except Exception as e:
             output(f"Error fetching comments {e}", logging.ERROR)
             break
-            
-    return {"globalCommentsData": global_comments_data, "threadData": thread_data}
 
 def refresh_thread_key(session: requests.Session, video_id: str) -> str:
     """Refresh the thread key for the comments API"""
@@ -2334,6 +2373,10 @@ def main():
             output("Proceeding with no login. Some content may not be available for download or may only be "
                    "available in a lower quality. For access to all content, please provide a login with "
                    "--username/--password, --session-cookie, or --netrc.\n", logging.WARNING)
+
+        if (_CMDL_OPTS.comments_limit or _CMDL_OPTS.request_all_comments or _CMDL_OPTS.comments_from) and not _CMDL_OPTS.download_comments:
+            output("Comment downloading qualifiers --comments-limit, --request-all-comments, or --comments-from were specified, but --download-comments was not. "
+                   "Did you forget to set --download-comments?\n", logging.WARNING)
 
         session = login(account_username, account_password, session_cookie)
 
