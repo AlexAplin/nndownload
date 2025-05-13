@@ -30,7 +30,7 @@ from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
-from rich.progress import Progress
+from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from urllib3.util import Retry
 from urllib.parse import urlparse
 
@@ -1997,10 +1997,14 @@ def download_video_comments(
 ):
     """Download the video comments."""
 
+    output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
+
     if _CMDL_OPTS.no_login:
         raise AuthenticationException("Downloading comments is not possible when -g/--no-login is specified. Please login or provide a session cookie")
 
-    output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
+    if os.path.exists(filename):
+        output(f"{replace_extension(filename, 'comments.json')} already exists. Skipping...\n", logging.INFO)
+        return False
 
     filename = replace_extension(filename, "comments.json")
 
@@ -2060,72 +2064,108 @@ def fetch_thread_comments(
         }
     }
     fetched_comments_count = 0
-    
-    while fetched_comments_count < comments_limit:
-        try:
-            payload = {
-                **base_data,
-                "additionals": {
-                    "res_from": -1000,
-                    "when": last_time
+    previous_comments = None
+    total_comments = None
+
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("({task.completed}/{task.total})"),
+        TimeRemainingColumn(),
+        transient=True
+    ) as progress:
+        task = progress.add_task(f"Downloading {thread['fork']} comments", total=None)
+        
+        while fetched_comments_count < comments_limit:
+            try:
+                payload = {
+                    **base_data,
+                    "additionals": {
+                        "res_from": -1000,
+                        "when": last_time
+                    }
                 }
-            }
-            
-            headers = {
-                **API_HEADERS,
-                "content-type": "text/plain;charset=UTF-8",
-                "x-client-os-type": "others",
-            }
-            
-            response = session.post(
-                COMMENTS_THREAD_URL.format(api_server),
-                json=payload,
-                headers=headers
-            )
-            data = response.json()
-            
-            # Handle handle API errors, if any, with appropriate actions
-            error_code = data["meta"]["errorCode"] if "meta" in data and "errorCode" in data["meta"] else None
-            if error_code is not None:
-                if error_code == "TOO_MANY_REQUESTS":
-                    output("Rate limited - waiting 60 seconds...", logging.INFO)
-                    time.sleep(COMMENTS_THREAD_COOLDOWN_S)
-                    continue
-                elif error_code == "EXPIRED_TOKEN":
-                    output("Refreshing thread key...", logging.INFO)
-                    refresh_thread_key(session, video_id)
-                    continue
-                elif error_code == "INVALID_TOKEN":
-                    raise AuthenticationException
-                else:
-                    raise ParameterExtractionException(error_code)
-
-            # Update global comments count if higher
-            global_comment_count = data["data"]["globalComments"][0]["count"]
-            if global_comment_count and global_comment_count > COMMENTS_DATA_JSON["globalComments"][0]["count"]:
-                COMMENTS_DATA_JSON["globalComments"][0]["count"] = global_comment_count
-                COMMENTS_DATA_JSON["globalComments"][0]["id"] = thread["id"]
-
-            # Update thread comment count if first fetch
-            if fetched_comments_count == 0:
-                thread_data["commentCount"] = data["data"]["threads"][0]["commentCount"]
                 
-            thread_comments = data["data"]["threads"][0]["comments"]
+                headers = {
+                    **API_HEADERS,
+                    "content-type": "text/plain;charset=UTF-8",
+                    "x-client-os-type": "others",
+                }
+                
+                response = session.post(
+                    COMMENTS_THREAD_URL.format(api_server),
+                    json=payload,
+                    headers=headers
+                )
+                data = response.json()
+                
+                # Handle API errors, if any, with appropriate actions
+                error_code = data["meta"]["errorCode"] if "meta" in data and "errorCode" in data["meta"] else None
+                if error_code is not None:
+                    if error_code == "TOO_MANY_REQUESTS":
+                        output("Rate limited - waiting 60 seconds...\n", logging.INFO)
+                        time.sleep(COMMENTS_THREAD_COOLDOWN_S)
+                        continue
+                    elif error_code == "EXPIRED_TOKEN":
+                        output("Refreshing thread key...\n", logging.INFO)
+                        refresh_thread_key(session, video_id)
+                        continue
+                    elif error_code == "INVALID_TOKEN":
+                        raise AuthenticationException
+                    else:
+                        raise ParameterExtractionException(error_code)
 
-            if not thread_comments:
-                # There are no comments before lastTime to fetch
+                # Update global comments count if higher
+                global_comment_count = data["data"]["globalComments"][0]["count"]
+                if global_comment_count and global_comment_count > COMMENTS_DATA_JSON["globalComments"][0]["count"]:
+                    COMMENTS_DATA_JSON["globalComments"][0]["count"] = global_comment_count
+                    COMMENTS_DATA_JSON["globalComments"][0]["id"] = thread["id"]
+
+                # Update thread comment count if first fetch
+                if fetched_comments_count == 0:
+                    thread_data["commentCount"] = data["data"]["threads"][0]["commentCount"]
+                    # If requesting all comments, we use the video's total comment count
+                    if _CMDL_OPTS.request_all_comments:
+                        total_comments = thread_data["commentCount"]
+                    else:
+                        # Otherwise, we use the limit provided or the video's total comment count, whichever is lower
+                        total_comments = min(thread_data["commentCount"], comments_limit)
+                    progress.update(task, total=total_comments)
+                    progress.update(task, description=f"Downloading {thread['fork']} comments")
+                    
+                thread_comments = data["data"]["threads"][0]["comments"]
+
+                if not thread_comments:
+                    # There are no comments before lastTime to fetch
+                    break
+                    
+                # If we got the same comments as last time, we should stop
+                if previous_comments and len(thread_comments) == len(previous_comments):
+                    same_comments = True
+                    for i in range(len(thread_comments)):
+                        if thread_comments[i]["id"] != previous_comments[i]["id"]:
+                            same_comments = False
+                            break
+                    if same_comments:
+                        # We've reached the end of comments
+                        break
+                        
+                # Store current comments for next comparison
+                previous_comments = thread_comments.copy()
+                    
+                # Append new comments and update last_time
+                thread_data["comments"].extend(thread_comments)
+                last_time = int(datetime.fromisoformat(thread_comments[0]["postedAt"]).timestamp())
+
+                fetched_comments_count += len(thread_comments)
+                progress.update(task, completed=fetched_comments_count)
+                
+                time.sleep(COMMENTS_THREAD_INTERVAL_S)
+                
+            except Exception as e:
+                output(f"Error fetching comments {e}\n", logging.ERROR)
                 break
-                
-            # Append new comments and update last_time
-            thread_data["comments"].extend(thread_comments)
-            last_time = int(datetime.fromisoformat(thread_comments[0]["postedAt"]).timestamp())
-            fetched_comments_count += len(thread_comments)
-
-            time.sleep(COMMENTS_THREAD_INTERVAL_S)
-            
-        except Exception as e:
-            output(f"Error fetching comments {e}", logging.ERROR)
-            break
 
 def refresh_thread_key(session: requests.Session, video_id: str) -> str:
     """Refresh the thread key for the comments API"""
