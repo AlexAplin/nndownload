@@ -2002,11 +2002,11 @@ def download_video_comments(
     if _CMDL_OPTS.no_login:
         raise AuthenticationException("Downloading comments is not possible when -g/--no-login is specified. Please login or provide a session cookie")
 
-    if os.path.exists(filename):
-        output(f"{replace_extension(filename, 'comments.json')} already exists. Skipping...\n", logging.INFO)
-        return False
-
     filename = replace_extension(filename, "comments.json")
+
+    if os.path.exists(filename):
+        output(f"File {filename} exists. Skipping...\n", logging.INFO)
+        return False
 
     last_time: int = _CMDL_OPTS.comments_from
     # sys.maxsize is practically big enough (no videos on niconico have reached 100 mil comments)
