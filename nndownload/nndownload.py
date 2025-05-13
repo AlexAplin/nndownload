@@ -2042,7 +2042,7 @@ def download_video_comments(
     finally:
         # Save in case of success and on interrupt)
         with open(filename, "w", encoding="utf-8") as file:
-            json.dump(COMMENTS_DATA_JSON, file, indent=4, ensure_ascii=False, sort_keys=True)
+            json.dump(COMMENTS_DATA_JSON, file, indent=None, ensure_ascii=False, sort_keys=True)
 
 def fetch_thread_comments(
     session: requests.Session,
