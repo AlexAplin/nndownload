@@ -84,6 +84,13 @@ download options:
                         download video thumbnail
   -c, --download-comments
                         download video comments
+  --comments-limit N    number of comments to download per thread (default: 1000)
+  --comments-from DATETIME_OR_TIMESTAMP
+                        only download comments posted before a specified time:
+                        - Unix timestamp (e.g., 1686787200)
+                        - ISO 8601 date (e.g., '2023-06-15' → sets to 23:59:59)
+                        - ISO 8601 datetime (e.g., '2023-06-15T14:30:00' or '2023-06-15 14:30:00')
+  --all-comments        request all comments (ignores --comments-limit)
   -e, --english         request video on english site
   --chinese             request video on traditional chinese (taiwan) site
   -aq AUDIO_QUALITY, --audio-quality AUDIO_QUALITY
