@@ -84,7 +84,7 @@ download options:
                         download video thumbnail
   -c, --download-comments
                         download video comments
-  --comments-limit N    number of comments to download (default: 1000)
+  --comments-limit N    number of comments to download per thread (default: 1000)
   --comments-from DATETIME_OR_TIMESTAMP
                         only download comments posted before a specified time:
                         - Unix timestamp (e.g., 1686787200)
