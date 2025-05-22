@@ -1997,10 +1997,10 @@ def download_video_comments(
 ):
     """Download the video comments."""
 
-    output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
-
     if _CMDL_OPTS.no_login:
         raise AuthenticationException("Downloading comments is not possible when -g/--no-login is specified. Please login or provide a session cookie")
+
+    output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "comments.json")
 
@@ -2042,7 +2042,7 @@ def download_video_comments(
         with open(filename, "w", encoding="utf-8") as file:
             json.dump(comments_data, file, indent=None, ensure_ascii=False, sort_keys=True)
 
-        output("Saved comments for {0} to {1}.\n".format(template_params["id"], filename), logging.INFO)
+        output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
 def fetch_comments_thread(
