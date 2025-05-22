@@ -187,7 +187,7 @@ NAMA_WATCHING_FRAME = json.loads("""{"type": "keepSeat"}""")
 
 PONG_FRAME = json.loads("""{"type":"pong"}""")
 
-MIN_DATE = datetime(2007, 3, 3).replace(tzinfo=timezone.utc) # constant taken from `comment-zouryou`
+MIN_DATE = datetime(2007, 3, 3).replace(tzinfo=timezone.utc) # Constant taken from comment-zouryou (likely coincides with the γ launch on 2007-03-06): https://github.com/tanbatu/comment-zouryou
 MAX_DATE = datetime.now(timezone.utc)
 
 logger = logging.getLogger(__name__)
