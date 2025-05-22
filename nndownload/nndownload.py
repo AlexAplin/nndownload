@@ -115,12 +115,10 @@ BACKOFF_FACTOR = 2  # retry_timeout_s = BACKOFF_FACTOR * (2 ** ({RETRY_ATTEMPTS}
 TEMP_PATH_LEN = 16
 
 COMMENTS_DATA_JSON = {
-    "globalComments": [
-        {
-            "count": 0,
-            "id": None
-        }
-    ],
+    "globalComments": {
+        "retrievedCount": None,
+        "commentCount": None
+    },
     "threads": [],
 }
 
@@ -194,13 +192,14 @@ MAX_DATE = datetime.now(timezone.utc)
 
 logger = logging.getLogger(__name__)
 
-# Needs to be defined first
+
 def parse_datetime_to_timestamp(value) -> int:
     """
     Parse either ISO 8601 datetime or Unix timestamp, returning Unix timestamp.
     Validates date is between 2007-03-03 and today.
     For ISO dates without time, defaults to 23:59:59 of that day.
     """
+
     try:
         # First try to parse as Unix timestamp
         timestamp = float(value)
@@ -275,16 +274,16 @@ dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="d
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments",
                       help="download video comments")
 dl_group.add_argument("--comments-limit", dest="comments_limit", metavar="N", type=int, default=COMMENTS_LIMIT_DEFAULT_N,
-                      help=f"number of comments to download (default: {COMMENTS_LIMIT_DEFAULT_N})")
+                      help=f"number of comments to download per thread (default: {COMMENTS_LIMIT_DEFAULT_N})")
 dl_group.add_argument(
-    "--comments-from", dest="comments_from", type=parse_datetime_to_timestamp, metavar="DATETIME_OR_TIMESTAMP", default=int(datetime.now(timezone.utc).timestamp()), 
-    help="only download comments posted after specified time:\n"
+    "--comments-from", dest="comments_from", type=parse_datetime_to_timestamp, metavar="DATETIME_OR_TIMESTAMP",
+    help="only download comments posted before a specified time:\n"
          "- Unix timestamp (e.g., 1686787200)\n"
          "- ISO 8601 date (e.g., '2023-06-15' → sets to 23:59:59)\n"
          "- ISO 8601 datetime (e.g., '2023-06-15T14:30:00' or '2023-06-15 14:30:00')\n"
 )
-dl_group.add_argument("--all-comments", action="store_true", dest="request_all_comments", 
-                      help="request all comments ignoring comments-limit")
+dl_group.add_argument("--all-comments", action="store_true", dest="all_comments",
+                      help="request all comments (ignores --comments-limit)")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english",
                       help="request video on english site")
 dl_group.add_argument("--chinese", action="store_true", dest="download_chinese",
@@ -1990,6 +1989,7 @@ def download_thumbnail(session: requests.Session, filename: AnyStr, template_par
 
     output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
 
+
 def download_video_comments(
     session: requests.Session,
     filename: str,
@@ -2005,170 +2005,134 @@ def download_video_comments(
     filename = replace_extension(filename, "comments.json")
 
     if os.path.exists(filename):
-        output(f"File {filename} exists. Skipping...\n", logging.INFO)
+        output(f"Comments file \"{filename}\" exists. Skipping...\n", logging.INFO)
         return False
 
-    last_time: int = _CMDL_OPTS.comments_from
-    # sys.maxsize is practically big enough (no videos on niconico have reached 100 mil comments)
-    comments_limit: int = sys.maxsize if _CMDL_OPTS.request_all_comments else _CMDL_OPTS.comments_limit
+    comments_from: int = _CMDL_OPTS.comments_from
+    comments_limit: int = _CMDL_OPTS.comments_limit
 
-    try:
+    if comments_from:
+        output(f"Requesting comments looking back from {comments_from} on each thread.\n", logging.INFO)
+    else:
+        # Default to the current time
+        comments_from = int(datetime.now(timezone.utc).timestamp())
+
+    if _CMDL_OPTS.all_comments:
+        output(f"Requesting all comments on each thread.\n", logging.INFO)
+        comments_limit = None
+    else:
+        output(f"Requesting up to {comments_limit} comments on each thread.\n", logging.INFO) # Defaults to 1000
+
+    with Progress(TextColumn("{task.description}"), BarColumn(), TaskProgressColumn(), TextColumn("{task.completed}/{task.total}"), transient=True) as progress:
+        tasks = []
         for thread in template_params["thread_params"]["targets"]:
-            thread_data = {
-                "commentCount": 0,
-                "comments": [],
-                "fork": thread["fork"],
-                "id": thread["id"]
-            }
-            COMMENTS_DATA_JSON["threads"].append(thread_data)
+            comments_data = COMMENTS_DATA_JSON
+            thread = threading.Thread(target=fetch_comments_thread, args=(session, template_params["id"], template_params["comment_server"], template_params["thread_key"], thread, template_params["thread_params"]["language"], progress, comments_data, comments_from, comments_limit))
+            thread.start()
+            tasks.append({
+                "thread": thread,
+            })
 
-            fetch_thread_comments(
-                session,
-                template_params["id"],
-                template_params["comment_server"],
-                template_params["thread_key"],
-                thread,
-                template_params["thread_params"]["language"],
-                last_time,
-                comments_limit,
-                thread_data
-            )
-        
-        output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
+        for task in tasks:
+            task["thread"].join()
 
-    except KeyboardInterrupt:
-        output("\nCTRL+C detected. Saving downloaded comments for {0}\n".format(template_params["id"]), logging.INFO)
-        raise
-    finally:
-        # Save in case of success and on interrupt)
+        comments_data["globalComments"]["retrievedCount"] = sum(thread["retrievedCount"] for thread in comments_data["threads"])
+        comments_data["globalComments"]["commentCount"] = template_params["comment_count"]
+
         with open(filename, "w", encoding="utf-8") as file:
-            json.dump(COMMENTS_DATA_JSON, file, indent=None, ensure_ascii=False, sort_keys=True)
+            json.dump(comments_data, file, indent=None, ensure_ascii=False, sort_keys=True)
 
-def fetch_thread_comments(
+        output("Saved comments for {0} to {1}.\n".format(template_params["id"], filename), logging.INFO)
+
+
+def fetch_comments_thread(
     session: requests.Session,
     video_id: str,
     api_server: str,
     thread_key: str,
     thread: dict,
     language: str,
-    last_time: int,
-    comments_limit: int,
-    thread_data: dict
+    progress: Progress,
+    comments_data: dict,
+    comments_from: int,
+    comments_limit: int = None,
 ) -> None:
-    """Fetch comments for thread (requires login)."""
-    base_data = {
-        "threadKey": thread_key,
-        "params": {
-            "language": language,
-            "targets": [thread]
-        }
+    """Fetch comments for a specific comments thread."""
+
+    thread_data = {
+        "comments": [],
+        "fork": thread["fork"],
+        "id": thread["id"]
     }
-    fetched_comments_count = 0
-    previous_comments = None
-    total_comments = None
 
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TextColumn("({task.completed}/{task.total})"),
-        TimeRemainingColumn(),
-        transient=True
-    ) as progress:
-        task = progress.add_task(f"Downloading {thread['fork']} comments", total=None)
-        
-        while fetched_comments_count < comments_limit:
-            try:
-                payload = {
-                    **base_data,
-                    "additionals": {
-                        "res_from": -1000,
-                        "when": last_time
-                    }
+    task_id = progress.add_task(thread["fork"], total=None, visible=False)
+    while not progress.tasks[task_id].finished:
+        response = session.post(
+            COMMENTS_THREAD_URL.format(api_server),
+            json={
+                "threadKey": thread_key,
+                "params": {
+                    "language": language,
+                    "targets": [thread]
+                },
+                "additionals": {
+                    "res_from": -1000,
+                    "when": comments_from
                 }
-                
-                headers = {
-                    **API_HEADERS,
-                    "content-type": "text/plain;charset=UTF-8",
-                    "x-client-os-type": "others",
-                }
-                
-                response = session.post(
-                    COMMENTS_THREAD_URL.format(api_server),
-                    json=payload,
-                    headers=headers
-                )
-                data = response.json()
-                
-                # Handle API errors, if any, with appropriate actions
-                error_code = data["meta"]["errorCode"] if "meta" in data and "errorCode" in data["meta"] else None
-                if error_code is not None:
-                    if error_code == "TOO_MANY_REQUESTS":
-                        output("Rate limited - waiting 60 seconds...\n", logging.INFO)
-                        time.sleep(COMMENTS_THREAD_COOLDOWN_S)
-                        continue
-                    elif error_code == "EXPIRED_TOKEN":
-                        output("Refreshing thread key...\n", logging.INFO)
-                        refresh_thread_key(session, video_id)
-                        continue
-                    elif error_code == "INVALID_TOKEN":
-                        raise AuthenticationException
-                    else:
-                        raise ParameterExtractionException(error_code)
+            },
+            headers={
+                **API_HEADERS,
+                "content-type": "text/plain;charset=UTF-8",
+                "x-client-os-type": "others",
+            }
+        )
+        response_data = response.json()
 
-                # Update global comments count if higher
-                global_comment_count = data["data"]["globalComments"][0]["count"]
-                if global_comment_count and global_comment_count > COMMENTS_DATA_JSON["globalComments"][0]["count"]:
-                    COMMENTS_DATA_JSON["globalComments"][0]["count"] = global_comment_count
-                    COMMENTS_DATA_JSON["globalComments"][0]["id"] = thread["id"]
+        # Handle API error codes
+        error_code = response_data["meta"]["errorCode"] if "meta" in response_data and "errorCode" in response_data["meta"] else None
+        if error_code is not None:
+            if error_code == "TOO_MANY_REQUESTS":
+                output(f"Rate limit hit. Sleeping for f{COMMENTS_THREAD_COOLDOWN_S} seconds...\n", logging.INFO)
+                time.sleep(COMMENTS_THREAD_COOLDOWN_S)
+                continue
+            elif error_code == "EXPIRED_TOKEN":
+                output("Thread key expired. Refreshing...\n", logging.INFO)
+                refresh_thread_key(session, video_id)
+                continue
+            elif error_code == "INVALID_TOKEN":
+                raise AuthenticationException("Comment thread key was invalid")
+            else:
+                raise ParameterExtractionException(error_code)
 
-                # Update thread comment count if first fetch
-                if fetched_comments_count == 0:
-                    thread_data["commentCount"] = data["data"]["threads"][0]["commentCount"]
-                    # If requesting all comments, we use the video's total comment count
-                    if _CMDL_OPTS.request_all_comments:
-                        total_comments = thread_data["commentCount"]
-                    else:
-                        # Otherwise, we use the limit provided or the video's total comment count, whichever is lower
-                        total_comments = min(thread_data["commentCount"], comments_limit)
-                    progress.update(task, total=total_comments)
-                    progress.update(task, description=f"Downloading {thread['fork']} comments")
-                    
-                thread_comments = data["data"]["threads"][0]["comments"]
+        # Specify our target end total
+        if not progress.tasks[task_id].total:
+            thread_data["commentCount"] = response_data["data"]["threads"][0]["commentCount"]
+            # If requesting all comments, specify the total as the thread's comment count
+            if not comments_limit:
+                progress.update(task_id, total=thread_data["commentCount"], visible=True)
+            # Otherwise, specify the total as the smaller of the thread's comment count or the specified limit
+            else:
+                progress.update(task_id, total=min(thread_data["commentCount"], comments_limit), visible=True)
 
-                if not thread_comments:
-                    # There are no comments before lastTime to fetch
-                    break
-                    
-                # If we got the same comments as last time, we should stop
-                if previous_comments and len(thread_comments) == len(previous_comments):
-                    same_comments = True
-                    for i in range(len(thread_comments)):
-                        if thread_comments[i]["id"] != previous_comments[i]["id"]:
-                            same_comments = False
-                            break
-                    if same_comments:
-                        # We've reached the end of comments
-                        break
-                        
-                # Store current comments for next comparison
-                previous_comments = thread_comments.copy()
-                    
-                # Append new comments and update last_time
-                thread_data["comments"].extend(thread_comments)
-                last_time = int(datetime.fromisoformat(thread_comments[0]["postedAt"]).timestamp())
+        # If no comments are retrieved, stop the thread immediately
+        thread_comments = response_data["data"]["threads"][0]["comments"]
+        if not thread_comments:
+            break
 
-                fetched_comments_count += len(thread_comments)
-                progress.update(task, completed=fetched_comments_count)
-                
-                time.sleep(COMMENTS_THREAD_INTERVAL_S)
-                
-            except Exception as e:
-                output(f"Error fetching comments {e}\n", logging.ERROR)
-                break
+        # Append new comments and update progress
+        thread_data["comments"].extend(thread_comments)
+        comments_from = int(datetime.fromisoformat(thread_comments[0]["postedAt"]).timestamp())
+        progress.advance(task_id, advance=len(thread_comments))
+
+        time.sleep(COMMENTS_THREAD_INTERVAL_S)
+
+    thread_data["retrievedCount"] = len(thread_data["comments"])
+    comments_data["threads"].append(thread_data)
+
 
 def refresh_thread_key(session: requests.Session, video_id: str) -> str:
     """Refresh the thread key for the comments API"""
+
     url = THREAD_REFRESH_API.format(video_id)
 
     headers = {
@@ -2178,6 +2142,7 @@ def refresh_thread_key(session: requests.Session, video_id: str) -> str:
     response = session.get(url, headers=headers)
     response.raise_for_status()
     return response.json()["data"]["threadKey"]
+
 
 def add_metadata_to_container(filename: AnyStr, template_params: dict):
     """Add metadata to any MP4 container."""
@@ -2415,8 +2380,8 @@ def main():
                    "--username/--password, --session-cookie, or --netrc.\n", logging.WARNING)
 
         if (_CMDL_OPTS.comments_limit or _CMDL_OPTS.request_all_comments or _CMDL_OPTS.comments_from) and not _CMDL_OPTS.download_comments:
-            output("Comment downloading qualifiers --comments-limit, --request-all-comments, or --comments-from were specified, but --download-comments was not. "
-                   "Did you forget to set --download-comments?\n", logging.WARNING)
+            output("Comment downloading qualifiers (--comments-limit, --request-all-comments, or --comments-from) were specified, but --download-comments was not. "
+                   "No comments will be downloaded.\n", logging.WARNING)
 
         session = login(account_username, account_password, session_cookie)
 
