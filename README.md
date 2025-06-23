@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
 
 <p align='center'>
-    EN | <a href='./README_JA.md'>JA</a>
+    EN | <a href='./README_JA.md'>JA</a> | <a href='./README_ZH-CN.md'>中文</a>
 </p>
 
 nndownload allows you to download videos, images, manga, and process other links from [Niconico](http://nicovideo.jp), formerly known as Nico Nico Douga. Unlike other existing downloaders, this program communicates wth DMC (Dwango Media Cluster) and Dwango Media Services (DMS) servers to ensure access to high quality videos.
@@ -11,7 +11,7 @@ nndownload allows you to download videos, images, manga, and process other links
 ## Disclaimers
 
 - If you do not have a [premium account](https://secure.nicovideo.jp/secure/premium_detail/), you may download low quality videos during economy mode hours (typically 12 PM - 2 AM JST) or during other periods of high traffic.
-- When downloading without a login (using -g/--no-login), some videos may not be available for download or may only be available in a lower quality.
+- When downloading without a login (using `-g`/`--no-login`), some videos may not be available for download or may only be available in a lower quality. Certain premium videos, such as official anime, only support metadata and comments retrieval when logging in and specifying `--skip-media` (see [#142](https://github.com/AlexAplin/nndownload/issues/142) for more information).
 - Running multiple download sessions on the same connection may lead to temporary blocks or throttling.
 - These functions are not currently supported:
   - Watching on-air Niconama streams exteranlly
@@ -98,7 +98,7 @@ download options:
   --break-on-existing   break after encountering an existing download
   --playlist-start N    specify the index to start a list of items from (begins at 0)
   --user-agent USER_AGENT
-                      specify a custom user agent for the download session
+                        specify a custom user agent for the download session
 ```
 
 ### Module
