@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import collections
-import contextlib
 import getpass
 import json
 import logging
@@ -16,7 +15,6 @@ import re
 import shutil
 import string
 import sys
-import tempfile
 import threading
 import time
 import xml.dom.minidom
