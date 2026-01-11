@@ -340,6 +340,7 @@ def create_filename(template_params: dict, is_comic: bool = False):
         template_dict = collections.defaultdict(lambda: "__NONE__", template_dict)
 
         filename = filename_template.format_map(template_dict).strip()
+        filename = os.path.expanduser(filename)
         if is_comic:
             os.makedirs(filename, exist_ok=True)
         elif (os.path.dirname(filename) and not os.path.exists(os.path.dirname(filename))) or os.path.exists(
@@ -439,17 +440,6 @@ def rewrite_file(filename: AnyStr, old_str: AnyStr, new_str: AnyStr):
         file.seek(0)
         file.write(new)
         file.truncate()
-
-
-@contextlib.contextmanager
-def get_temp_dir():
-    """Get a temporary working directory."""
-
-    tmpdir = tempfile.mkdtemp()
-    try:
-        yield tmpdir
-    finally:
-        shutil.rmtree(tmpdir)
 
 
 ## Nama methods
@@ -1300,50 +1290,50 @@ def download_video_part(session: requests.Session, start, end, filename: AnyStr,
 def perform_native_hls_dl(session: requests.Session, filename: AnyStr, duration: float, m3u8_streams: List, threads: int = 1):
     """Download video and audio streams using native HLS downloader and merge using ffmpeg if necessary."""
 
-    with get_temp_dir() as temp_dir:
-        with Progress() as progress:
-            tasks = []
-            for stream, name in m3u8_streams:
-                random_path_string = ''.join(random.choices(string.ascii_letters + string.digits, k=TEMP_PATH_LEN))
-                stream_filename = replace_extension(os.path.join(temp_dir, random_path_string), "ts")
-                thread = threading.Thread(target=download_hls, args=(stream, stream_filename, name, session, progress, threads))
-                thread.start()
-                tasks.append({
-                    "thread": thread,
-                    "filename": stream_filename,
-                })
+    output_dir = os.path.dirname(filename)
+    with Progress() as progress:
+        tasks = []
+        for stream, name in m3u8_streams:
+            random_path_string = ''.join(random.choices(string.ascii_letters + string.digits, k=TEMP_PATH_LEN))
+            stream_filename = replace_extension(os.path.join(output_dir, random_path_string), "ts")
+            thread = threading.Thread(target=download_hls, args=(stream, stream_filename, name, session, progress, threads))
+            thread.start()
+            tasks.append({
+                "thread": thread,
+                "filename": stream_filename,
+            })
 
-            for task in tasks:
-                task["thread"].join()
+        for task in tasks:
+            task["thread"].join()
 
-        if not tasks:
-            raise ArgumentException("No HLS download tasks were received")
+    if not tasks:
+        raise ArgumentException("No HLS download tasks were received")
 
-        # Video and audio
-        if len(tasks) > 1:
-            stream_filenames = [task["filename"] for task in tasks]
+    # Video and audio
+    if len(tasks) > 1:
+        stream_filenames = [task["filename"] for task in tasks]
 
-            try:
-                video_convert = FfmpegDL(streams=stream_filenames,
-                                        input_kwargs={},
-                                        output_path=filename,
-                                        output_kwargs={
-                                            "vcodec": "copy",
-                                            "acodec": "copy",
-                                        })
-                video_convert.convert(name='Merging audio and video', duration=duration)
-            except FfmpegExistsException as error:
-                raise(error)
-            except FfmpegDLException as error:
-                raise FormatNotAvailableException(f"ffmpeg failed to download the video or audio stream with the following error: \"{error}\"") from error
-            except Exception as exception:
-                raise FormatNotAvailableException("Failed to download video or audio stream") from exception
+        try:
+            video_convert = FfmpegDL(streams=stream_filenames,
+                                    input_kwargs={},
+                                    output_path=filename,
+                                    output_kwargs={
+                                        "vcodec": "copy",
+                                        "acodec": "copy",
+                                    })
+            video_convert.convert(name='Merging audio and video', duration=duration)
+        except FfmpegExistsException as error:
+            raise(error)
+        except FfmpegDLException as error:
+            raise FormatNotAvailableException(f"ffmpeg failed to download the video or audio stream with the following error: \"{error}\"") from error
+        except Exception as exception:
+            raise FormatNotAvailableException("Failed to download video or audio stream") from exception
 
-            for stream_filename in stream_filenames:
-                os.remove(stream_filename)
-        # Only audio or video
-        else:
-            shutil.move(tasks[0]["filename"], filename)
+        for stream_filename in stream_filenames:
+            os.remove(stream_filename)
+    # Only audio or video
+    else:
+        shutil.move(tasks[0]["filename"], filename)
     return True
 
 
