@@ -19,6 +19,7 @@ import threading
 import time
 import xml.dom.minidom
 from typing import AnyStr, List, Match
+from datetime import datetime, timezone
 
 import aiohttp
 import requests
@@ -27,7 +28,7 @@ from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4, MP4StreamInfoError
 from requests.adapters import HTTPAdapter
 from requests.utils import add_dict_to_cookiejar
-from rich.progress import Progress
+from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from urllib3.util import Retry
 from urllib.parse import urlparse
 
@@ -61,6 +62,7 @@ SEIGA_MANGA_THUMBNAIL_URL = "https://deliver.cdn.nicomanga.jp/thumb/mg_thumb/{0}
 SEIGA_CHAPTER_URL = "https://seiga.nicovideo.jp/watch/{0}"
 SEIGA_SOURCE_URL = "https://seiga.nicovideo.jp/image/source/{0}"
 SEIGA_CDN_URL = "https://lohas.nicoseiga.jp/"
+COMMENTS_THREAD_URL = "{0}/v1/threads"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
@@ -77,6 +79,7 @@ SEIGA_USER_ID_RE = re.compile(r"user_id=(\d+)")
 SEIGA_MANGA_ID_RE = re.compile(r"/comic/(\d+)")
 
 THUMB_INFO_API = "http://ext.nicovideo.jp/api/getthumbinfo/{0}"
+THREAD_REFRESH_API = "https://nvapi.nicovideo.jp/v1/comment/keys/thread?videoId={0}"
 MYLIST_API = "https://nvapi.nicovideo.jp/v2/mylists/{0}?pageSize=500"  # 500 video limit for premium mylists
 MYLIST_ME_API = "https://nvapi.nicovideo.jp/v1/users/me/mylists/{0}?pageSize=500" # Still on /v1
 SERIES_API = "https://nvapi.nicovideo.jp/v2/series/{0}?&pageSize=500"  # Same as mylists
@@ -86,8 +89,6 @@ USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 USER_SERIES_API = "https://nvapi.nicovideo.jp/v1/users/{0}/series"
 USER_FOLLOWING_API = "https://nvapi.nicovideo.jp/v1/users/{0}/following/users?pageSize=800" # 800 following limit for premium users
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
-COMMENTS_API = "https://public.nvcomment.nicovideo.jp/v1/threads"
-COMMENTS_API_POST_DATA = "{{\'params\':{0},\'threadKey\':\'{1}\',\'additionals\':{{}}}}"
 USER_HISTORY_API = "https://nvapi.nicovideo.jp/v1/users/me/watch/history?page={0}&pageSize={1}"
 USER_LIKES_API = "nvapi.nicovideo.jp/v1/users/me/watch/likes?page={0}&pageSize={1}"
 USER_WATCHLATER_API = "https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize={0}&page={1}"
@@ -100,6 +101,9 @@ USER_VIDEOS_API_N = 100
 NAMA_HEARTBEAT_INTERVAL_S = 30
 NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
+COMMENTS_THREAD_COOLDOWN_S = 60
+COMMENTS_THREAD_INTERVAL_S = 1
+COMMENTS_LIMIT_DEFAULT_N = 1000
 KILOBYTE = 1024
 KILOBIT = 1000
 BLOCK_SIZE = 1024
@@ -107,6 +111,14 @@ EPSILON = 0.0001
 RETRY_ATTEMPTS = 5
 BACKOFF_FACTOR = 2  # retry_timeout_s = BACKOFF_FACTOR * (2 ** ({RETRY_ATTEMPTS} - 1))
 TEMP_PATH_LEN = 16
+
+COMMENTS_DATA_JSON = {
+    "globalComments": {
+        "retrievedCount": None,
+        "commentCount": None
+    },
+    "threads": [],
+}
 
 MIMETYPES = {
     "image/gif": "gif",
@@ -173,11 +185,64 @@ NAMA_WATCHING_FRAME = json.loads("""{"type": "keepSeat"}""")
 
 PONG_FRAME = json.loads("""{"type":"pong"}""")
 
+MIN_DATE = datetime(2007, 3, 3).replace(tzinfo=timezone.utc) # Constant taken from comment-zouryou (likely coincides with the γ launch on 2007-03-06): https://github.com/tanbatu/comment-zouryou
+MAX_DATE = datetime.now(timezone.utc)
+
 logger = logging.getLogger(__name__)
+
+
+def parse_datetime_to_timestamp(value) -> int:
+    """
+    Parse either ISO 8601 datetime or Unix timestamp, returning Unix timestamp.
+    Validates date is between 2007-03-03 and today.
+    For ISO dates without time, defaults to 23:59:59 of that day.
+    """
+
+    try:
+        # First try to parse as Unix timestamp
+        timestamp = float(value)
+        dt = datetime.fromtimestamp(timestamp, timezone.utc)
+    except ValueError:
+        try:
+            # Try parsing as ISO 8601
+            if 'T' in value or ' ' in value:
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            else:
+                # Date-only format - set to end of day
+                dt = datetime.fromisoformat(value).replace(
+                    hour=23, minute=59, second=59
+                )
+            
+            # Ensure timezone awareness
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+                
+        except ValueError as e:
+            raise argparse.ArgumentTypeError(
+                f"Invalid datetime: '{value}'. Must be either:\n"
+                "- Unix timestamp (e.g., 1686787200)\n"
+                "- ISO 8601 date (e.g., '2023-06-15' → sets to 23:59:59)\n"
+                "- ISO 8601 datetime (e.g., '2023-06-15T14:30:00Z')"
+            ) from e
+    
+    # Validate date range
+    if dt < MIN_DATE:
+        raise argparse.ArgumentTypeError(
+            f"Date cannot be before {MIN_DATE.date()} (got {dt.date()})"
+        )
+    if dt > MAX_DATE:
+        raise argparse.ArgumentTypeError(
+            f"Date cannot be in the future (got {dt.date()}, today is {MAX_DATE.date()})"
+        )
+    
+    return int(dt.timestamp())
+
 
 CMDL_USAGE = "%(prog)s [options] input"
 CMDL_VERSION = __version__
-cmdl_parser = argparse.ArgumentParser(usage=CMDL_USAGE, conflict_handler="resolve")
+cmdl_parser = argparse.ArgumentParser(usage=CMDL_USAGE, conflict_handler="resolve", formatter_class=argparse.RawTextHelpFormatter)
 
 cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL",
                          help="account email address or telephone number")
@@ -206,6 +271,17 @@ dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="d
                       help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments",
                       help="download video comments")
+dl_group.add_argument("--comments-limit", dest="comments_limit", metavar="N", type=int, default=COMMENTS_LIMIT_DEFAULT_N,
+                      help=f"number of comments to download per thread (default: {COMMENTS_LIMIT_DEFAULT_N})")
+dl_group.add_argument(
+    "--comments-from", dest="comments_from", type=parse_datetime_to_timestamp, metavar="DATETIME_OR_TIMESTAMP",
+    help="only download comments posted before a specified time:\n"
+         "- Unix timestamp (e.g., 1686787200)\n"
+         "- ISO 8601 date (e.g., '2023-06-15' → sets to 23:59:59)\n"
+         "- ISO 8601 datetime (e.g., '2023-06-15T14:30:00' or '2023-06-15 14:30:00')\n"
+)
+dl_group.add_argument("--all-comments", action="store_true", dest="all_comments",
+                      help="request all comments (ignores --comments-limit)")
 dl_group.add_argument("-e", "--english", action="store_true", dest="download_english",
                       help="request video on english site")
 dl_group.add_argument("--chinese", action="store_true", dest="download_chinese",
@@ -1068,7 +1144,7 @@ def request_video(session: requests.Session, video_id: AnyStr):
     if _CMDL_OPTS.download_thumbnail:
         download_thumbnail(session, filename, template_params)
     if _CMDL_OPTS.download_comments:
-        download_comments(session, filename, template_params)
+        download_video_comments(session, filename, template_params)
 
 
 def request_user(session: requests.Session, user_id: AnyStr):
@@ -1817,7 +1893,9 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
                 or params["video"]["thumbnail"]["middleUrl"]
                 or params["video"]["thumbnail"]["url"])
 
+        template_params["threads"] = params["comment"]["threads"]
         template_params["thread_id"] = int(params["comment"]["threads"][0]["id"])
+        template_params["comment_server"] = params["comment"]["nvComment"]["server"]
         template_params["thread_key"] = params["comment"]["nvComment"]["threadKey"]
         template_params["thread_params"] = params["comment"]["nvComment"]["params"]
         template_params["published"] = params["video"]["registeredAt"]
@@ -1900,21 +1978,158 @@ def download_thumbnail(session: requests.Session, filename: AnyStr, template_par
     output("Finished downloading thumbnail for {0}.\n".format(template_params["id"]), logging.INFO)
 
 
-def download_comments(session: requests.Session, filename: AnyStr, template_params: dict):
+def download_video_comments(
+    session: requests.Session,
+    filename: str,
+    template_params: dict,
+):
     """Download the video comments."""
+
+    if _CMDL_OPTS.no_login:
+        raise AuthenticationException("Downloading comments is not possible when -g/--no-login is specified. Please login or provide a session cookie")
 
     output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "comments.json")
 
-    comments_post = COMMENTS_API_POST_DATA.format(template_params["thread_params"], template_params["thread_key"]).replace("\'", "\"").replace(": ", ":").replace(", ", ",")
-    session.options(COMMENTS_API, headers=API_HEADERS) # OPTIONS
-    get_comments_request = session.post(COMMENTS_API, data=comments_post, headers=API_HEADERS)
-    get_comments_request.raise_for_status()
-    with open(filename, "w", encoding="utf-8") as file:
-        json.dump(get_comments_request.json(), file, indent=4, ensure_ascii=False, sort_keys=True)
+    if os.path.exists(filename):
+        output(f"Comments file \"{filename}\" exists. Skipping...\n", logging.INFO)
+        return False
 
-    output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
+    comments_from: int = _CMDL_OPTS.comments_from
+    comments_limit: int = _CMDL_OPTS.comments_limit
+
+    if comments_from:
+        output(f"Requesting comments looking back from {comments_from} on each thread.\n", logging.INFO)
+    else:
+        # Default to the current time
+        comments_from = int(datetime.now(timezone.utc).timestamp())
+
+    if _CMDL_OPTS.all_comments:
+        output(f"Requesting all comments on each thread.\n", logging.INFO)
+        comments_limit = None
+    else:
+        output(f"Requesting up to {comments_limit} comments on each thread.\n", logging.INFO) # Defaults to 1000
+
+    with Progress(TextColumn("{task.description}"), BarColumn(), TaskProgressColumn(), TextColumn("{task.completed}/{task.total}"), transient=True) as progress:
+        tasks = []
+        for thread in template_params["thread_params"]["targets"]:
+            comments_data = COMMENTS_DATA_JSON
+            thread = threading.Thread(target=fetch_comments_thread, args=(session, template_params["id"], template_params["comment_server"], template_params["thread_key"], thread, template_params["thread_params"]["language"], progress, comments_data, comments_from, comments_limit))
+            thread.start()
+            tasks.append({
+                "thread": thread,
+            })
+
+        for task in tasks:
+            task["thread"].join()
+
+        comments_data["globalComments"]["retrievedCount"] = sum(thread["retrievedCount"] for thread in comments_data["threads"])
+        comments_data["globalComments"]["commentCount"] = template_params["comment_count"]
+
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(comments_data, file, indent=None, ensure_ascii=False, sort_keys=True)
+
+        output("Finished downloading comments for {0}.\n".format(template_params["id"]), logging.INFO)
+
+
+def fetch_comments_thread(
+    session: requests.Session,
+    video_id: str,
+    api_server: str,
+    thread_key: str,
+    thread: dict,
+    language: str,
+    progress: Progress,
+    comments_data: dict,
+    comments_from: int,
+    comments_limit: int = None,
+) -> None:
+    """Fetch comments for a specific comments thread."""
+
+    thread_data = {
+        "comments": [],
+        "fork": thread["fork"],
+        "id": thread["id"]
+    }
+
+    task_id = progress.add_task(thread["fork"], total=None, visible=False)
+    while not progress.tasks[task_id].finished:
+        response = session.post(
+            COMMENTS_THREAD_URL.format(api_server),
+            json={
+                "threadKey": thread_key,
+                "params": {
+                    "language": language,
+                    "targets": [thread]
+                },
+                "additionals": {
+                    "res_from": -1000,
+                    "when": comments_from
+                }
+            },
+            headers={
+                **API_HEADERS,
+                "content-type": "text/plain;charset=UTF-8",
+                "x-client-os-type": "others",
+            }
+        )
+        response_data = response.json()
+
+        # Handle API error codes
+        error_code = response_data["meta"]["errorCode"] if "meta" in response_data and "errorCode" in response_data["meta"] else None
+        if error_code is not None:
+            if error_code == "TOO_MANY_REQUESTS":
+                output(f"Rate limit hit. Sleeping for f{COMMENTS_THREAD_COOLDOWN_S} seconds...\n", logging.INFO)
+                time.sleep(COMMENTS_THREAD_COOLDOWN_S)
+                continue
+            elif error_code == "EXPIRED_TOKEN":
+                output("Thread key expired. Refreshing...\n", logging.INFO)
+                refresh_thread_key(session, video_id)
+                continue
+            elif error_code == "INVALID_TOKEN":
+                raise AuthenticationException("Comment thread key was invalid")
+            else:
+                raise ParameterExtractionException(error_code)
+
+        # Specify our target end total
+        if not progress.tasks[task_id].total:
+            thread_data["commentCount"] = response_data["data"]["threads"][0]["commentCount"]
+            # If requesting all comments, specify the total as the thread's comment count
+            if not comments_limit:
+                progress.update(task_id, total=thread_data["commentCount"], visible=True)
+            # Otherwise, specify the total as the smaller of the thread's comment count or the specified limit
+            else:
+                progress.update(task_id, total=min(thread_data["commentCount"], comments_limit), visible=True)
+
+        # If no comments are retrieved, stop the thread immediately
+        thread_comments = response_data["data"]["threads"][0]["comments"]
+        if not thread_comments:
+            break
+
+        # Append new comments and update progress
+        thread_data["comments"].extend(thread_comments)
+        comments_from = int(datetime.fromisoformat(thread_comments[0]["postedAt"]).timestamp())
+        progress.advance(task_id, advance=len(thread_comments))
+
+        time.sleep(COMMENTS_THREAD_INTERVAL_S)
+
+    thread_data["retrievedCount"] = len(thread_data["comments"])
+    comments_data["threads"].append(thread_data)
+
+
+def refresh_thread_key(session: requests.Session, video_id: str) -> str:
+    """Refresh the thread key for the comments API"""
+
+    url = THREAD_REFRESH_API.format(video_id)
+
+    headers = {
+        **API_HEADERS,
+        "Content-Type": "application/json"
+    }
+    response = session.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()["data"]["threadKey"]
 
 
 def add_metadata_to_container(filename: AnyStr, template_params: dict):
@@ -2151,6 +2366,10 @@ def main():
             output("Proceeding with no login. Some content may not be available for download or may only be "
                    "available in a lower quality. For access to all content, please provide a login with "
                    "--username/--password, --session-cookie, or --netrc.\n", logging.WARNING)
+
+        if (_CMDL_OPTS.comments_limit or _CMDL_OPTS.request_all_comments or _CMDL_OPTS.comments_from) and not _CMDL_OPTS.download_comments:
+            output("Comment downloading qualifiers (--comments-limit, --request-all-comments, or --comments-from) were specified, but --download-comments was not. "
+                   "No comments will be downloaded.\n", logging.WARNING)
 
         session = login(account_username, account_password, session_cookie)
 
