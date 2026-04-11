@@ -11,6 +11,8 @@ import mimetypes
 import netrc
 import os
 import random
+import contextlib
+import copy
 import re
 import shutil
 import string
@@ -2042,11 +2044,12 @@ def download_video_comments(
     else:
         output(f"Requesting up to {comments_limit} comments on each thread.\n", logging.INFO) # Defaults to 1000
 
+    comments_data = copy.deepcopy(COMMENTS_DATA_JSON)
+
     with Progress(TextColumn("{task.description}"), BarColumn(), TaskProgressColumn(), TextColumn("{task.completed}/{task.total}"), transient=True) as progress:
         tasks = []
-        for thread in template_params["thread_params"]["targets"]:
-            comments_data = COMMENTS_DATA_JSON
-            thread = threading.Thread(target=fetch_comments_thread, args=(session, template_params["id"], template_params["comment_server"], template_params["thread_key"], thread, template_params["thread_params"]["language"], progress, comments_data, comments_from, comments_limit))
+        for thread_target in template_params["thread_params"]["targets"]:
+            thread = threading.Thread(target=fetch_comments_thread, args=(session, template_params["id"], template_params["comment_server"], template_params["thread_key"], thread_target, template_params["thread_params"]["language"], progress, comments_data, comments_from, comments_limit))
             thread.start()
             tasks.append({
                 "thread": thread,
@@ -2075,7 +2078,7 @@ def fetch_comments_thread(
     comments_data: dict,
     comments_from: int,
     comments_limit: int = None,
-) -> None:
+) -> str:
     """Fetch comments for a specific comments thread."""
 
     thread_data = {
@@ -2111,12 +2114,12 @@ def fetch_comments_thread(
         error_code = response_data["meta"]["errorCode"] if "meta" in response_data and "errorCode" in response_data["meta"] else None
         if error_code is not None:
             if error_code == "TOO_MANY_REQUESTS":
-                output(f"Rate limit hit. Sleeping for f{COMMENTS_THREAD_COOLDOWN_S} seconds...\n", logging.INFO)
+                output(f"Rate limit hit. Sleeping for {COMMENTS_THREAD_COOLDOWN_S} seconds...\n", logging.INFO)
                 time.sleep(COMMENTS_THREAD_COOLDOWN_S)
                 continue
             elif error_code == "EXPIRED_TOKEN":
                 output("Thread key expired. Refreshing...\n", logging.INFO)
-                refresh_thread_key(session, video_id)
+                thread_key = refresh_thread_key(session, video_id)
                 continue
             elif error_code == "INVALID_TOKEN":
                 raise AuthenticationException("Comment thread key was invalid")
@@ -2142,6 +2145,10 @@ def fetch_comments_thread(
         thread_data["comments"].extend(thread_comments)
         comments_from = int(datetime.fromisoformat(thread_comments[0]["postedAt"]).timestamp())
         progress.advance(task_id, advance=len(thread_comments))
+
+        # Stop if we've reached the requested limit
+        if comments_limit and len(thread_data["comments"]) >= comments_limit:
+            break
 
         time.sleep(COMMENTS_THREAD_INTERVAL_S)
 
