@@ -11,7 +11,6 @@ import mimetypes
 import netrc
 import os
 import random
-import contextlib
 import copy
 import re
 import shutil
@@ -242,9 +241,18 @@ def parse_datetime_to_timestamp(value) -> int:
     return int(dt.timestamp())
 
 
+class CommentsFromAction(argparse.Action):
+    """Store both the raw comments date value and its parsed timestamp."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, parse_datetime_to_timestamp(values))
+        setattr(namespace, f"{self.dest}_raw", values)
+
+
 CMDL_USAGE = "%(prog)s [options] input"
 CMDL_VERSION = __version__
 cmdl_parser = argparse.ArgumentParser(usage=CMDL_USAGE, conflict_handler="resolve", formatter_class=argparse.RawTextHelpFormatter)
+cmdl_parser.set_defaults(comments_from_raw=None)
 
 cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL",
                          help="account email address or telephone number")
@@ -273,10 +281,10 @@ dl_group.add_argument("-t", "--download-thumbnail", action="store_true", dest="d
                       help="download video thumbnail")
 dl_group.add_argument("-c", "--download-comments", action="store_true", dest="download_comments",
                       help="download video comments")
-dl_group.add_argument("--comments-limit", dest="comments_limit", metavar="N", type=int, default=COMMENTS_LIMIT_DEFAULT_N,
+dl_group.add_argument("--comments-limit", dest="comments_limit", metavar="N", type=int,
                       help=f"number of comments to download per thread (default: {COMMENTS_LIMIT_DEFAULT_N})")
 dl_group.add_argument(
-    "--comments-from", dest="comments_from", type=parse_datetime_to_timestamp, metavar="DATETIME_OR_TIMESTAMP",
+    "--comments-from", dest="comments_from", action=CommentsFromAction, metavar="DATETIME_OR_TIMESTAMP",
     help="only download comments posted before a specified time:\n"
          "- Unix timestamp (e.g., 1686787200)\n"
          "- ISO 8601 date (e.g., '2023-06-15' → sets to 23:59:59)\n"
@@ -516,37 +524,6 @@ def rewrite_file(filename: AnyStr, old_str: AnyStr, new_str: AnyStr):
         file.seek(0)
         file.write(new)
         file.truncate()
-
-
-@contextlib.contextmanager
-def get_temp_dir():
-    """Get a temporary working directory."""
-
-    tmpdir = tempfile.mkdtemp()
-    try:
-        yield tmpdir
-    finally:
-        shutil.rmtree(tmpdir)
-
-def get_unix_timestamp(input_time=None) -> int:
-    """Convert a date or timestamp to a Unix timestamp."""
-
-    if input_time is None:
-        return int(datetime.now(timezone.utc).timestamp())
-
-    if isinstance(input_time, (int, float)):
-        return int(input_time)
-
-    try:
-        # Try ISO format first
-        return int(datetime.strptime(input_time, "%Y-%m-%dT%H:%M:%S%z").timestamp())
-    except ValueError:
-        try:
-            # Try date-only format
-            return int(datetime.strptime(input_time, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
-        except ValueError:
-            return int(datetime.now(timezone.utc).timestamp())  # Fallback
-
 
 
 ## Nama methods
@@ -1176,7 +1153,7 @@ def request_video(session: requests.Session, video_id: AnyStr):
         dump_metadata(filename, template_params)
     if _CMDL_OPTS.download_thumbnail:
         download_thumbnail(session, filename, template_params)
-    if _CMDL_OPTS.download_comments:
+    if _CMDL_OPTS.download_comments and not _CMDL_OPTS.no_login:
         download_video_comments(session, filename, template_params)
 
 
@@ -2018,9 +1995,6 @@ def download_video_comments(
 ):
     """Download the video comments."""
 
-    if _CMDL_OPTS.no_login:
-        raise AuthenticationException("Downloading comments is not possible when -g/--no-login is specified. Please login or provide a session cookie")
-
     output("Downloading comments for {0}...\n".format(template_params["id"]), logging.INFO)
 
     filename = replace_extension(filename, "comments.json")
@@ -2033,7 +2007,8 @@ def download_video_comments(
     comments_limit: int = _CMDL_OPTS.comments_limit
 
     if comments_from:
-        output(f"Requesting comments looking back from {comments_from} on each thread.\n", logging.INFO)
+        comments_from_display = _CMDL_OPTS.comments_from_raw or datetime.fromtimestamp(comments_from, timezone.utc).strftime("%Y-%m-%d")
+        output(f"Requesting comments looking back from {comments_from_display} on each thread.\n", logging.INFO)
     else:
         # Default to the current time
         comments_from = int(datetime.now(timezone.utc).timestamp())
@@ -2042,7 +2017,9 @@ def download_video_comments(
         output(f"Requesting all comments on each thread.\n", logging.INFO)
         comments_limit = None
     else:
-        output(f"Requesting up to {comments_limit} comments on each thread.\n", logging.INFO) # Defaults to 1000
+        if comments_limit is None:
+            comments_limit = COMMENTS_LIMIT_DEFAULT_N
+        output(f"Requesting up to {comments_limit} comments on each thread.\n", logging.INFO)
 
     comments_data = copy.deepcopy(COMMENTS_DATA_JSON)
 
@@ -2114,11 +2091,11 @@ def fetch_comments_thread(
         error_code = response_data["meta"]["errorCode"] if "meta" in response_data and "errorCode" in response_data["meta"] else None
         if error_code is not None:
             if error_code == "TOO_MANY_REQUESTS":
-                output(f"Rate limit hit. Sleeping for {COMMENTS_THREAD_COOLDOWN_S} seconds...\n", logging.INFO)
+                progress.update(task_id, description=f"{thread['fork']} comments rate limited; retrying")
                 time.sleep(COMMENTS_THREAD_COOLDOWN_S)
                 continue
             elif error_code == "EXPIRED_TOKEN":
-                output("Thread key expired. Refreshing...\n", logging.INFO)
+                progress.update(task_id, description=f"{thread['fork']} comments refreshing key")
                 thread_key = refresh_thread_key(session, video_id)
                 continue
             elif error_code == "INVALID_TOKEN":
@@ -2129,8 +2106,9 @@ def fetch_comments_thread(
         # Specify our target end total
         if not progress.tasks[task_id].total:
             thread_data["commentCount"] = response_data["data"]["threads"][0]["commentCount"]
+            progress.update(task_id, description=f"{thread['fork']} comments")
             # If requesting all comments, specify the total as the thread's comment count
-            if not comments_limit:
+            if comments_limit is None:
                 progress.update(task_id, total=thread_data["commentCount"], visible=True)
             # Otherwise, specify the total as the smaller of the thread's comment count or the specified limit
             else:
@@ -2147,7 +2125,7 @@ def fetch_comments_thread(
         progress.advance(task_id, advance=len(thread_comments))
 
         # Stop if we've reached the requested limit
-        if comments_limit and len(thread_data["comments"]) >= comments_limit:
+        if comments_limit is not None and len(thread_data["comments"]) >= comments_limit:
             break
 
         time.sleep(COMMENTS_THREAD_INTERVAL_S)
@@ -2405,9 +2383,11 @@ def main():
                    "available in a lower quality. For access to all content, please provide a login with "
                    "--username/--password, --session-cookie, or --netrc.\n", logging.WARNING)
 
-        if (_CMDL_OPTS.comments_limit or _CMDL_OPTS.request_all_comments or _CMDL_OPTS.comments_from) and not _CMDL_OPTS.download_comments:
-            output("Comment downloading qualifiers (--comments-limit, --request-all-comments, or --comments-from) were specified, but --download-comments was not. "
+        if (_CMDL_OPTS.comments_limit is not None or _CMDL_OPTS.all_comments or _CMDL_OPTS.comments_from) and not _CMDL_OPTS.download_comments:
+            output("Comment downloading qualifiers (--comments-limit, --all-comments, or --comments-from) were specified, but --download-comments was not. "
                    "No comments will be downloaded.\n", logging.WARNING)
+        if _CMDL_OPTS.download_comments and _CMDL_OPTS.no_login:
+            output("Downloading comments is not possible when -g/--no-login is specified. No comments will be downloaded.\n", logging.WARNING)
 
         session = login(account_username, account_password, session_cookie)
 
