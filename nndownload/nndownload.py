@@ -408,9 +408,12 @@ def replace_extension(filename: AnyStr, new_extension: AnyStr):
 
 
 def sanitize_for_path(value: AnyStr, replace: AnyStr = ' '):
-    """Remove potentially illegal characters from a path."""
-
-    return re.sub(r'[<>\"\?\\/\*:|]', replace, value).strip()
+    """Remove potentially illegal characters and path traversal sequences."""
+    # Illegal characters
+    sanitized = re.sub(r'[<>\"\?\\/\*:|]', replace, value).strip()
+    # Specially handle `.` and `..` to prevent path traversal
+    path_sanitized = re.sub(r'^\.{1,2}$', "_", sanitized)
+    return path_sanitized
 
 
 def create_filename(template_params: dict, is_comic: bool = False):
