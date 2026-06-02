@@ -1,3 +1,6 @@
+> [!NOTE]
+> 本 README 的英文版本为最新版本。如有任何差异或提交问题时，请以英文版本为准。
+
 # nndownload
 
 [![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
