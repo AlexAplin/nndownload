@@ -734,7 +734,7 @@ def request_nama(session: requests.Session, nama_id: AnyStr):
     if nama_document.find(id="embedded-data"):
         params = json.loads(nama_document.find(id="embedded-data")["data-props"])
 
-        rejection_errors = params["userProgramWatch"]["rejectedReasons"]
+        rejection_errors = params["userProgramWatch"].get("rejectedReasons")
         if rejection_errors:
             raise ParameterExtractionException(f"Stream not available to user with the following errors given: {rejection_errors}")
 

@@ -151,9 +151,6 @@ nndownload.execute("-g", "-o", output_path, url)
 
 ### Using Stream Links
 
-> [!NOTE]
-> This function is currently not working due to site changes. Follow [#203](https://github.com/AlexAplin/nndownload/issues/203) for more information
-
 ストリーム URL の生成後は、ストリームをアクティブな状態に保つためにプログラムを実行し続ける必要があります。生成されたストリーム URL を再生するには、[mpv](https://github.com/mpv-player/mpv)と[streamlink](https://github.com/streamlink/streamlink)が最適なオプションです。ただし、アグレッシブな HLS キャッシングとスレッドを使用する他のプログラムも動作する可能性があります。
 
 `mpv https://...`
