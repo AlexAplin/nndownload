@@ -1,3 +1,6 @@
+> [!NOTE]
+> このREADMEの英語版が最新です。内容の相違点やバグ報告の際は、英語版をご参照ください。
+
 # nndownload
 
 [![PyPI](https://img.shields.io/pypi/v/nndownload.svg)](https://pypi.org/project/nndownload/)
@@ -116,18 +119,18 @@ nndownload.execute("-g", "-o", output_path, url)
 ニコニコ静画の場合、出力パスはチャプターディレクトリのテンプレートにする必要があります。例：`{manga_id}\{id} - {title}`  
 利用可能なオプションは以下の通りです。
 
-- comment_count (videos, images, manga, articles)
-- description (videos, images, manga)
+- comment_count (videos, images, manga, articles, timeshifts)
+- description (videos, images, manga, timeshifts)
 - document_url (videos, images, manga, articles)
-- ext (videos, images, articles)
-- id (videos, images, manga, articles)
-- published (videos, images, manga, articles)
+- ext (videos, images, articles, timeshifts)
+- id (videos, images, manga, articles, timeshifts)
+- published (videos, images, manga, articles, timeshifts)
 - tags (videos, images, manga, articles)
-- title (videos, images, manga, articles)
-- uploader (videos, images, manga, articles)
-- uploader_id (videos, images, manga, articles)
+- title (videos, images, manga, articles, timeshifts)
+- uploader (videos, images, manga, articles, timeshifts)
+- uploader_id (videos, images, manga, articles, timeshifts)
 - url (videos, images)
-- view_count (videos, images, manga)
+- view_count (videos, images, manga, timeshifts)
 - audio_quality (videos)
 - video_quality (videos)
 - article (articles)
@@ -135,17 +138,19 @@ nndownload.execute("-g", "-o", output_path, url)
 - clip_count (images)
 - dms_video_uri (videos)
 - dms_audio_uri (videos)
-- duration (videos)
+- duration (videos, timeshifts)
 - manga_id (manga)
 - manga_title (manga)
 - mylist_count (videos)
 - page_count (manga)
+- provider_type (timeshifts)
 - size_high (videos)
 - size_low (videos)
 - thread_id (videos)
 - thread_key (videos)
 - thread_params (videos)
-- thumbnail_url (videos)
+- thumbnail_url (videos, timeshifts)
+- timeshift_count (timeshifts)
 
 ### Using Stream Links
 
