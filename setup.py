@@ -3,7 +3,7 @@ import setuptools
 from distutils.util import convert_path
 
 
-with open("README.md", "r") as description_file:
+with open("README.md", "r", encoding="utf8") as description_file:
     long_description = description_file.read()
 
 with open("requirements.txt", "r") as requirements_file:
