@@ -265,7 +265,7 @@ cmdl_parser.add_argument("-v", "--version", action="version", version=CMDL_VERSI
 cmdl_parser.add_argument("input", action="store", nargs="*", help="URLs or files")
 
 dl_group = cmdl_parser.add_argument_group("download options")
-dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="http or socks proxy")
+dl_group.add_argument("-y", "--proxy", dest="proxy", metavar="PROXY", help="HTTP or SOCKS proxy")
 dl_group.add_argument("-o", "--output-path", dest="output_path", metavar="TEMPLATE",
                       help="custom output path (see template options)")
 dl_group.add_argument("-r", "--threads", dest="threads", metavar="N", type=int,

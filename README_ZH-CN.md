@@ -84,6 +84,13 @@ pip install nndownload
                         下载视频缩略图
   -c, --download-comments
                         下载视频评论
+  --comments-limit N    每个线程下载的评论数（默认值：1000）
+  --comments-from DATETIME_OR_TIMESTAMP
+                        仅下载在指定时间之前发布的评论：
+                        - Unix 时间戳（例如 1686787200）
+                        - ISO 8601 日期（例如 '2023-06-15' → 设置为 23:59:59）
+                        - ISO 8601 日期时间（例如 '2023-06-15T14:30:00' 或 '2023-06-15 14:30:00'）
+  --all-comments        请求所有评论（忽略 --comments-limit）
   -e, --english         请求英语网站上的视频
   --chinese             请求繁体中文（台湾）网站上的视频
   -aq AUDIO_QUALITY, --audio-quality AUDIO_QUALITY

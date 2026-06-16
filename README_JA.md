@@ -53,12 +53,12 @@ pip install nndownload
 usage: nndownload.py [options] input
 
 positional arguments:
-  input                 URLs or files
+  input                 URL または ファイル
 
 options:
   -h, --help            ヘルプメッセージを表示
   -u EMAIL/TEL, --username EMAIL/TEL
-                        アカウントのメールアドレスor電話番号
+                        アカウントのメールアドレス または 電話番号
   -p PASSWORD, --password PASSWORD
                         アカウントのパスワード
   --session-cookie COOKIE
@@ -71,19 +71,26 @@ options:
 
 download options:
   -y PROXY, --proxy PROXY
-                        http or socks proxy
+                        HTTP または SOCKS プロキシ
   -o TEMPLATE, --output-path TEMPLATE
                         出力パスを指定 (テンプレートオプションを参照)
   -r N, --threads N     指定したスレッド数で動画をダウンロードする
   -g, --no-login        ログインなしでダウンロードセッションを作成
   -f, --force-high-quality
                         高品質な動画ソースが利用可能な場合のみダウンロードを行う
-  -a, --add-metadata    動画ファイルにメタデータを付与 (MP4 only)
+  -a, --add-metadata    動画ファイルにメタデータを付与 (MP4 のみ)
   -m, --dump-metadata   メタデータをファイルにダンプ
   -t, --download-thumbnail
                         動画のサムネイルをダウンロード
   -c, --download-comments
                         動画のコメントをダウンロード
+  --comments-limit N    スレッドごとにダウンロードするコメント数 (デフォルト: 1000)
+  --comments-from DATETIME_OR_TIMESTAMP
+                        指定された時刻より前に投稿されたコメントのみをダウンロード:
+                        - Unix タイムスタンプ (例: 1686787200)
+                        - ISO 8601 日付 (例: '2023-06-15' → 23:59:59に設定)
+                        - ISO 8601 日時 (例: '2023-06-15T14:30:00' または '2023-06-15 14:30:00')
+  --all-comments        すべてのコメントをリクエスト (--comments-limitを無視)
   -e, --english         英語版サイトにリクエストする
   -chinese              中文版サイトにリクエストする
   -aq AUDIO_QUALITY, --audio-quality AUDIO_QUALITY
@@ -116,36 +123,36 @@ nndownload.execute("-g", "-o", output_path, url)
 ニコニコ静画の場合、出力パスはチャプターディレクトリのテンプレートにする必要があります。例：`{manga_id}\{id} - {title}`  
 利用可能なオプションは以下の通りです。
 
-- comment_count (videos, images, manga, articles)
-- description (videos, images, manga)
-- document_url (videos, images, manga, articles)
-- ext (videos, images, articles)
-- id (videos, images, manga, articles)
-- published (videos, images, manga, articles)
-- tags (videos, images, manga, articles)
-- title (videos, images, manga, articles)
-- uploader (videos, images, manga, articles)
-- uploader_id (videos, images, manga, articles)
-- url (videos, images)
-- view_count (videos, images, manga)
-- audio_quality (videos)
-- video_quality (videos)
-- article (articles)
-- blog_title (articles)
-- clip_count (images)
-- dms_video_uri (videos)
-- dms_audio_uri (videos)
-- duration (videos)
-- manga_id (manga)
-- manga_title (manga)
-- mylist_count (videos)
-- page_count (manga)
-- size_high (videos)
-- size_low (videos)
-- thread_id (videos)
-- thread_key (videos)
-- thread_params (videos)
-- thumbnail_url (videos)
+- comment_count (動画、静画、漫画、記事)
+- description (動画、静画、漫画)
+- document_url (動画、静画、漫画、記事)
+- ext (動画、静画、記事)
+- id (動画、静画、漫画、記事)
+- published (動画、静画、漫画、記事)
+- tags (動画、静画、漫画、記事)
+- title (動画、静画、漫画、記事)
+- uploader (動画、静画、漫画、記事)
+- uploader_id (動画、静画、漫画、記事)
+- url (動画、静画)
+- view_count (動画、静画、漫画)
+- audio_quality (動画)
+- video_quality (動画)
+- article (記事)
+- blog_title (記事)
+- clip_count (静画)
+- dms_video_uri (動画)
+- dms_audio_uri (動画)
+- duration (動画)
+- manga_id (漫画)
+- manga_title (漫画)
+- mylist_count (動画)
+- page_count (漫画)
+- size_high (動画)
+- size_low (動画)
+- thread_id (動画)
+- thread_key (動画)
+- thread_params (動画)
+- thumbnail_url (動画)
 
 ### Using Stream Links
 
@@ -156,7 +163,7 @@ nndownload.execute("-g", "-o", output_path, url)
 
 ## Known Bugs
 
-- 既知のバグについては open issues をご参照ください。
+- 既知のバグについては「Issues」をご参照ください。
 
 ## License
 

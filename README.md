@@ -71,7 +71,7 @@ options:
 
 download options:
   -y PROXY, --proxy PROXY
-                        http or socks proxy
+                        HTTP or SOCKS proxy
   -o TEMPLATE, --output-path TEMPLATE
                         custom output path (see template options)
   -r N, --threads N     download videos using a specified number of threads
