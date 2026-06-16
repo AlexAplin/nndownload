@@ -67,7 +67,7 @@ COMMENTS_THREAD_URL = "{0}/v1/threads"
 TIMESHIFT_USE_URL = "https://live.nicovideo.jp/api/timeshift.ticket.use"
 TIMESHIFT_RESERVE_URL = "https://live.nicovideo.jp/api/timeshift.reservations"
 
-CONTENT_TYPE = r"(watch|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust|series)"
+CONTENT_TYPE = r"(watch|shorts|mylist|user\/illust|user\/manga|user|comic|seiga|gate|article|channel|manga|illust|series)"
 USER_CONTENT_TYPE = r"(video|mylist|live|blomaga|list|series|follow)"
 VALID_URL_RE = re.compile(r"https?://(?:(?:(?:(ch|sp|www|seiga|manga)\.)|(?:(live[0-9]?|cas)\.))?"
                           rf"(?:(?:nicovideo\.jp/{CONTENT_TYPE}?)(?(3)/|))|(nico\.ms)/)"
@@ -2346,7 +2346,7 @@ def process_url_mo(session, url_mo: Match):
             request_channel(session, url_id)
         else:
             raise ArgumentException("Channel URL argument is not of a known or accepted type of Nico URL")
-    elif url_mo.group(3) == "watch" or url_mo.group(4) == "nico.ms":
+    elif url_mo.group(3) == "watch" or url_mo.group(3) == "shorts" or url_mo.group(4) == "nico.ms":
         request_video(session, url_id)
     elif url_mo.group(3) == "series":
         request_series(session, url_id)
