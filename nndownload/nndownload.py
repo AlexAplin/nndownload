@@ -197,6 +197,15 @@ PONG_FRAME = json.loads("""{"type":"pong"}""")
 MIN_DATE = datetime(2007, 3, 3).replace(tzinfo=timezone.utc) # Constant taken from comment-zouryou (likely coincides with the γ launch on 2007-03-06): https://github.com/tanbatu/comment-zouryou
 MAX_DATE = datetime.now(timezone.utc)
 
+LOG_LEVEL_COLORS = {
+    logging.DEBUG: "\033[90m",
+    logging.INFO: "\033[36m",
+    logging.WARNING: "\033[33m",
+    logging.ERROR: "\033[31m",
+    logging.CRITICAL: "\033[1;31m",
+}
+COLOR_RESET = "\033[0m"
+
 logger = logging.getLogger(__name__)
 
 
@@ -266,7 +275,7 @@ cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL
                          help="account email address or telephone number (deprecated; use --cookies-from-browser or --session-cookie)")
 cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD", help="account password (deprecated; use --cookies-from-browser or --session-cookie)")
 cmdl_parser.add_argument("--session-cookie", dest="session_cookie", metavar="COOKIE", help="user_session cookie value (string or filepath)")
-cmdl_parser.add_argument("--cookies-from-browser", dest="cookies_from_browser", metavar="BROWSER[+KEYRING][:PROFILE][::CONTAINER]", help="browser session to load a user_session_cookie from")
+cmdl_parser.add_argument("--cookies-from-browser", dest="cookies_from_browser", metavar="BROWSER[+KEYRING][:PROFILE][::CONTAINER]", help="browser session to load a user_session cookie from")
 cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication (deprecated; use --cookies-from-browser or --session-cookie)")
 cmdl_parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
 cmdl_parser.add_argument("-l", "--log", nargs="?", const=f"[{MODULE_NAME}] {time.strftime('%Y-%m-%d')}.log", dest="log", metavar="PATH", help="log output to file")
@@ -368,6 +377,14 @@ def log_exception(error: Exception):
         output("{0}: {1}\n".format(type(error).__name__, str(error)), logging.ERROR, force=True)
 
 
+def use_color(stream) -> bool:
+    """Color only for interactive terminals, and respect NO_COLOR."""
+
+    if os.environ.get("NO_COLOR"):
+        return False
+    return hasattr(stream, "isatty") and stream.isatty()
+
+
 def output(out_str: AnyStr, level=logging.INFO, force: bool = False):
     """Print status to console unless quiet flag is set."""
 
@@ -376,7 +393,11 @@ def output(out_str: AnyStr, level=logging.INFO, force: bool = False):
         logger.log(level, out_str.strip("\n"))
 
     if not _CMDL_OPTS.quiet or force:
-        sys.stdout.write(out_str)
+        tag = f"[{logging.getLevelName(level)}]"
+        if use_color(sys.stdout):
+            tag = f"{LOG_LEVEL_COLORS.get(level, '')}{tag}{COLOR_RESET}"
+
+        sys.stdout.write(tag + " " + out_str)
         sys.stdout.flush()
 
 
@@ -2257,16 +2278,16 @@ def login(session_cookie: str, cookies_from_browser: str) -> requests.Session:
         }
         session.proxies.update(proxies)
 
-    if not _CMDL_OPTS.no_login:
-        if _CMDL_OPTS.username or _CMDL_OPTS.password:
-            output("User credentials (--username/-u, --password/-p) are no longer supported for login. These flags will be removed in a future release.\n", logging.WARNING)
-        if _CMDL_OPTS.netrc:
-            output(".netrc authorization (--netrc) is no longer supported for login. This flag will be removed in a future release.\n", logging.WARNING)
+    if  _CMDL_OPTS.no_login and (session_cookie or cookies_from_browser):
+        output("--no-login/-g was specified along with a login session (--session-cookie or --cookies-from-browser). --no-login will be ignored.\n", logging.WARNING)
+    if _CMDL_OPTS.username or _CMDL_OPTS.password:
+        output("User credentials (--username/-u, --password/-p) are no longer supported for login. These flags will be removed in a future release.\n", logging.WARNING)
+    if _CMDL_OPTS.netrc:
+        output(".netrc authorization (--netrc) is no longer supported for login. This flag will be removed in a future release.\n", logging.WARNING)
+    if session_cookie and cookies_from_browser:
+        output("--session-cookie was specified along with --cookies-from-browser. --session-cookie will be ignored.\n", logging.WARNING)
 
-        if session_cookie:
-            if cookies_from_browser:
-                output("Ignoring provided cookie (--session-cookie) in favor of browser session (--cookies-from-browser).\n", logging.WARNING)
-
+    if cookies_from_browser or session_cookie:
         if cookies_from_browser:
             for cookie in _extract_cookies_from_browser(cookies_from_browser):
                 session.cookies.set_cookie(cookie)
