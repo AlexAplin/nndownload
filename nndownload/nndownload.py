@@ -44,7 +44,7 @@ __license__ = "MIT"
 MODULE_NAME = "nndownload"
 HOST = "nicovideo.jp"
 
-from yt_dlp.cookies import SUPPORTED_BROWSERS, SUPPORTED_KEYRINGS, extract_cookies_from_browser
+from ._ytdlp.cookies import SUPPORTED_BROWSERS, SUPPORTED_KEYRINGS, extract_cookies_from_browser
 
 SESSION_COOKIE_NAME = "user_session"
 BROWSER_SPEC = re.compile(r"""(?x)
@@ -582,26 +582,10 @@ def parse_browser_spec(spec: str):
     return name, profile, keyring, container
 
 
-class _YtdlpLogger:
-    """Adapter to make yt-dlp's extractor log through our output()."""
-    def debug(self, msg):
-        if not msg.startswith("[debug] "):
-            output(f"{msg}\n", logging.DEBUG)
-
-    def info(self, msg):
-        output(f"{msg}\n", logging.INFO)
-
-    def warning(self, msg, *args, **kwargs):
-        output(f"{msg}\n", logging.WARNING)
-
-    def error(self, msg):
-        output(f"{msg}\n", logging.ERROR)
-
-
 def _extract_cookies_from_browser(spec: str):
     name, profile, keyring, container = parse_browser_spec(spec)
     try:
-        jar = extract_cookies_from_browser(name, profile, _YtdlpLogger(), keyring=keyring, container=container)
+        jar = extract_cookies_from_browser(name, profile, logger=logger, keyring=keyring, container=container)
     except Exception as exc:
         raise AuthenticationException(f"Failed to read cookies from {spec!r}: {exc}")
 
