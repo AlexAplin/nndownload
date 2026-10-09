@@ -33,7 +33,7 @@ nndownload allows you to download videos, images, manga, and process other links
 
 ### Python version
 
-Python >=3.5.3
+Python >=3.10
 
 ### Dependencies
 
