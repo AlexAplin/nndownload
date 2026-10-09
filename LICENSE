@@ -22,3 +22,4 @@ SOFTWARE.
 
 Methods and logic borrowed from the following programs. See their respective licenses for more details:
 - comment-zouryou (https://github.com/tanbatu/comment-zouryou): Copyright (c) 2022 tanbatu, MIT License
+- yt-dlp (https://github.com/yt-dlp/yt-dlp): Unilicense
