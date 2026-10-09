@@ -58,12 +58,14 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   -u EMAIL/TEL, --username EMAIL/TEL
-                        account email address or telephone number
+                        account email address or telephone number (deprecated; use --cookies-from-browser or --session-cookie)
   -p PASSWORD, --password PASSWORD
-                        account password
+                        account password (deprecated; use --cookies-from-browser or --session-cookie)
   --session-cookie COOKIE
                         user_session cookie value (string or filepath)
-  -n, --netrc           use .netrc authentication
+  --cookies-from-browser BROWSER[+KEYRING][:PROFILE][::CONTAINER]
+                        browser session to load a user_session cookie from
+  -n, --netrc           use .netrc authentication (deprecated; use --cookies-from-browser or --session-cookie)
   -q, --quiet           suppress output to console
   -l [PATH], --log [PATH]
                         log output to file

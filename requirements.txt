@@ -7,5 +7,6 @@ mutagen
 pycryptodome
 requests
 rich
+secretstorage
 setuptools
 urllib3

@@ -44,9 +44,17 @@ __license__ = "MIT"
 MODULE_NAME = "nndownload"
 HOST = "nicovideo.jp"
 
+from ._ytdlp.cookies import SUPPORTED_BROWSERS, SUPPORTED_KEYRINGS, extract_cookies_from_browser
+
+SESSION_COOKIE_NAME = "user_session"
+BROWSER_SPEC = re.compile(r"""(?x)
+    (?P<name>[^+:]+)
+    (?:\s*\+\s*(?P<keyring>[^:]+))?
+    (?:\s*:\s*(?!:)(?P<profile>.+?))?
+    (?:\s*::\s*(?P<container>.+))?
+""")
+
 MY_URL = "https://www.nicovideo.jp/my"
-# LOGIN_URL = "https://account.nicovideo.jp/api/v1/login?site=niconico"
-LOGIN_URL = "https://account.nicovideo.jp/login/redirector?show_button_twitter=1&site=niconico&show_button_facebook=1&sec=header_pc&next_url=/"
 VIDEO_URL = "https://nicovideo.jp/watch/{0}"
 USER_URL = "https://nicovideo.jp/user/{0}"
 NAMA_URL = "https://live.nicovideo.jp/watch/{0}"
@@ -189,7 +197,21 @@ PONG_FRAME = json.loads("""{"type":"pong"}""")
 MIN_DATE = datetime(2007, 3, 3).replace(tzinfo=timezone.utc) # Constant taken from comment-zouryou (likely coincides with the γ launch on 2007-03-06): https://github.com/tanbatu/comment-zouryou
 MAX_DATE = datetime.now(timezone.utc)
 
-logger = logging.getLogger(__name__)
+LOG_LEVEL_COLORS = {
+    logging.DEBUG: "\033[90m",
+    logging.INFO: "\033[36m",
+    logging.WARNING: "\033[33m",
+    logging.ERROR: "\033[31m",
+    logging.CRITICAL: "\033[1;31m",
+}
+COLOR_RESET = "\033[0m"
+
+# Minimum levels emitted by each handler
+# TODO: Add something like --log-level
+CONSOLE_LOG_LEVEL = logging.DEBUG
+FILE_LOG_LEVEL = logging.DEBUG
+
+logger = logging.getLogger(MODULE_NAME)
 
 
 def parse_datetime_to_timestamp(value) -> int:
@@ -255,10 +277,11 @@ cmdl_parser = argparse.ArgumentParser(usage=CMDL_USAGE, conflict_handler="resolv
 cmdl_parser.set_defaults(comments_from_raw=None)
 
 cmdl_parser.add_argument("-u", "--username", dest="username", metavar="EMAIL/TEL",
-                         help="account email address or telephone number")
-cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD", help="account password")
+                         help="account email address or telephone number (deprecated; use --cookies-from-browser or --session-cookie)")
+cmdl_parser.add_argument("-p", "--password", dest="password", metavar="PASSWORD", help="account password (deprecated; use --cookies-from-browser or --session-cookie)")
 cmdl_parser.add_argument("--session-cookie", dest="session_cookie", metavar="COOKIE", help="user_session cookie value (string or filepath)")
-cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication")
+cmdl_parser.add_argument("--cookies-from-browser", dest="cookies_from_browser", metavar="BROWSER[+KEYRING][:PROFILE][::CONTAINER]", help="browser session to load a user_session cookie from")
+cmdl_parser.add_argument("-n", "--netrc", action="store_true", dest="netrc", help="use .netrc authentication (deprecated; use --cookies-from-browser or --session-cookie)")
 cmdl_parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="suppress output to console")
 cmdl_parser.add_argument("-l", "--log", nargs="?", const=f"[{MODULE_NAME}] {time.strftime('%Y-%m-%d')}.log", dest="log", metavar="PATH", help="log output to file")
 cmdl_parser.add_argument("-v", "--version", action="version", version=CMDL_VERSION)
@@ -337,36 +360,75 @@ class ListQualitiesQuit(Exception):
 
 ## Utility methods
 
+class ConsoleFormatter(logging.Formatter):
+    """Format console records as `[LEVEL] message`"""
+
+    def __init__(self, color: bool = False):
+        super().__init__()
+        self.color = color
+
+    def format(self, record: logging.LogRecord) -> str:
+        tag = f"[{record.levelname}]"
+        if self.color:
+            tag = f"{LOG_LEVEL_COLORS.get(record.levelno, '')}{tag}{COLOR_RESET}"
+        # Tracebacks intentionally left to the file handler
+        return f"{tag} {record.getMessage()}"
+
+
+class ConsoleHandler(logging.StreamHandler):
+    def emit(self, record: logging.LogRecord):
+        if _CMDL_OPTS.quiet and not getattr(record, "force", False):
+            return
+        super().emit(record)
+
+
 def configure_logger():
-    """Initialize logger."""
+    """Initialize the logger."""
+
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+
+    console_handler = ConsoleHandler(sys.stdout)
+    console_handler.setLevel(CONSOLE_LOG_LEVEL)
+    console_handler.setFormatter(ConsoleFormatter(color=use_color(sys.stdout)))
+    logger.addHandler(console_handler)
 
     if _CMDL_OPTS.log:
-        logger.setLevel(logging.INFO)
-        log_handler = logging.FileHandler(_CMDL_OPTS.log, encoding="utf-8")
-        formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
-        log_handler.setFormatter(formatter)
-        logger.addHandler(log_handler)
+        file_handler = logging.FileHandler(_CMDL_OPTS.log, encoding="utf-8")
+        file_handler.setLevel(FILE_LOG_LEVEL)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
+        logger.addHandler(file_handler)
 
 
 def log_exception(error: Exception):
     """Process exception for logger."""
 
-    if _CMDL_OPTS.log:
-        sys.stdout.write("{0}: {1}\n".format(type(error).__name__, str(error)))
-        sys.stdout.flush()
-        logger.exception("An exception was encountered:\n")
-    else:
-        output("{0}: {1}\n".format(type(error).__name__, str(error)), logging.ERROR, force=True)
+    logger.error("{0}: {1}".format(type(error).__name__, str(error)), exc_info=error, extra={"force": True})
+
+
+def use_color(stream) -> bool:
+    """Color only for interactive terminals, and respect NO_COLOR."""
+
+    if os.environ.get("NO_COLOR"):
+        return False
+    return hasattr(stream, "isatty") and stream.isatty()
 
 
 def output(out_str: AnyStr, level=logging.INFO, force: bool = False):
     """Print status to console unless quiet flag is set."""
 
-    global _CMDL_OPTS
-    if _CMDL_OPTS.log:
-        logger.log(level, out_str.strip("\n"))
+    message = out_str.strip("\r\n")
+    if message:
+        logger.log(level, message, extra={"force": force})
 
-    if not _CMDL_OPTS.quiet or force:
+
+def output_progress(out_str: AnyStr):
+    """Write transient progress text (e.g. carriage-return progress bars) to the console only."""
+
+    if not _CMDL_OPTS.quiet:
         sys.stdout.write(out_str)
         sys.stdout.flush()
 
@@ -528,6 +590,41 @@ def rewrite_file(filename: AnyStr, old_str: AnyStr, new_str: AnyStr):
         file.write(new)
         file.truncate()
 
+
+def parse_browser_spec(spec: str):
+    """Parse BROWSER[+KEYRING][:PROFILE][::CONTAINER] with the same grammar used by yt-dlp."""
+
+    match = BROWSER_SPEC.fullmatch(spec)
+    name = match["name"].strip().lower()
+    keyring = match["keyring"].strip().upper() if match["keyring"] else None
+    profile = match["profile"]
+    container = match["container"]
+
+    if name not in SUPPORTED_BROWSERS:
+        raise AuthenticationException(
+            f"Unsupported browser {name!r}; choose from {', '.join(sorted(SUPPORTED_BROWSERS))}"
+        )
+    if keyring is not None and keyring not in SUPPORTED_KEYRINGS:
+        raise AuthenticationException(
+            f"Unsupported keyring {keyring!r}; choose from {', '.join(sorted(SUPPORTED_KEYRINGS))}"
+        )
+    if container is not None and name != "firefox":
+        raise AuthenticationException("Containers are only supported for `firefox`")
+
+    return name, profile, keyring, container
+
+
+def _extract_cookies_from_browser(spec: str):
+    name, profile, keyring, container = parse_browser_spec(spec)
+    try:
+        jar = extract_cookies_from_browser(name, profile, logger=logger, keyring=keyring, container=container)
+    except Exception as exc:
+        raise AuthenticationException(f"Failed to read cookies from {spec!r}: {exc}")
+
+    cookies = [c for c in jar if c.domain.lstrip(".") == HOST or c.domain.endswith("." + HOST)]
+    if not any(c.name == SESSION_COOKIE_NAME for c in cookies):
+        raise AuthenticationException(f"No {SESSION_COOKIE_NAME!r} cookie for {HOST} found in {spec!r}. Are you logged in from that browser?")
+    return cookies
 
 ## Nama methods
 
@@ -828,10 +925,10 @@ def download_manga_chapter(session, chapter_id):
             image_path = os.path.join(chapter_directory, filename)
 
             with open(image_path, "wb") as file:
-                output("\rPage {0}/{1}".format(index + 1, len(images)), logging.DEBUG)
+                output_progress("\rPage {0}/{1}".format(index + 1, len(images)))
                 file.write(image_bytes)
 
-        output("\n", logging.DEBUG)
+        output_progress("\n")
         output("Finished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
 
     if _CMDL_OPTS.dump_metadata:
@@ -1339,7 +1436,7 @@ def show_multithread_progress(video_len):
         done = int(25 * _PROGRESS / video_len)
         percent = int(100 * _PROGRESS / video_len)
         speed_str = calculate_speed(_START_TIME, time.time(), _PROGRESS)
-        output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
+        output_progress("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
 
 
 def update_multithread_progress(bytes_len):
@@ -1492,7 +1589,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         progress_thread = threading.Thread(target=show_multithread_progress, kwargs={"video_len": video_len})
         progress_thread.start()
         progress_thread.join()  # Wait for progress thread to terminate
-        output("\n", logging.DEBUG)
+        output_progress("\n")
 
         output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
         os.rename(filename, complete_filename)
@@ -1573,8 +1670,8 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
             done = int(25 * dl / video_len)
             percent = int(100 * dl / video_len)
             speed_str = calculate_speed(_START_TIME, time.time(), dl)
-            output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
-        output("\n", logging.DEBUG)
+            output_progress("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
+        output_progress("\n")
 
     output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
     os.rename(filename, complete_filename)
@@ -2172,7 +2269,7 @@ def add_metadata_to_container(filename: AnyStr, template_params: dict):
 
 # Main entry
 
-def login(username: str, password: str, session_cookie: str) -> requests.Session:
+def login(session_cookie: str, cookies_from_browser: str) -> requests.Session:
     """Login to Nico and create a session."""
 
     session = requests.session()
@@ -2197,75 +2294,38 @@ def login(username: str, password: str, session_cookie: str) -> requests.Session
         }
         session.proxies.update(proxies)
 
-    if not _CMDL_OPTS.no_login:
-        if not session_cookie:
-            output("Logging in...\n", logging.INFO)
+    if  _CMDL_OPTS.no_login and (session_cookie or cookies_from_browser):
+        output("--no-login/-g was specified along with a login session (--session-cookie or --cookies-from-browser). --no-login will be ignored.\n", logging.WARNING)
+    if _CMDL_OPTS.username or _CMDL_OPTS.password:
+        output("User credentials (--username/-u, --password/-p) are no longer supported for login. These flags will be removed in a future release.\n", logging.WARNING)
+    if _CMDL_OPTS.netrc:
+        output(".netrc authorization (--netrc) is no longer supported for login. This flag will be removed in a future release.\n", logging.WARNING)
+    if session_cookie and cookies_from_browser:
+        output("--session-cookie was specified along with --cookies-from-browser. --session-cookie will be ignored.\n", logging.WARNING)
 
-            login_post = {
-                "mail_tel": username,
-                "password": password
-            }
+    if cookies_from_browser or session_cookie:
+        if cookies_from_browser:
+            for cookie in _extract_cookies_from_browser(cookies_from_browser):
+                session.cookies.set_cookie(cookie)
 
-            login_request = session.post(LOGIN_URL, data=login_post)
-            login_request.raise_for_status()
-            parsed_login_request_url = urlparse(login_request.url)
-
-            if "message=cant_login" in parsed_login_request_url.query:
-                raise AuthenticationException("Incorrect email/telephone or password. Please verify your login details")
-
-            if parsed_login_request_url.path == "/mfa":
-                otp_code_request = session.get(login_request.url)
-                otp_code_page = BeautifulSoup(otp_code_request.text, "html.parser")
-                if otp_code_page.select_one("div.pageMainMsg span.userAccount"):
-                    otp_code_account = otp_code_page.select_one("div.pageMainMsg span.userAccount").text
-                    otp_message = "Enter the OTP code sent to the email/telephone on file for your account ({}): ".format(otp_code_account)
-                else:
-                    otp_message = "Enter the OTP code displayed in the authenticator app associated with your account ({}): ".format(username)
-
-                otp_requests_made = 0
-                while otp_requests_made < 10 and not session.cookies.get_dict().get("user_session", None):
-                    otp_code = input("{}".format(otp_message))
-                    otp_code = otp_code.strip()
-
-                    otp_post = {
-                        "otp": otp_code,
-                        "device_name": f"{MODULE_NAME}/{__version__}"
-                    }
-
-                    otp_post_request = session.post(login_request.url, data=otp_post)
-                    otp_requests_made += 1
-                    otp_post_request.raise_for_status()
-
-                    if not session.cookies.get_dict().get("user_session", None):
-                        output("Failed to login. Please verify your OTP code and try again.\n", logging.INFO)
-
-            if not session.cookies.get_dict().get("user_session", None):
-                raise AuthenticationException("Failed to login. Please verify your email/telephone, password, and OTP code")
-
-            output("Logged in.\n", logging.INFO)
-
-        else:
-            output("Using provided session cookie.\n", logging.INFO)
+        elif session_cookie:
+            output("Using provided session cookie (--session-cookie).\n", logging.INFO)
 
             try:
-                session_cookie_path = session_cookie
-                with open(session_cookie_path, "r") as session_cookie_file:
-                    session_cookie = session_cookie_file.read()
+                with open(session_cookie, "r") as session_cookie_file:
+                    session_cookie = session_cookie_file.read().strip()
                 output("Session cookie read from file.\n", logging.INFO)
             except FileNotFoundError:
                 output("Session cookie read as string.\n", logging.INFO)
 
-            session_dict = {
-                "user_session": session_cookie
-            }
+            session.cookies = add_dict_to_cookiejar(
+                session.cookies, {SESSION_COOKIE_NAME: session_cookie}
+            )
 
-            cookie_jar = session.cookies
-            session.cookies = add_dict_to_cookiejar(cookie_jar, session_dict)
-
-            my_request = session.get(MY_URL)
-            my_request.raise_for_status()
-            if my_request.history:
-                raise AuthenticationException("Failed to login. Please verify your session cookie")
+        my_request = session.get(MY_URL)
+        my_request.raise_for_status()
+        if my_request.history:
+            raise AuthenticationException("Failed to login. Please verify your session cookie")
 
     return session
 
@@ -2360,31 +2420,21 @@ def main():
     try:
         configure_logger()
 
-        account_username = _CMDL_OPTS.username
-        account_password = _CMDL_OPTS.password
         session_cookie = _CMDL_OPTS.session_cookie
+        cookies_from_browser = _CMDL_OPTS.cookies_from_browser
 
-        if _CMDL_OPTS.netrc:
-            if _CMDL_OPTS.username or _CMDL_OPTS.password or _CMDL_OPTS.session_cookie:
-                output("Ignoring input credentials in favor of .netrc.\n", logging.WARNING)
-
-            account_credentials = netrc.netrc().authenticators(HOST)
-            if account_credentials:
-                account_username = account_credentials[0]
-                account_password = account_credentials[2]
+        if not session_cookie and not cookies_from_browser:
+            if _CMDL_OPTS.username or _CMDL_OPTS.password:
+                raise AuthenticationException("User credentials (--username/-u, --password/-p) are no longer supported for login. Please specify a --session-cookie or --cookies-from-browser to login.\n")
+            elif _CMDL_OPTS.netrc:
+                raise AuthenticationException(".netrc authorization (--netrc) is no longer supported for login. Please specify a --session-cookie or --cookies-from-browser to login.\n")
+            elif not _CMDL_OPTS.no_login:
+                while not session_cookie:
+                    session_cookie = input("Session cookie (user_session value on .nicovideo.jp when logged in): ")
             else:
-                raise netrc.NetrcParseError("No authenticator available for {0}".format(HOST))
-        elif not _CMDL_OPTS.no_login:
-            while not account_username and not account_password and not session_cookie:
-                account_username = input("Email/telephone: ")
-                if account_username and not account_password:
-                    account_password = getpass.getpass("Password: ")
-                else:
-                    session_cookie = input("Session cookie: ")
-        else:
-            output("Proceeding with no login. Some content may not be available for download or may only be "
-                   "available in a lower quality. For access to all content, please provide a login with "
-                   "--username/--password, --session-cookie, or --netrc.\n", logging.WARNING)
+                output("Proceeding with no login. Some content may not be available for download or may only be "
+                    "available in a lower quality. For access to all content, please provide a login with "
+                    "--session-cookie or --cookies-from-browser.\n", logging.WARNING)
 
         if (_CMDL_OPTS.comments_limit is not None or _CMDL_OPTS.all_comments or _CMDL_OPTS.comments_from) and not _CMDL_OPTS.download_comments:
             output("Comment downloading qualifiers (--comments-limit, --all-comments, or --comments-from) were specified, but --download-comments was not. "
@@ -2392,7 +2442,7 @@ def main():
         if _CMDL_OPTS.download_comments and _CMDL_OPTS.no_login:
             output("Downloading comments is not possible when -g/--no-login is specified. No comments will be downloaded.\n", logging.WARNING)
 
-        session = login(account_username, account_password, session_cookie)
+        session = login(session_cookie, cookies_from_browser)
 
         for arg_item in _CMDL_OPTS.input:
             try:
