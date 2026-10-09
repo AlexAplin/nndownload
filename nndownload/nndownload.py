@@ -206,7 +206,12 @@ LOG_LEVEL_COLORS = {
 }
 COLOR_RESET = "\033[0m"
 
-logger = logging.getLogger(__name__)
+# Minimum levels emitted by each handler
+# TODO: Add something like --log-level
+CONSOLE_LOG_LEVEL = logging.DEBUG
+FILE_LOG_LEVEL = logging.DEBUG
+
+logger = logging.getLogger(MODULE_NAME)
 
 
 def parse_datetime_to_timestamp(value) -> int:
@@ -355,26 +360,53 @@ class ListQualitiesQuit(Exception):
 
 ## Utility methods
 
+class ConsoleFormatter(logging.Formatter):
+    """Format console records as `[LEVEL] message`"""
+
+    def __init__(self, color: bool = False):
+        super().__init__()
+        self.color = color
+
+    def format(self, record: logging.LogRecord) -> str:
+        tag = f"[{record.levelname}]"
+        if self.color:
+            tag = f"{LOG_LEVEL_COLORS.get(record.levelno, '')}{tag}{COLOR_RESET}"
+        # Tracebacks intentionally left to the file handler
+        return f"{tag} {record.getMessage()}"
+
+
+class ConsoleHandler(logging.StreamHandler):
+    def emit(self, record: logging.LogRecord):
+        if _CMDL_OPTS.quiet and not getattr(record, "force", False):
+            return
+        super().emit(record)
+
+
 def configure_logger():
-    """Initialize logger."""
+    """Initialize the logger."""
+
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+
+    console_handler = ConsoleHandler(sys.stdout)
+    console_handler.setLevel(CONSOLE_LOG_LEVEL)
+    console_handler.setFormatter(ConsoleFormatter(color=use_color(sys.stdout)))
+    logger.addHandler(console_handler)
 
     if _CMDL_OPTS.log:
-        logger.setLevel(logging.INFO)
-        log_handler = logging.FileHandler(_CMDL_OPTS.log, encoding="utf-8")
-        formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
-        log_handler.setFormatter(formatter)
-        logger.addHandler(log_handler)
+        file_handler = logging.FileHandler(_CMDL_OPTS.log, encoding="utf-8")
+        file_handler.setLevel(FILE_LOG_LEVEL)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
+        logger.addHandler(file_handler)
 
 
 def log_exception(error: Exception):
     """Process exception for logger."""
 
-    if _CMDL_OPTS.log:
-        sys.stdout.write("{0}: {1}\n".format(type(error).__name__, str(error)))
-        sys.stdout.flush()
-        logger.exception("An exception was encountered:\n")
-    else:
-        output("{0}: {1}\n".format(type(error).__name__, str(error)), logging.ERROR, force=True)
+    logger.error("{0}: {1}".format(type(error).__name__, str(error)), exc_info=error, extra={"force": True})
 
 
 def use_color(stream) -> bool:
@@ -388,16 +420,16 @@ def use_color(stream) -> bool:
 def output(out_str: AnyStr, level=logging.INFO, force: bool = False):
     """Print status to console unless quiet flag is set."""
 
-    global _CMDL_OPTS
-    if _CMDL_OPTS.log:
-        logger.log(level, out_str.strip("\n"))
+    message = out_str.strip("\r\n")
+    if message:
+        logger.log(level, message, extra={"force": force})
 
-    if not _CMDL_OPTS.quiet or force:
-        tag = f"[{logging.getLevelName(level)}]"
-        if use_color(sys.stdout):
-            tag = f"{LOG_LEVEL_COLORS.get(level, '')}{tag}{COLOR_RESET}"
 
-        sys.stdout.write(tag + " " + out_str)
+def output_progress(out_str: AnyStr):
+    """Write transient progress text (e.g. carriage-return progress bars) to the console only."""
+
+    if not _CMDL_OPTS.quiet:
+        sys.stdout.write(out_str)
         sys.stdout.flush()
 
 
@@ -893,10 +925,10 @@ def download_manga_chapter(session, chapter_id):
             image_path = os.path.join(chapter_directory, filename)
 
             with open(image_path, "wb") as file:
-                output("\rPage {0}/{1}".format(index + 1, len(images)), logging.DEBUG)
+                output_progress("\rPage {0}/{1}".format(index + 1, len(images)))
                 file.write(image_bytes)
 
-        output("\n", logging.DEBUG)
+        output_progress("\n")
         output("Finished downloading {0} to \"{1}\".\n".format(chapter_id, chapter_directory), logging.INFO)
 
     if _CMDL_OPTS.dump_metadata:
@@ -1404,7 +1436,7 @@ def show_multithread_progress(video_len):
         done = int(25 * _PROGRESS / video_len)
         percent = int(100 * _PROGRESS / video_len)
         speed_str = calculate_speed(_START_TIME, time.time(), _PROGRESS)
-        output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
+        output_progress("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
 
 
 def update_multithread_progress(bytes_len):
@@ -1557,7 +1589,7 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
         progress_thread = threading.Thread(target=show_multithread_progress, kwargs={"video_len": video_len})
         progress_thread.start()
         progress_thread.join()  # Wait for progress thread to terminate
-        output("\n", logging.DEBUG)
+        output_progress("\n")
 
         output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
         os.rename(filename, complete_filename)
@@ -1638,8 +1670,8 @@ def download_video_media(session: requests.Session, filename: AnyStr, template_p
             done = int(25 * dl / video_len)
             percent = int(100 * dl / video_len)
             speed_str = calculate_speed(_START_TIME, time.time(), dl)
-            output("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str), logging.DEBUG)
-        output("\n", logging.DEBUG)
+            output_progress("\r|{0}{1}| {2}/100 @ {3:9}/s".format("#" * done, " " * (25 - done), percent, speed_str))
+        output_progress("\n")
 
     output("Finished downloading {0} to \"{1}\".\n".format(template_params["id"], filename), logging.INFO)
     os.rename(filename, complete_filename)
