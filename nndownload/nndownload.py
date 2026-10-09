@@ -2430,11 +2430,11 @@ def main():
                 raise AuthenticationException(".netrc authorization (--netrc) is no longer supported for login. Please specify a --session-cookie or --cookies-from-browser to login.\n")
             elif not _CMDL_OPTS.no_login:
                 while not session_cookie:
-                    session_cookie = input("Session cookie: ")
+                    session_cookie = input("Session cookie (user_session value on .nicovideo.jp when logged in): ")
             else:
                 output("Proceeding with no login. Some content may not be available for download or may only be "
                     "available in a lower quality. For access to all content, please provide a login with "
-                    "--username/--password, --session-cookie, or --netrc.\n", logging.WARNING)
+                    "--session-cookie or --cookies-from-browser.\n", logging.WARNING)
 
         if (_CMDL_OPTS.comments_limit is not None or _CMDL_OPTS.all_comments or _CMDL_OPTS.comments_from) and not _CMDL_OPTS.download_comments:
             output("Comment downloading qualifiers (--comments-limit, --all-comments, or --comments-from) were specified, but --download-comments was not. "
