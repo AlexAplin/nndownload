@@ -21,7 +21,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/AlexAplin/nndownload",
-    packages=["nndownload"],
+    packages=setuptools.find_packages(include=["nndownload", "nndownload.*"]),
     install_requires=requirements,
     python_requires=">=3.5.3",
     entry_points={
