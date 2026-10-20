@@ -1765,8 +1765,11 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
     # As of 2021, all videos are served this way
     if document.find("meta", {"name": "server-response"}):
         params = json.loads(document.find("meta", {"name": "server-response"})["content"])["data"]["response"]
+        # Moved under "$watchV4" by default starting 2026-10
+        if "$watchV4" in params:
+            params = params["$watchV4"]["data"]
 
-        if params["video"]["isDeleted"]:
+        if params["video"]["permission"]["isDeleted"]:
             raise FormatNotAvailableException("Video was deleted")
 
         template_params = collect_video_parameters(session, template_params, params)
@@ -1780,26 +1783,26 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
         # Perform request to Dwango Media Service (DMS)
         # Began rollout starting 2023-11-01 for select videos and users (https://blog.nicovideo.jp/niconews/205042.html)
         # Videos longer than 30 minutes in HD (>720p) quality appear to be served this way exclusively
-        elif params["media"]["domand"]:
+        elif params["media"].get("contents"):
             if _CMDL_OPTS.list_qualities:
-                list_qualities("video", params["media"]["domand"]["videos"], True)
-                list_qualities("audio", params["media"]["domand"]["audios"], True)
+                list_qualities("video", params["media"]["contents"]["videos"], True)
+                list_qualities("audio", params["media"]["contents"]["audios"], True)
                 raise ListQualitiesQuit("Exiting after listing available qualities")
 
             video_id = params["video"]["id"]
-            access_right_key = params["media"]["domand"]["accessRightKey"]
+            access_right_key = params["media"]["accessRightKey"]
             watch_track_id = params["client"]["watchTrackId"]
 
             video_sources = select_quality(
                 template_params,
                 "video_quality",
-                params["media"]["domand"]["videos"],
+                params["media"]["contents"]["videos"],
                 _CMDL_OPTS.video_quality
             )
             audio_sources = select_quality(
                 template_params,
                 "audio_quality",
-                params["media"]["domand"]["audios"],
+                params["media"]["contents"]["audios"],
                 _CMDL_OPTS.audio_quality
             )
 
@@ -1837,7 +1840,7 @@ def perform_api_request(session: requests.Session, document: BeautifulSoup) -> d
             output("Collected video media URIs.\n", logging.INFO)
 
         # Perform request to Dwango Media Cluster (DMC)
-        elif params["media"]["delivery"]:
+        elif params["media"].get("delivery"):
             if _CMDL_OPTS.list_qualities:
                 list_qualities("video", params["media"]["delivery"]["movie"]["videos"], False)
                 list_qualities("audio", params["media"]["delivery"]["movie"]["audios"], False)
@@ -1999,9 +2002,9 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
         template_params["thumbnail_url"] = (  # Use highest quality thumbnail available
                 params["video"]["thumbnail"]["ogp"]
                 or params["video"]["thumbnail"]["player"]
-                or params["video"]["thumbnail"]["largeUrl"]
-                or params["video"]["thumbnail"]["middleUrl"]
-                or params["video"]["thumbnail"]["url"])
+                or params["video"]["thumbnail"]["large"]
+                or params["video"]["thumbnail"]["middle"]
+                or params["video"]["thumbnail"]["normal"])
 
         template_params["threads"] = params["comment"]["threads"]
         template_params["thread_id"] = int(params["comment"]["threads"][0]["id"])
@@ -2016,7 +2019,7 @@ def collect_video_parameters(session: requests.Session, template_params: dict, p
         template_params["like_count"] = int(params["video"]["count"]["like"])
 
         tags = []
-        for tag in params["tag"]["items"]:
+        for tag in params["tags"]["items"]:
             tags.append(tag["name"])
         template_params["tags"] = tags
 
