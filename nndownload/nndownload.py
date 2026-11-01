@@ -96,7 +96,7 @@ VIDEO_DMS_WATCH_API = "https://nvapi.nicovideo.jp/v1/watch/{0}/access-rights/hls
 USER_VIDEOS_API = "https://nvapi.nicovideo.jp/v3/users/{0}/videos?sortKey=registeredAt&sortOrder=desc&pageSize={1}&page={2}"
 USER_MYLISTS_API = "https://nvapi.nicovideo.jp/v1/users/{0}/mylists"
 USER_SERIES_API = "https://nvapi.nicovideo.jp/v1/users/{0}/series"
-USER_FOLLOWING_API = "https://nvapi.nicovideo.jp/v1/users/{0}/following/users?pageSize=800" # 800 following limit for premium users
+USER_FOLLOWING_API = "https://nvapi.nicovideo.jp/v1/users/{0}/following/users?pageSize={1}&cursor={2}"
 SEIGA_MANGA_TAGS_API = "https://seiga.nicovideo.jp/ajax/manga/tag/list?id={0}"
 USER_HISTORY_API = "https://nvapi.nicovideo.jp/v1/users/me/watch/history?page={0}&pageSize={1}"
 USER_LIKES_API = "nvapi.nicovideo.jp/v1/users/me/watch/likes?page={0}&pageSize={1}"
@@ -107,6 +107,7 @@ REGION_LOCK_ERRORS = {  "お住まいの地域・国からは視聴すること�
                      }
 
 USER_VIDEOS_API_N = 100
+USER_FOLLOWING_API_N = 100
 NAMA_HEARTBEAT_INTERVAL_S = 30
 NAMA_PLAYLIST_INTERVAL_S = 5
 DMC_HEARTBEAT_INTERVAL_S = 15
@@ -368,6 +369,8 @@ class ConsoleFormatter(logging.Formatter):
         self.color = color
 
     def format(self, record: logging.LogRecord) -> str:
+        if getattr(record, "plain", False):
+            return record.getMessage()
         tag = f"[{record.levelname}]"
         if self.color:
             tag = f"{LOG_LEVEL_COLORS.get(record.levelno, '')}{tag}{COLOR_RESET}"
@@ -417,12 +420,12 @@ def use_color(stream) -> bool:
     return hasattr(stream, "isatty") and stream.isatty()
 
 
-def output(out_str: AnyStr, level=logging.INFO, force: bool = False):
+def output(out_str: AnyStr, level=logging.INFO, force: bool = False, plain: bool = False):
     """Print status to console unless quiet flag is set."""
 
     message = out_str.strip("\r\n")
     if message:
-        logger.log(level, message, extra={"force": force})
+        logger.log(level, message, extra={"force": force, "plain": plain})
 
 
 def output_progress(out_str: AnyStr):
@@ -720,7 +723,7 @@ async def open_nama_websocket(
                             logging.INFO)
                         output("For more instructions on playing this stream, please consult the README.\n",
                                logging.INFO)
-                        output("{0}\n".format(stream_url), logging.INFO, force=True)
+                        output("{0}\n".format(stream_url), logging.INFO, force=True, plain=True)
 
                     elif frame_type == "disconnect":
                         command_param = frame["body"]["params"][1]
@@ -1415,14 +1418,21 @@ def request_user_following(session: requests.Session, user_id: AnyStr):
     else:
         output("Requesting following users from logged in user...\n", logging.INFO)
 
-    following_request = session.get(USER_FOLLOWING_API.format(user_id), headers=API_HEADERS)
-    following_request.raise_for_status()
-    following_json = json.loads(following_request.text)
-    following = following_json["data"]["items"]
+    cursor = ""
+    while True:
+        following_request = session.get(USER_FOLLOWING_API.format(user_id, USER_FOLLOWING_API_N, cursor), headers=API_HEADERS)
+        following_request.raise_for_status()
+        following_json = json.loads(following_request.text)
+        following = following_json["data"]["items"]
 
-    for item in following:
-        user_url = USER_URL.format(item["id"])
-        output(f"{user_url}\n", logging.INFO, force=True)
+        for item in following:
+            user_url = USER_URL.format(item["id"])
+            output(f"{user_url}\n", logging.INFO, force=True, plain=True)
+
+        summary = following_json["data"]["summary"]
+        if not summary["hasNext"]:
+            break
+        cursor = summary["cursor"]
 
 
 def show_multithread_progress(video_len):
@@ -1693,7 +1703,7 @@ def list_qualities(sources_type: str, sources: list, is_dms: bool):
     """Pretty print the list of available qualities from a provided sources list."""
 
     output(f"{sources_type.capitalize()}:\n")
-    output(f"{'ID':<24} | {'Available':<10} | {'Info':<46}\n", logging.INFO, force=True)
+    output(f"{'ID':<24} | {'Available':<10} | {'Info':<46}\n", logging.INFO, force=True, plain=True)
     for source in sources:
         source_id = source["id"]
         is_available = source["isAvailable"]
@@ -1710,7 +1720,7 @@ def list_qualities(sources_type: str, sources: list, is_dms: bool):
         else:
             quality_aggregate = "-"
 
-        output("{:<24} | {:<10} | {:<46}\n".format(source_id, str(is_available), quality_aggregate), logging.INFO, force=True)
+        output("{:<24} | {:<10} | {:<46}\n".format(source_id, str(is_available), quality_aggregate), logging.INFO, force=True, plain=True)
 
 
 def select_quality(template_params: dict, template_key: AnyStr, sources: list, quality="") -> List[AnyStr]:
